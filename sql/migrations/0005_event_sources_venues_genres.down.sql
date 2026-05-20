@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS genres;
+DROP TABLE IF EXISTS venues;
+DROP TABLE IF EXISTS event_sources;
