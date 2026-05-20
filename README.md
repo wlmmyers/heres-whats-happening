@@ -66,3 +66,44 @@ The ingest pipeline is decoupled: scraping and serving are independent
 processes that communicate through the queue. You can run the scraper without
 the server (messages queue up) or the server without the scraper (consumer
 sits idle, long-polling).
+
+## Plan 3 quickstart — Spotify integration
+
+```bash
+# Prereqs: register a Spotify app at https://developer.spotify.com/dashboard
+# Redirect URI: http://localhost:8080/integrations/spotify/callback
+# Copy Client ID + Secret into .env
+export SPOTIFY_CLIENT_ID=<your-id>
+export SPOTIFY_CLIENT_SECRET=<your-secret>
+export SPOTIFY_REDIRECT_URI=http://localhost:8080/integrations/spotify/callback
+
+# Generate an at-rest encryption key for Spotify tokens
+openssl rand -base64 32   # paste into .env as SPOTIFY_TOKEN_ENC_KEY
+
+make db-up && make queue-up
+make migrate && make migrate-test
+make run    # starts api + events consumer + interests consumer
+```
+
+### Connect a user
+
+1. Sign up + log in via the auth flow (Plan 1 quickstart).
+2. Visit `http://localhost:8080/integrations/spotify/connect` in a browser
+   with your access token in the `Authorization` header (use a REST client
+   like Postman, or wrap in a small HTML form).
+3. Spotify will redirect back to `/integrations/spotify/callback` — the
+   server stores the encrypted tokens and immediately publishes one
+   InterestMessage to the interests-queue. The consumer drains it.
+4. Verify:
+
+```bash
+docker exec hwh_postgres psql -U app -d appdb -c \
+  "SELECT kind, value, weight FROM user_interests \
+   WHERE kind LIKE 'spotify%' ORDER BY weight DESC LIMIT 10;"
+```
+
+### Periodic scrape
+
+```bash
+./app scrape spotify   # iterates all connected users, publishes fresh InterestMessages
+```
