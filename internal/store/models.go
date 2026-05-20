@@ -35,3 +35,14 @@ type User struct {
 	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
 	DeletedAt                  pgtype.Timestamptz `json:"deleted_at"`
 }
+
+type UserInterest struct {
+	ID              pgtype.UUID        `json:"id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	Kind            string             `json:"kind"`
+	Value           string             `json:"value"`
+	NormalizedValue string             `json:"normalized_value"`
+	Weight          float64            `json:"weight"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
