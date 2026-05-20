@@ -153,3 +153,80 @@ func TestLogin_UnknownEmail(t *testing.T) {
 	handlers.Login(q, signer, time.Hour)(rec, req)
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 }
+
+func TestRefresh_Success(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	cityID := defaultCityID(t, q)
+
+	// signup to get a refresh cookie
+	body, _ := json.Marshal(map[string]string{"email": "rf@example.com", "password": "hunter22"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	var refreshCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "refresh_token" {
+			refreshCookie = c
+		}
+	}
+	require.NotNil(t, refreshCookie)
+
+	// call /auth/refresh with the cookie
+	req2 := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req2.AddCookie(refreshCookie)
+	rec2 := httptest.NewRecorder()
+	handlers.Refresh(q, signer)(rec2, req2)
+	require.Equal(t, http.StatusOK, rec2.Code)
+	var resp struct {
+		AccessToken string `json:"access_token"`
+	}
+	require.NoError(t, json.NewDecoder(rec2.Body).Decode(&resp))
+	require.NotEmpty(t, resp.AccessToken)
+}
+
+func TestRefresh_NoCookie(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	rec := httptest.NewRecorder()
+	handlers.Refresh(q, signer)(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestRefresh_RevokedRejected(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	cityID := defaultCityID(t, q)
+
+	body, _ := json.Marshal(map[string]string{"email": "rev@example.com", "password": "hunter22"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	var refreshCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "refresh_token" {
+			refreshCookie = c
+		}
+	}
+	require.NotNil(t, refreshCookie)
+
+	// revoke directly via the query
+	require.NoError(t, q.RevokeRefreshTokenByHash(context.Background(), auth.HashRefresh(refreshCookie.Value)))
+
+	req2 := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req2.AddCookie(refreshCookie)
+	rec2 := httptest.NewRecorder()
+	handlers.Refresh(q, signer)(rec2, req2)
+	require.Equal(t, http.StatusUnauthorized, rec2.Code)
+}

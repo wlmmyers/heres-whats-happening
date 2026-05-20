@@ -168,6 +168,34 @@ func Login(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration) h
 	}
 }
 
+type refreshResponse struct {
+	AccessToken string `json:"access_token"`
+}
+
+func Refresh(q *store.Queries, signer *auth.JWTSigner) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie("refresh_token")
+		if err != nil || c.Value == "" {
+			httperr.Write(w, http.StatusUnauthorized, "no_refresh", "refresh token cookie is missing")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		row, err := q.GetActiveRefreshTokenByHash(ctx, auth.HashRefresh(c.Value))
+		if err != nil {
+			httperr.Write(w, http.StatusUnauthorized, "invalid_refresh", "refresh token is not valid")
+			return
+		}
+		access, err := signer.SignAccess(uuid.UUID(row.UserID.Bytes))
+		if err != nil {
+			httperr.Write(w, http.StatusInternalServerError, "sign_failed", "could not sign access token")
+			return
+		}
+		writeJSON(w, http.StatusOK, refreshResponse{AccessToken: access})
+	}
+}
+
 func setRefreshCookie(w http.ResponseWriter, token string, ttl time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refresh_token",
