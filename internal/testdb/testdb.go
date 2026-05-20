@@ -89,6 +89,7 @@ func truncateAll(t *testing.T, p *pgxpool.Pool) {
 		"events",
 		"venues",
 		"user_interests",
+		"user_spotify_tokens",
 		"refresh_tokens",
 		"users",
 	}
