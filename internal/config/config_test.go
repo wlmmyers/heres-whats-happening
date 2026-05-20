@@ -31,3 +31,31 @@ func TestLoad_MissingRequired(t *testing.T) {
 	_, err := Load()
 	require.Error(t, err)
 }
+
+func TestLoad_QueueAndScraperFields(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("SQS_ENDPOINT", "http://localhost:9324")
+	t.Setenv("EVENTS_QUEUE_URL", "http://localhost:9324/000000000000/events-queue")
+	t.Setenv("INGEST_WORKERS", "8")
+	t.Setenv("TICKETMASTER_API_KEY", "tm-key")
+	t.Setenv("TICKETMASTER_CITY", "Brooklyn")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "us-east-1", cfg.AWSRegion)
+	require.Equal(t, "http://localhost:9324", cfg.SQSEndpoint)
+	require.Equal(t, "http://localhost:9324/000000000000/events-queue", cfg.EventsQueueURL)
+	require.Equal(t, 8, cfg.IngestWorkers)
+	require.Equal(t, "tm-key", cfg.TicketmasterAPIKey)
+	require.Equal(t, "Brooklyn", cfg.TicketmasterCity)
+}
+
+func TestLoad_IngestWorkersDefault(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 4, cfg.IngestWorkers) // default
+}

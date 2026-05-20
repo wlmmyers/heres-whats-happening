@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -14,6 +15,14 @@ type Config struct {
 	JWTAccessTTL  time.Duration
 	RefreshTTL    time.Duration
 	LogLevel      string
+
+	// Plan 2 additions
+	AWSRegion          string
+	SQSEndpoint        string
+	EventsQueueURL     string
+	IngestWorkers      int
+	TicketmasterAPIKey string
+	TicketmasterCity   string
 }
 
 func Load() (*Config, error) {
@@ -44,14 +53,30 @@ func Load() (*Config, error) {
 		logLevel = "info"
 	}
 
-	return &Config{
-		DatabaseURL:   dbURL,
-		HTTPAddr:      addr,
-		JWTSigningKey: signingKey,
-		JWTAccessTTL:  accessTTL,
-		RefreshTTL:    refreshTTL,
-		LogLevel:      logLevel,
-	}, nil
+	workers := 4
+	if v := os.Getenv("INGEST_WORKERS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return nil, fmt.Errorf("invalid INGEST_WORKERS=%q", v)
+		}
+		workers = n
+	}
+
+	cfg := &Config{
+		DatabaseURL:        dbURL,
+		HTTPAddr:           addr,
+		JWTSigningKey:      signingKey,
+		JWTAccessTTL:       accessTTL,
+		RefreshTTL:         refreshTTL,
+		LogLevel:           logLevel,
+		AWSRegion:          os.Getenv("AWS_REGION"),
+		SQSEndpoint:        os.Getenv("SQS_ENDPOINT"),
+		EventsQueueURL:     os.Getenv("EVENTS_QUEUE_URL"),
+		IngestWorkers:      workers,
+		TicketmasterAPIKey: os.Getenv("TICKETMASTER_API_KEY"),
+		TicketmasterCity:   os.Getenv("TICKETMASTER_CITY"),
+	}
+	return cfg, nil
 }
 
 func parseDuration(envKey, fallback string) (time.Duration, error) {
