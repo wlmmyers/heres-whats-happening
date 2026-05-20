@@ -18,12 +18,14 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/db"
 	hs "github.com/wmyers/heres-whats-happening/internal/http"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
+	"github.com/wmyers/heres-whats-happening/internal/matcher"
 	"github.com/wmyers/heres-whats-happening/internal/queue"
 	"github.com/wmyers/heres-whats-happening/internal/scraper"
 	spotifyscrape "github.com/wmyers/heres-whats-happening/internal/scraper/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/scraper/ticketmaster"
 	"github.com/wmyers/heres-whats-happening/internal/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/store"
+	"github.com/wmyers/heres-whats-happening/internal/tei"
 )
 
 func main() {
@@ -43,6 +45,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "scrape: %v\n", err)
 			os.Exit(1)
 		}
+	case "match":
+		if err := runMatch(); err != nil {
+			fmt.Fprintf(os.Stderr, "match: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", os.Args[1])
 		usage()
@@ -57,6 +64,7 @@ subcommands:
   serve                       run the HTTP API server
   scrape events --source=NAME run a one-shot event scraper
   scrape spotify              scrape all connected users' Spotify data
+  match                       run the match-job (embed events+users, score, archive)
 `)
 }
 
@@ -226,4 +234,32 @@ func runTicketmasterScrape(ctx context.Context, cfg *config.Config, q *queue.Cli
 	r := scraper.NewRunner(a, q, cfg.EventsQueueURL)
 	fmt.Printf("scraping %s for city=%s ...\n", a.Name(), cfg.TicketmasterCity)
 	return r.Run(ctx)
+}
+
+func runMatch() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	if cfg.TEIEndpoint == "" {
+		return fmt.Errorf("TEI_ENDPOINT is required for match-job")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("db: %w", err)
+	}
+	defer pool.Close()
+	q := store.New(pool)
+
+	teiClient := tei.New(cfg.TEIEndpoint)
+	job := matcher.NewJob(q, teiClient, matcher.Defaults())
+	fmt.Println("running match-job ...")
+	if err := job.Run(ctx); err != nil {
+		return err
+	}
+	fmt.Println("match-job complete")
+	return nil
 }
