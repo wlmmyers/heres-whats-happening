@@ -31,6 +31,9 @@ type Config struct {
 	SpotifyRedirectURI  string
 	SpotifyTokenEncKey  []byte
 	InterestsQueueURL   string
+
+	// Plan 4 additions
+	TEIEndpoint string
 }
 
 func Load() (*Config, error) {
@@ -97,6 +100,7 @@ func Load() (*Config, error) {
 		SpotifyRedirectURI:  os.Getenv("SPOTIFY_REDIRECT_URI"),
 		SpotifyTokenEncKey:  encKey,
 		InterestsQueueURL:   os.Getenv("INTERESTS_QUEUE_URL"),
+		TEIEndpoint:         os.Getenv("TEI_ENDPOINT"),
 	}
 	return cfg, nil
 }
