@@ -48,8 +48,8 @@ func TestConsumer_E2E_ElasticMQToPostgres(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	h := ingest.NewHandler(q, cityID)
-	c := ingest.NewConsumer(qClient, queueURL, h, 1)
+	h := ingest.NewEventHandler(q, cityID)
+	c := ingest.NewConsumer(qClient, queueURL, h, 1, "events")
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 

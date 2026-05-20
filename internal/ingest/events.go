@@ -1,10 +1,12 @@
 // Package ingest bridges the events-queue (SQS) into the database.
-// Handler is the per-message logic; Consumer (later) is the loop.
+// EventHandler is the per-message logic; Consumer is the loop.
 package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -13,17 +15,28 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
 
-// Handler applies a single events.Message to the database.
-type Handler struct {
+// EventHandler applies a single events.Message to the database.
+type EventHandler struct {
 	q      *store.Queries
 	cityID pgtype.UUID
 }
 
-func NewHandler(q *store.Queries, cityID pgtype.UUID) *Handler {
-	return &Handler{q: q, cityID: cityID}
+func NewEventHandler(q *store.Queries, cityID pgtype.UUID) *EventHandler {
+	return &EventHandler{q: q, cityID: cityID}
 }
 
-func (h *Handler) Handle(ctx context.Context, m events.Message) error {
+// Handle decodes an SQS message body as an events.Message and applies it.
+func (h *EventHandler) Handle(ctx context.Context, body []byte) error {
+	var m events.Message
+	if err := json.Unmarshal(body, &m); err != nil {
+		// Malformed message — log and return nil so consumer deletes it.
+		log.Printf("ingest: bad event message: %v", err)
+		return nil
+	}
+	return h.handleMessage(ctx, m)
+}
+
+func (h *EventHandler) handleMessage(ctx context.Context, m events.Message) error {
 	src, err := h.q.GetEventSourceByName(ctx, m.SourceID)
 	if err != nil {
 		return fmt.Errorf("lookup source %q: %w", m.SourceID, err)

@@ -2,6 +2,7 @@ package ingest_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -46,9 +47,10 @@ func TestHandle_InsertsEventVenuePerformersGenres(t *testing.T) {
 	q := store.New(pool)
 	cityID := defaultCityID(t, q)
 
-	h := ingest.NewHandler(q, cityID)
+	h := ingest.NewEventHandler(q, cityID)
 	ctx := context.Background()
-	require.NoError(t, h.Handle(ctx, sampleMessage()))
+	body, _ := json.Marshal(sampleMessage())
+	require.NoError(t, h.Handle(ctx, body))
 
 	// Event exists
 	srcRow, err := q.GetEventSourceByName(ctx, "ticketmaster")
@@ -76,17 +78,19 @@ func TestHandle_Reupsert_UpdatesLastSeenAndReplacesAssociations(t *testing.T) {
 	q := store.New(pool)
 	cityID := defaultCityID(t, q)
 
-	h := ingest.NewHandler(q, cityID)
+	h := ingest.NewEventHandler(q, cityID)
 	ctx := context.Background()
 
 	// First ingest
-	require.NoError(t, h.Handle(ctx, sampleMessage()))
+	body, _ := json.Marshal(sampleMessage())
+	require.NoError(t, h.Handle(ctx, body))
 
 	// Modify performers + genres
 	mod := sampleMessage()
 	mod.Performers = []string{"Phoebe Bridgers"}      // dropped MUNA
 	mod.Genres = []string{"folk"}                     // changed genre
-	require.NoError(t, h.Handle(ctx, mod))
+	modBody, _ := json.Marshal(mod)
+	require.NoError(t, h.Handle(ctx, modBody))
 
 	srcRow, _ := q.GetEventSourceByName(ctx, "ticketmaster")
 	ev, _ := q.GetEventBySourceKey(ctx, store.GetEventBySourceKeyParams{
@@ -107,11 +111,12 @@ func TestHandle_UnknownGenre_SkipsSilently(t *testing.T) {
 	q := store.New(pool)
 	cityID := defaultCityID(t, q)
 
-	h := ingest.NewHandler(q, cityID)
+	h := ingest.NewEventHandler(q, cityID)
 	ctx := context.Background()
 	m := sampleMessage()
 	m.Genres = []string{"rock", "nonexistent-genre"}
-	require.NoError(t, h.Handle(ctx, m))
+	body, _ := json.Marshal(m)
+	require.NoError(t, h.Handle(ctx, body))
 
 	srcRow, _ := q.GetEventSourceByName(ctx, "ticketmaster")
 	ev, _ := q.GetEventBySourceKey(ctx, store.GetEventBySourceKeyParams{

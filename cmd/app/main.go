@@ -83,8 +83,8 @@ func serve() error {
 		if err != nil {
 			return fmt.Errorf("queue client: %w", err)
 		}
-		h := ingest.NewHandler(q, city.ID)
-		consumer = ingest.NewConsumer(qClient, cfg.EventsQueueURL, h, cfg.IngestWorkers)
+		h := ingest.NewEventHandler(q, city.ID)
+		consumer = ingest.NewConsumer(qClient, cfg.EventsQueueURL, h, cfg.IngestWorkers, "events")
 	}
 
 	s := &hs.Server{
