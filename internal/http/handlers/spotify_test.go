@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
@@ -131,6 +132,51 @@ func TestSpotifyCallback_StateMismatch(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestSpotifyDisconnect_RemovesTokensAndInterests(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "disconnect@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+
+	// Seed a token row
+	_ = q.UpsertUserSpotifyTokens(ctx, store.UpsertUserSpotifyTokensParams{
+		UserID:          userRow.ID,
+		AccessTokenEnc:  []byte{1, 2, 3},
+		RefreshTokenEnc: []byte{4, 5, 6},
+		ExpiresAt:       pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		Scope:           "user-top-read",
+	})
+	// Seed a Spotify-derived interest
+	_ = q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
+		UserID: userRow.ID, Kind: "spotify_top_artist",
+		Value: "Phoebe Bridgers", NormalizedValue: "phoebe bridgers", Weight: 1.0,
+	})
+
+	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes))
+	h := middleware.RequireAuth(signer)(handlers.SpotifyDisconnect(q))
+
+	req := httptest.NewRequest(http.MethodDelete, "/integrations/spotify", nil)
+	req.Header.Set("Authorization", "Bearer "+access)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+
+	// Tokens gone
+	_, err := q.GetUserSpotifyTokens(ctx, userRow.ID)
+	require.Error(t, err)
+	// Spotify-derived interests gone
+	rows, err := q.ListInterestsByUserAndKind(ctx, store.ListInterestsByUserAndKindParams{
+		UserID: userRow.ID, Kind: "spotify_top_artist",
+	})
+	require.NoError(t, err)
+	require.Empty(t, rows)
 }
 
 type fakePub struct{ sent [][]byte }

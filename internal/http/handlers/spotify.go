@@ -141,3 +141,28 @@ func SpotifyCallback(
 		writeJSON(w, http.StatusOK, map[string]string{"status": "connected"})
 	}
 }
+
+// SpotifyDisconnect removes a user's Spotify tokens and all
+// Spotify-derived interest rows. Manual tags are not touched.
+func SpotifyDisconnect(q *store.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid, ok := middleware.UserIDFromContext(r.Context())
+		if !ok {
+			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
+			return
+		}
+		pgUID := pgtype.UUID{Bytes: uid, Valid: true}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		if err := q.DeleteSpotifyDerivedInterests(ctx, pgUID); err != nil {
+			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not delete interests")
+			return
+		}
+		if err := q.DeleteUserSpotifyTokens(ctx, pgUID); err != nil {
+			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not delete tokens")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
