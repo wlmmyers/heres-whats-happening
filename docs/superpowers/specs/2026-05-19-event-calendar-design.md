@@ -257,9 +257,11 @@ If TEI is unavailable during steps 1 or 2, the job logs and continues with the e
 - On successful login, the server issues:
   - **Access token:** JWT, HS256, 15-minute TTL, signed with a key from Secrets Manager. Returned in the response body; the SPA holds it in memory.
   - **Refresh token:** 32 bytes random, 30-day TTL, returned in an `httpOnly`, `Secure`, `SameSite=Lax` cookie. `sha256(token)` stored in `refresh_tokens`.
-- `POST /auth/refresh` validates the cookie hash against the table and issues a new access token. No refresh rotation in v1.
+- `POST /auth/refresh` validates the cookie hash against `refresh_tokens`. If the row exists, is not revoked, and `expires_at > now()`, the server issues a new access token (15-min TTL). The refresh token itself is *not* rotated — the same row remains valid until its 30-day `expires_at` is reached.
+- **Refresh-token expiry:** once the 30-day TTL passes, `POST /auth/refresh` returns 401. The SPA clears in-memory state and routes the user to `/login`, where they re-authenticate with email + password. A successful login issues a fresh access + refresh pair, resetting the 30-day window.
 - `POST /auth/logout` clears the cookie and sets `revoked_at` on the row.
-- No JWT denylist in v1. Short access-token TTL is the mitigation. Compromised refresh tokens are killed by revoking the DB row.
+- **No JWT denylist** in v1. Short access-token TTL (15 min) is the mitigation. Compromised refresh tokens are killed by revoking the DB row.
+- **No refresh-token rotation** in v1. Rotation (issuing a new refresh token on every `/auth/refresh` call and invalidating the old one) is a defense against refresh-token theft, but adds race-condition complexity for concurrent tab refreshes. The `httpOnly` cookie already makes XSS exfiltration hard. Rotation is a clean drop-in upgrade once the rest is stable.
 
 ### Spotify OAuth
 
