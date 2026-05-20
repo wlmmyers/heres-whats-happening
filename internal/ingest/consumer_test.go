@@ -3,6 +3,7 @@ package ingest_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,10 +14,6 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/store"
 	"github.com/wmyers/heres-whats-happening/internal/testdb"
 )
-
-func testQueueURL() string {
-	return "http://localhost:9324/000000000000/events-queue"
-}
 
 func TestConsumer_E2E_ElasticMQToPostgres(t *testing.T) {
 	// ElasticMQ requires static credentials; set dummy values for local dev.
@@ -30,18 +27,29 @@ func TestConsumer_E2E_ElasticMQToPostgres(t *testing.T) {
 	qClient, err := queue.NewClient(context.Background(), "us-east-1", "http://localhost:9324")
 	require.NoError(t, err)
 
-	require.NoError(t, qClient.Purge(context.Background(), testQueueURL()))
+	// Create an ephemeral queue per test — isolates from other packages and from
+	// the shared events-queue. Cleaned up by t.Cleanup.
+	queueName := fmt.Sprintf("ingest-test-%d", time.Now().UnixNano())
+	createCtx, createCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer createCancel()
+	queueURL, err := qClient.CreateTestQueue(createCtx, queueName)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		delCtx, delCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer delCancel()
+		_ = qClient.DeleteTestQueue(delCtx, queueURL)
+	})
 
 	// Publish a message
 	body, _ := json.Marshal(sampleMessage())
-	require.NoError(t, qClient.Send(context.Background(), testQueueURL(), body))
+	require.NoError(t, qClient.Send(context.Background(), queueURL, body))
 
 	// Run consumer for a short window
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	h := ingest.NewHandler(q, cityID)
-	c := ingest.NewConsumer(qClient, testQueueURL(), h, 1)
+	c := ingest.NewConsumer(qClient, queueURL, h, 1)
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 

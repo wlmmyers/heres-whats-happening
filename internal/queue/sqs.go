@@ -9,7 +9,6 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
 type Client struct {
@@ -119,4 +118,3 @@ func (c *Client) DeleteTestQueue(ctx context.Context, queueURL string) error {
 	return nil
 }
 
-var _ = sqstypes.QueueAttributeName("") // reserved for future attribute lookups
