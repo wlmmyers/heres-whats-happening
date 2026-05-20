@@ -33,6 +33,7 @@ A public web product that builds each user a personalized calendar of local live
 11. Real-time matching (the contract is nightly batch)
 12. LLM-based ranking
 13. Multi-language / i18n
+14. Separate `dev` environment (single `prod` env for v1; add `dev` when the cost of breaking prod becomes meaningful)
 
 ## 3. Architecture
 
@@ -344,6 +345,8 @@ GET    /readyz
 
 ## 11. Infrastructure
 
+All AWS resources described below are codified as Terraform (see section 12). The descriptions here are the *intent*; Terraform is the source of truth.
+
 ### AWS resources
 
 - **VPC** with public + private subnets across 2 AZs. ALB in public subnets; ECS tasks and RDS in private subnets. Single NAT gateway.
@@ -376,7 +379,94 @@ GET    /readyz
 - AWS SDK: `aws-sdk-go-v2`.
 - Password hashing: `golang.org/x/crypto/argon2`.
 
-## 12. Open Questions and Future Work
+## 12. Infrastructure as Code and CI/CD
+
+All AWS infrastructure is defined in Terraform. Two AWS CodePipelines (created by the bootstrap stack) drive every deploy — one for infrastructure changes, one for application code. The frontend remains a manual `pnpm build && aws s3 sync` script run from the developer's laptop (see section 10).
+
+### Repository layout
+
+```
+terraform/
+├── bootstrap/                  # One-time manual apply; creates state backend + pipelines + ECR
+│   ├── main.tf
+│   ├── state.tf                # S3 state bucket + DynamoDB lock table for the prod stack
+│   ├── github.tf               # CodeStar Connection to GitHub
+│   ├── ecr.tf                  # ECR repo for the Go app image
+│   ├── pipelines.tf            # Infra + app CodePipelines + CodeBuild projects
+│   ├── iam.tf
+│   └── variables.tf
+└── prod/                       # Main infrastructure, applied by the infra pipeline
+    ├── backend.tf              # Remote state in the S3 bucket created by bootstrap
+    ├── vpc.tf
+    ├── alb.tf
+    ├── ecs.tf                  # Cluster, api service, tei service, task definitions
+    ├── eventbridge.tf          # Scheduled tasks for scrapers and match-job
+    ├── rds.tf
+    ├── sqs.tf
+    ├── secrets.tf              # Secrets Manager resources (values seeded out-of-band)
+    ├── frontend.tf             # S3 + CloudFront + Route53 for the SPA
+    ├── route53-acm.tf
+    ├── iam.tf
+    └── variables.tf
+```
+
+### Bootstrap stack (one-time manual apply)
+
+The bootstrap exists because pipelines that manage AWS resources can't easily manage themselves. It's applied once by the developer from a laptop and rarely touched after that.
+
+- **State:** local state file. Not committed to the repo (gitignored); developer is responsible for storing it in a safe location (1Password, encrypted volume, etc.). It's small (≈10–20 KB) and changes rarely.
+- **Creates:**
+  - S3 bucket for the `prod` stack's remote state (versioning + SSE-KMS encryption + bucket policy blocking public access).
+  - DynamoDB table for state locking.
+  - GitHub CodeStar Connection (requires a one-time manual auth step in the AWS console after `apply`).
+  - ECR repo for the Go application image.
+  - Two CodePipelines (infra + app) and their CodeBuild projects and IAM roles, described below.
+  - SNS topic for the infra pipeline's manual-approval notifications.
+
+### Infra pipeline
+
+- **Trigger:** push to `master`, source filter on changes under `terraform/prod/**`.
+- **Stage 1 — Source:** GitHub via CodeStar Connection.
+- **Stage 2 — Plan:** CodeBuild runs `terraform init && terraform plan -out=tfplan` in `terraform/prod/`; uploads `tfplan` as a pipeline artifact; emits the human-readable plan to CloudWatch Logs.
+- **Stage 3 — Manual Approval:** CodePipeline pauses; SNS notifies the developer (email subscription); developer reviews the plan output and clicks Approve / Reject in the CodePipeline console.
+- **Stage 4 — Apply:** CodeBuild downloads `tfplan`, runs `terraform apply tfplan` (against the plan exactly, no re-plan).
+
+### App pipeline
+
+- **Trigger:** push to `master`, source filter on changes under `api/**`, `cmd/**`, `internal/**`, `Dockerfile`, `go.mod`, `go.sum`.
+- **Stage 1 — Source:** GitHub.
+- **Stage 2 — Build:** CodeBuild runs unit tests (`go test ./...`), builds the Docker image, tags it with the 7-char commit SHA, pushes to ECR.
+- **Stage 3 — Deploy:** CodeBuild registers new ECS task definition revisions for the `api` service and each scheduled task; updates the `api` service to use the new revision; updates each EventBridge Scheduler target's task-definition ARN to the new revision.
+- **No manual approval** — fast deploys on green build. Rollback = revert the commit; next pipeline run redeploys the previous revision.
+
+### Single-image, multi-subcommand strategy
+
+One Go binary, one Dockerfile, one ECR repo, one ECS image. The binary takes a subcommand argument:
+
+- `app serve` — runs the HTTP server + SQS consumers (used by the `api` ECS service).
+- `app scrape events --source=<name>` — runs a single event scraper adapter (used by each `event-scraper` scheduled task).
+- `app scrape spotify` — runs the Spotify scraper (used by the `spotify-scraper` scheduled task).
+- `app match` — runs the match-job (used by the `match-job` scheduled task).
+
+Task definitions differ only in `command`, environment variables, and resource sizing. Adding a new event source means adding a new adapter package and a new EventBridge rule pointing to the same image with a different `--source` argument.
+
+### TEI image
+
+TEI is the public Hugging Face image (`ghcr.io/huggingface/text-embeddings-inference:cpu-<version>`). The ECS task definition pins a specific image digest, not a moving tag. Upgrading TEI is a Terraform PR.
+
+### Secrets handling
+
+- Secret *values* (DB password, JWT signing key, Spotify client secret, app-level encryption key) are seeded into Secrets Manager out-of-band — created once during bootstrap by a short bash script (or directly in the AWS console) and never appear in Terraform state.
+- Terraform manages the secret *resources* (the Secrets Manager entries themselves), with `lifecycle.ignore_changes = [secret_string]` so manual rotations don't trigger drift.
+- ECS task definitions reference Secrets Manager ARNs in the `secrets` block; the runtime container sees plaintext via environment variables AWS injects.
+
+### Tooling
+
+- Terraform 1.7.x, pinned via `.terraform-version` (for `tfenv` users) and `required_version` in each stack.
+- AWS provider version pinned in `required_providers`.
+- `terraform fmt -check` and `terraform validate` are part of the plan stage; the build fails if formatting or validation errors are found.
+
+## 13. Open Questions and Future Work
 
 These are explicit deferrals, not gaps in v1:
 
