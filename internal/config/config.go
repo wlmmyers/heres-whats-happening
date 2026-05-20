@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -23,6 +24,13 @@ type Config struct {
 	IngestWorkers      int
 	TicketmasterAPIKey string
 	TicketmasterCity   string
+
+	// Plan 3 additions
+	SpotifyClientID     string
+	SpotifyClientSecret string
+	SpotifyRedirectURI  string
+	SpotifyTokenEncKey  []byte
+	InterestsQueueURL   string
 }
 
 func Load() (*Config, error) {
@@ -62,6 +70,15 @@ func Load() (*Config, error) {
 		workers = n
 	}
 
+	var encKey []byte
+	if v := os.Getenv("SPOTIFY_TOKEN_ENC_KEY"); v != "" {
+		decoded, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return nil, fmt.Errorf("SPOTIFY_TOKEN_ENC_KEY: %w", err)
+		}
+		encKey = decoded
+	}
+
 	cfg := &Config{
 		DatabaseURL:        dbURL,
 		HTTPAddr:           addr,
@@ -75,6 +92,11 @@ func Load() (*Config, error) {
 		IngestWorkers:      workers,
 		TicketmasterAPIKey: os.Getenv("TICKETMASTER_API_KEY"),
 		TicketmasterCity:   os.Getenv("TICKETMASTER_CITY"),
+		SpotifyClientID:     os.Getenv("SPOTIFY_CLIENT_ID"),
+		SpotifyClientSecret: os.Getenv("SPOTIFY_CLIENT_SECRET"),
+		SpotifyRedirectURI:  os.Getenv("SPOTIFY_REDIRECT_URI"),
+		SpotifyTokenEncKey:  encKey,
+		InterestsQueueURL:   os.Getenv("INTERESTS_QUEUE_URL"),
 	}
 	return cfg, nil
 }
