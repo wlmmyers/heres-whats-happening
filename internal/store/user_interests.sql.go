@@ -145,3 +145,44 @@ func (q *Queries) ListManualInterestsByUser(ctx context.Context, userID pgtype.U
 	}
 	return items, nil
 }
+
+const listUserInterestsBatch = `-- name: ListUserInterestsBatch :many
+SELECT user_id, kind, value, normalized_value, weight
+FROM user_interests
+WHERE user_id = ANY($1::uuid[])
+ORDER BY user_id, weight DESC
+`
+
+type ListUserInterestsBatchRow struct {
+	UserID          pgtype.UUID `json:"user_id"`
+	Kind            string      `json:"kind"`
+	Value           string      `json:"value"`
+	NormalizedValue string      `json:"normalized_value"`
+	Weight          float64     `json:"weight"`
+}
+
+func (q *Queries) ListUserInterestsBatch(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListUserInterestsBatchRow, error) {
+	rows, err := q.db.Query(ctx, listUserInterestsBatch, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserInterestsBatchRow{}
+	for rows.Next() {
+		var i ListUserInterestsBatchRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Kind,
+			&i.Value,
+			&i.NormalizedValue,
+			&i.Weight,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

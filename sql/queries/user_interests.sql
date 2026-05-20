@@ -18,3 +18,9 @@ SELECT id, kind, value, normalized_value, weight
 FROM user_interests
 WHERE user_id = $1 AND kind = $2
 ORDER BY weight DESC, normalized_value ASC;
+
+-- name: ListUserInterestsBatch :many
+SELECT user_id, kind, value, normalized_value, weight
+FROM user_interests
+WHERE user_id = ANY($1::uuid[])
+ORDER BY user_id, weight DESC;

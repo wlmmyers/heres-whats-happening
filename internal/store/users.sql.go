@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pgvector/pgvector-go"
 )
 
 const createUser = `-- name: CreateUser :one
@@ -112,6 +113,71 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDR
 	return i, err
 }
 
+const listActiveUsersForMatching = `-- name: ListActiveUsersForMatching :many
+SELECT id, interest_embedding
+FROM users
+WHERE deleted_at IS NULL
+`
+
+type ListActiveUsersForMatchingRow struct {
+	ID                pgtype.UUID      `json:"id"`
+	InterestEmbedding *pgvector.Vector `json:"interest_embedding"`
+}
+
+func (q *Queries) ListActiveUsersForMatching(ctx context.Context) ([]ListActiveUsersForMatchingRow, error) {
+	rows, err := q.db.Query(ctx, listActiveUsersForMatching)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveUsersForMatchingRow{}
+	for rows.Next() {
+		var i ListActiveUsersForMatchingRow
+		if err := rows.Scan(&i.ID, &i.InterestEmbedding); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectUsersNeedingEmbedding = `-- name: SelectUsersNeedingEmbedding :many
+SELECT u.id
+FROM users u
+WHERE u.deleted_at IS NULL
+  AND (
+    u.interest_embedding IS NULL
+    OR u.interest_embedding_updated_at IS NULL
+    OR u.interest_embedding_updated_at < COALESCE(
+         (SELECT MAX(updated_at) FROM user_interests ui WHERE ui.user_id = u.id),
+         u.created_at
+       )
+  )
+`
+
+func (q *Queries) SelectUsersNeedingEmbedding(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, selectUsersNeedingEmbedding)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const softDeleteUser = `-- name: SoftDeleteUser :exec
 UPDATE users
 SET deleted_at = NOW()
@@ -120,5 +186,21 @@ WHERE id = $1 AND deleted_at IS NULL
 
 func (q *Queries) SoftDeleteUser(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, softDeleteUser, id)
+	return err
+}
+
+const updateUserInterestEmbedding = `-- name: UpdateUserInterestEmbedding :exec
+UPDATE users
+SET interest_embedding = $2, interest_embedding_updated_at = NOW()
+WHERE id = $1
+`
+
+type UpdateUserInterestEmbeddingParams struct {
+	ID                pgtype.UUID      `json:"id"`
+	InterestEmbedding *pgvector.Vector `json:"interest_embedding"`
+}
+
+func (q *Queries) UpdateUserInterestEmbedding(ctx context.Context, arg UpdateUserInterestEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, updateUserInterestEmbedding, arg.ID, arg.InterestEmbedding)
 	return err
 }
