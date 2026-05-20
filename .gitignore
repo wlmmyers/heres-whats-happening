@@ -1,1 +1,14 @@
 .superpowers/
+
+# Go
+/cmd/app/app
+/cmd/app/cmd
+*.test
+coverage.out
+
+# Env
+.env
+.env.local
+
+# Build artifacts
+/dist/
