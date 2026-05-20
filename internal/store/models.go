@@ -16,6 +16,49 @@ type City struct {
 	Timezone string      `json:"timezone"`
 }
 
+type Event struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SourceID           pgtype.UUID        `json:"source_id"`
+	SourceEventID      string             `json:"source_event_id"`
+	Title              string             `json:"title"`
+	Description        string             `json:"description"`
+	StartsAt           pgtype.Timestamptz `json:"starts_at"`
+	EndsAt             pgtype.Timestamptz `json:"ends_at"`
+	VenueID            pgtype.UUID        `json:"venue_id"`
+	ImageUrl           *string            `json:"image_url"`
+	Url                *string            `json:"url"`
+	Embedding          *pgvector.Vector   `json:"embedding"`
+	EmbeddingUpdatedAt pgtype.Timestamptz `json:"embedding_updated_at"`
+	LastSeenAt         pgtype.Timestamptz `json:"last_seen_at"`
+	ArchivedAt         pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type EventGenre struct {
+	EventID   pgtype.UUID `json:"event_id"`
+	GenreSlug string      `json:"genre_slug"`
+}
+
+type EventPerformer struct {
+	EventID        pgtype.UUID `json:"event_id"`
+	PerformerName  string      `json:"performer_name"`
+	NormalizedName string      `json:"normalized_name"`
+}
+
+type EventSource struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	AdapterKind string             `json:"adapter_kind"`
+	Config      []byte             `json:"config"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type Genre struct {
+	Slug  string `json:"slug"`
+	Label string `json:"label"`
+}
+
 type RefreshToken struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
@@ -45,4 +88,17 @@ type UserInterest struct {
 	Weight          float64            `json:"weight"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Venue struct {
+	ID             pgtype.UUID        `json:"id"`
+	CityID         pgtype.UUID        `json:"city_id"`
+	Name           string             `json:"name"`
+	NormalizedName string             `json:"normalized_name"`
+	Address        *string            `json:"address"`
+	Lat            *float64           `json:"lat"`
+	Lng            *float64           `json:"lng"`
+	WebsiteUrl     *string            `json:"website_url"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
