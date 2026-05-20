@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-reset migrate migrate-test test run
+.PHONY: db-up db-down db-reset migrate migrate-test test run queue-up queue-down queue-reset scrape
 
 ifneq (,$(wildcard .env))
     include .env
@@ -30,3 +30,16 @@ test:
 
 run:
 	go run ./cmd/app serve
+
+queue-up:
+	docker compose up -d elasticmq
+
+queue-down:
+	docker compose stop elasticmq
+
+queue-reset:
+	docker compose down elasticmq -v
+	docker compose up -d elasticmq
+
+scrape:
+	go run ./cmd/app scrape events --source=ticketmaster
