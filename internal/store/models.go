@@ -59,6 +59,12 @@ type Genre struct {
 	Label string `json:"label"`
 }
 
+type MatchConfig struct {
+	Key       string             `json:"key"`
+	Value     []byte             `json:"value"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type RefreshToken struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
@@ -77,6 +83,14 @@ type User struct {
 	InterestEmbeddingUpdatedAt pgtype.Timestamptz `json:"interest_embedding_updated_at"`
 	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
 	DeletedAt                  pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type UserEventMatch struct {
+	UserID         pgtype.UUID        `json:"user_id"`
+	EventID        pgtype.UUID        `json:"event_id"`
+	Score          float64            `json:"score"`
+	ScoreBreakdown []byte             `json:"score_breakdown"`
+	ComputedAt     pgtype.Timestamptz `json:"computed_at"`
 }
 
 type UserInterest struct {

@@ -22,3 +22,26 @@ WHERE id = $1 AND deleted_at IS NULL;
 SELECT id, slug, name, timezone
 FROM cities
 WHERE slug = 'v1-city';
+
+-- name: SelectUsersNeedingEmbedding :many
+SELECT u.id
+FROM users u
+WHERE u.deleted_at IS NULL
+  AND (
+    u.interest_embedding IS NULL
+    OR u.interest_embedding_updated_at IS NULL
+    OR u.interest_embedding_updated_at < COALESCE(
+         (SELECT MAX(updated_at) FROM user_interests ui WHERE ui.user_id = u.id),
+         u.created_at
+       )
+  );
+
+-- name: UpdateUserInterestEmbedding :exec
+UPDATE users
+SET interest_embedding = $2, interest_embedding_updated_at = NOW()
+WHERE id = $1;
+
+-- name: ListActiveUsersForMatching :many
+SELECT id, interest_embedding
+FROM users
+WHERE deleted_at IS NULL;

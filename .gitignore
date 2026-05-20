@@ -12,3 +12,6 @@ coverage.out
 
 # Build artifacts
 /dist/
+
+# TEI model cache (pre-seeded by make tei-seed; not checked in)
+/.tei-cache/

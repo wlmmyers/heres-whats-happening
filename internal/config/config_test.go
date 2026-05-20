@@ -85,3 +85,12 @@ func TestLoad_BadEncKey(t *testing.T) {
 	_, err := Load()
 	require.Error(t, err)
 }
+
+func TestLoad_TEIEndpoint(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("TEI_ENDPOINT", "http://localhost:8081")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "http://localhost:8081", cfg.TEIEndpoint)
+}
