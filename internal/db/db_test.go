@@ -2,21 +2,18 @@ package db
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/wmyers/heres-whats-happening/internal/testdb"
 )
 
 func TestNewPool_PingSucceeds(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	pool, err := NewPool(ctx, dsn)
+	pool, err := NewPool(ctx, testdb.DSN())
 	require.NoError(t, err)
 	defer pool.Close()
 	require.NoError(t, pool.Ping(ctx))

@@ -18,6 +18,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// DefaultTestDSN matches the test database provisioned by docker-compose.yml
+// and scripts/db-init.sh. Used when TEST_DATABASE_URL is unset so that
+// `go test ./...` works without sourcing .env.example.
+const DefaultTestDSN = "postgres://app:app@localhost:5432/appdb_test?sslmode=disable"
+
+// DSN returns TEST_DATABASE_URL, falling back to DefaultTestDSN.
+func DSN() string {
+	if v := os.Getenv("TEST_DATABASE_URL"); v != "" {
+		return v
+	}
+	return DefaultTestDSN
+}
+
 var (
 	once    sync.Once
 	pool    *pgxpool.Pool
@@ -30,11 +43,7 @@ var (
 func MustOpen(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	once.Do(func() {
-		dsn := os.Getenv("TEST_DATABASE_URL")
-		if dsn == "" {
-			openErr = errSkip("TEST_DATABASE_URL not set")
-			return
-		}
+		dsn := DSN()
 		if err := runMigrations(dsn); err != nil {
 			openErr = err
 			return
@@ -49,18 +58,11 @@ func MustOpen(t *testing.T) *pgxpool.Pool {
 		pool = p
 	})
 	if openErr != nil {
-		if _, ok := openErr.(errSkip); ok {
-			t.Skip(openErr.Error())
-		}
 		require.NoError(t, openErr)
 	}
 	t.Cleanup(func() { truncateAll(t, pool) })
 	return pool
 }
-
-type errSkip string
-
-func (e errSkip) Error() string { return string(e) }
 
 func runMigrations(dsn string) error {
 	_, file, _, _ := runtime.Caller(0)
