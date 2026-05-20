@@ -101,6 +101,12 @@ func serve() error {
 		}
 	}
 
+	var interestConsumer *ingest.Consumer
+	if cfg.InterestsQueueURL != "" && cipher != nil {
+		ih := ingest.NewInterestHandler(q)
+		interestConsumer = ingest.NewConsumer(qClient, cfg.InterestsQueueURL, ih, cfg.IngestWorkers, "interests")
+	}
+
 	s := &hs.Server{
 		Addr:              cfg.HTTPAddr,
 		DB:                pool,
@@ -109,6 +115,7 @@ func serve() error {
 		RefreshTTL:        cfg.RefreshTTL,
 		DefaultCityID:     cityIDString(city.ID),
 		IngestConsumer:    consumer,
+		InterestConsumer:  interestConsumer,
 		SpotifyClient:     spClient,
 		SpotifyCipher:     cipher,
 		OAuthHMACKey:      []byte(cfg.JWTSigningKey),

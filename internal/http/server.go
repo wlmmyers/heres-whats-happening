@@ -27,7 +27,8 @@ type Server struct {
 	DefaultCityID string
 
 	// Optional. If non-nil, Run also starts the ingest consumer.
-	IngestConsumer *ingest.Consumer
+	IngestConsumer   *ingest.Consumer // events queue
+	InterestConsumer *ingest.Consumer // interests queue
 
 	SpotifyClient     *spotify.Client
 	SpotifyCipher     *crypto.Cipher
@@ -78,11 +79,14 @@ func (s *Server) Run(ctx context.Context) error {
 		Handler:           s.Router(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	go func() { errCh <- httpSrv.ListenAndServe() }()
 
 	if s.IngestConsumer != nil {
 		go func() { errCh <- s.IngestConsumer.Run(ctx) }()
+	}
+	if s.InterestConsumer != nil {
+		go func() { errCh <- s.InterestConsumer.Run(ctx) }()
 	}
 
 	select {
