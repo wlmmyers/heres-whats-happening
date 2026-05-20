@@ -59,3 +59,29 @@ func TestLoad_IngestWorkersDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 4, cfg.IngestWorkers) // default
 }
+
+func TestLoad_SpotifyAndCryptoFields(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("SPOTIFY_CLIENT_ID", "cid")
+	t.Setenv("SPOTIFY_CLIENT_SECRET", "secret")
+	t.Setenv("SPOTIFY_REDIRECT_URI", "http://localhost:8080/x")
+	t.Setenv("SPOTIFY_TOKEN_ENC_KEY", "ZGV2LW9ubHkta2V5LWRldi1vbmx5LWtleS1kZXYtb24=")
+	t.Setenv("INTERESTS_QUEUE_URL", "http://localhost:9324/000000000000/interests-queue")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "cid", cfg.SpotifyClientID)
+	require.Equal(t, "secret", cfg.SpotifyClientSecret)
+	require.Equal(t, "http://localhost:8080/x", cfg.SpotifyRedirectURI)
+	require.Len(t, cfg.SpotifyTokenEncKey, 32)
+	require.Equal(t, "http://localhost:9324/000000000000/interests-queue", cfg.InterestsQueueURL)
+}
+
+func TestLoad_BadEncKey(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("SPOTIFY_TOKEN_ENC_KEY", "not-valid-base64!@#")
+	_, err := Load()
+	require.Error(t, err)
+}

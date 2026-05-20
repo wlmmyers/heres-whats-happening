@@ -59,6 +59,52 @@ func (q *Queries) DeleteInterestByIDForUser(ctx context.Context, arg DeleteInter
 	return err
 }
 
+const listInterestsByUserAndKind = `-- name: ListInterestsByUserAndKind :many
+SELECT id, kind, value, normalized_value, weight
+FROM user_interests
+WHERE user_id = $1 AND kind = $2
+ORDER BY weight DESC, normalized_value ASC
+`
+
+type ListInterestsByUserAndKindParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Kind   string      `json:"kind"`
+}
+
+type ListInterestsByUserAndKindRow struct {
+	ID              pgtype.UUID `json:"id"`
+	Kind            string      `json:"kind"`
+	Value           string      `json:"value"`
+	NormalizedValue string      `json:"normalized_value"`
+	Weight          float64     `json:"weight"`
+}
+
+func (q *Queries) ListInterestsByUserAndKind(ctx context.Context, arg ListInterestsByUserAndKindParams) ([]ListInterestsByUserAndKindRow, error) {
+	rows, err := q.db.Query(ctx, listInterestsByUserAndKind, arg.UserID, arg.Kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInterestsByUserAndKindRow{}
+	for rows.Next() {
+		var i ListInterestsByUserAndKindRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Value,
+			&i.NormalizedValue,
+			&i.Weight,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listManualInterestsByUser = `-- name: ListManualInterestsByUser :many
 SELECT id, value, normalized_value, weight, created_at
 FROM user_interests

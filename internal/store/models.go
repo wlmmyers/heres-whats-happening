@@ -90,6 +90,17 @@ type UserInterest struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
+type UserSpotifyToken struct {
+	UserID          pgtype.UUID        `json:"user_id"`
+	AccessTokenEnc  []byte             `json:"access_token_enc"`
+	RefreshTokenEnc []byte             `json:"refresh_token_enc"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	Scope           string             `json:"scope"`
+	LastSyncedAt    pgtype.Timestamptz `json:"last_synced_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Venue struct {
 	ID             pgtype.UUID        `json:"id"`
 	CityID         pgtype.UUID        `json:"city_id"`

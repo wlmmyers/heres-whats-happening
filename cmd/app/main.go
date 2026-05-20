@@ -14,12 +14,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/wmyers/heres-whats-happening/internal/auth"
 	"github.com/wmyers/heres-whats-happening/internal/config"
+	"github.com/wmyers/heres-whats-happening/internal/crypto"
 	"github.com/wmyers/heres-whats-happening/internal/db"
 	hs "github.com/wmyers/heres-whats-happening/internal/http"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
 	"github.com/wmyers/heres-whats-happening/internal/queue"
 	"github.com/wmyers/heres-whats-happening/internal/scraper"
+	spotifyscrape "github.com/wmyers/heres-whats-happening/internal/scraper/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/scraper/ticketmaster"
+	"github.com/wmyers/heres-whats-happening/internal/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
 
@@ -52,7 +55,8 @@ func usage() {
 
 subcommands:
   serve                       run the HTTP API server
-  scrape events --source=NAME run a one-shot scraper for one source
+  scrape events --source=NAME run a one-shot event scraper
+  scrape spotify              scrape all connected users' Spotify data
 `)
 }
 
@@ -76,25 +80,52 @@ func serve() error {
 		return fmt.Errorf("load default city: %w", err)
 	}
 
-	// Build SQS client and consumer if EVENTS_QUEUE_URL is set.
-	var consumer *ingest.Consumer
-	if cfg.EventsQueueURL != "" {
-		qClient, err := queue.NewClient(ctx, cfg.AWSRegion, cfg.SQSEndpoint)
+	// Build the SQS client once if either queue URL is set. Without this guard
+	// hoist, a Spotify-only deployment (INTERESTS_QUEUE_URL set, EVENTS_QUEUE_URL
+	// unset) would pass a nil qClient to the interest consumer and panic.
+	var qClient *queue.Client
+	if cfg.EventsQueueURL != "" || cfg.InterestsQueueURL != "" {
+		qClient, err = queue.NewClient(ctx, cfg.AWSRegion, cfg.SQSEndpoint)
 		if err != nil {
 			return fmt.Errorf("queue client: %w", err)
 		}
-		h := ingest.NewHandler(q, city.ID)
-		consumer = ingest.NewConsumer(qClient, cfg.EventsQueueURL, h, cfg.IngestWorkers)
+	}
+
+	var consumer *ingest.Consumer
+	if cfg.EventsQueueURL != "" {
+		h := ingest.NewEventHandler(q, city.ID)
+		consumer = ingest.NewConsumer(qClient, cfg.EventsQueueURL, h, cfg.IngestWorkers, "events")
+	}
+
+	spClient := spotify.New(cfg.SpotifyClientID, cfg.SpotifyClientSecret, cfg.SpotifyRedirectURI, "")
+	var cipher *crypto.Cipher
+	if len(cfg.SpotifyTokenEncKey) > 0 {
+		cipher, err = crypto.NewCipher(cfg.SpotifyTokenEncKey)
+		if err != nil {
+			return fmt.Errorf("crypto: %w", err)
+		}
+	}
+
+	var interestConsumer *ingest.Consumer
+	if cfg.InterestsQueueURL != "" && cipher != nil {
+		ih := ingest.NewInterestHandler(q)
+		interestConsumer = ingest.NewConsumer(qClient, cfg.InterestsQueueURL, ih, cfg.IngestWorkers, "interests")
 	}
 
 	s := &hs.Server{
-		Addr:           cfg.HTTPAddr,
-		DB:             pool,
-		Queries:        q,
-		JWTSigner:      auth.NewJWTSigner(cfg.JWTSigningKey, cfg.JWTAccessTTL),
-		RefreshTTL:     cfg.RefreshTTL,
-		DefaultCityID:  cityIDString(city.ID),
-		IngestConsumer: consumer,
+		Addr:              cfg.HTTPAddr,
+		DB:                pool,
+		Queries:           q,
+		JWTSigner:         auth.NewJWTSigner(cfg.JWTSigningKey, cfg.JWTAccessTTL),
+		RefreshTTL:        cfg.RefreshTTL,
+		DefaultCityID:     cityIDString(city.ID),
+		IngestConsumer:    consumer,
+		InterestConsumer:  interestConsumer,
+		SpotifyClient:     spClient,
+		SpotifyCipher:     cipher,
+		OAuthHMACKey:      []byte(cfg.JWTSigningKey),
+		InterestsQueueURL: cfg.InterestsQueueURL,
+		QueuePublisher:    qClient,
 	}
 	fmt.Printf("listening on %s (ingest workers=%d)\n", cfg.HTTPAddr, cfg.IngestWorkers)
 	return s.Run(ctx)
@@ -105,12 +136,23 @@ func cityIDString(u pgtype.UUID) string {
 }
 
 func scrape(args []string) error {
-	if len(args) == 0 || args[0] != "events" {
-		return fmt.Errorf(`expected "app scrape events --source=NAME"`)
+	if len(args) == 0 {
+		return fmt.Errorf(`expected "app scrape events|spotify [...]"`)
 	}
+	switch args[0] {
+	case "events":
+		return scrapeEvents(args[1:])
+	case "spotify":
+		return scrapeSpotify(args[1:])
+	default:
+		return fmt.Errorf("unknown scrape target: %s", args[0])
+	}
+}
+
+func scrapeEvents(args []string) error {
 	fs := flag.NewFlagSet("scrape events", flag.ExitOnError)
 	source := fs.String("source", "", "adapter name (e.g., ticketmaster)")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *source == "" {
@@ -135,6 +177,42 @@ func scrape(args []string) error {
 	default:
 		return fmt.Errorf("unknown source: %s", *source)
 	}
+}
+
+func scrapeSpotify(args []string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("db: %w", err)
+	}
+	defer pool.Close()
+	q := store.New(pool)
+
+	qClient, err := queue.NewClient(ctx, cfg.AWSRegion, cfg.SQSEndpoint)
+	if err != nil {
+		return fmt.Errorf("queue: %w", err)
+	}
+	spClient := spotify.New(cfg.SpotifyClientID, cfg.SpotifyClientSecret, cfg.SpotifyRedirectURI, "")
+	cipher, err := crypto.NewCipher(cfg.SpotifyTokenEncKey)
+	if err != nil {
+		return fmt.Errorf("crypto: %w", err)
+	}
+
+	adapter := spotifyscrape.NewAdapter(q, cipher, spClient, qClient, cfg.InterestsQueueURL)
+	errs := adapter.ScrapeAll(ctx)
+	for _, e := range errs {
+		fmt.Fprintf(os.Stderr, "scrape spotify error: %v\n", e)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%d users failed", len(errs))
+	}
+	return nil
 }
 
 func runTicketmasterScrape(ctx context.Context, cfg *config.Config, q *queue.Client) error {
