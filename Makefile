@@ -26,7 +26,7 @@ migrate-test:
 	  -database "$$TEST_DATABASE_URL" up
 
 test:
-	go test ./... -count=1
+	go test -p 1 ./... -count=1
 
 run:
 	go run ./cmd/app serve
