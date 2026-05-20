@@ -107,3 +107,45 @@ docker exec hwh_postgres psql -U app -d appdb -c \
 ```bash
 ./app scrape spotify   # iterates all connected users, publishes fresh InterestMessages
 ```
+
+## Plan 4 quickstart — match-job
+
+```bash
+# Start the TEI sidecar (BAAI/bge-small-en-v1.5)
+make tei-up
+# First run downloads the model; takes ~2 minutes. Subsequent runs are fast.
+
+# Verify TEI is healthy
+curl -s http://localhost:8081/health
+
+# Run the match-job
+./app match
+# Steps it runs:
+#  1. Embed any events whose embedding column is NULL
+#  2. Embed any users whose interests changed since last embedding
+#  3. Score every (user, event) pair; upsert above-threshold matches
+#  4. Archive events not seen in the last 7 days
+```
+
+### Tuning weights
+
+Match weights live in the `match_config` table; change them with SQL and the
+next `./app match` picks them up — no rebuild needed.
+
+```sql
+UPDATE match_config SET value = '0.7'::jsonb WHERE key = 'w_string';
+UPDATE match_config SET value = '0.3'::jsonb WHERE key = 'w_embedding';
+```
+
+### Inspect a user's matches
+
+```bash
+docker exec hwh_postgres psql -U app -d appdb -c "
+  SELECT e.title, m.score, m.score_breakdown
+  FROM user_event_match m
+  JOIN events e ON e.id = m.event_id
+  WHERE m.user_id = (SELECT id FROM users WHERE email = 'you@example.com')
+  ORDER BY m.score DESC, e.starts_at ASC
+  LIMIT 20;
+"
+```
