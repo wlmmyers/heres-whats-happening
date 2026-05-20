@@ -1,0 +1,56 @@
+package matcher_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/wmyers/heres-whats-happening/internal/matcher"
+	"github.com/wmyers/heres-whats-happening/internal/store"
+	"github.com/wmyers/heres-whats-happening/internal/testdb"
+)
+
+func TestEmbedUsers_EmbedsUsersWithChangedInterests(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email:        "user-embed@example.com",
+		PasswordHash: "stub",
+		CityID:       city.ID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
+		UserID:          userRow.ID,
+		Kind:            "spotify_top_artist",
+		Value:           "Phoebe Bridgers",
+		NormalizedValue: "phoebe bridgers",
+		Weight:          1.0,
+	}))
+	require.NoError(t, q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
+		UserID:          userRow.ID,
+		Kind:            "spotify_top_genre",
+		Value:           "indie",
+		NormalizedValue: "indie",
+		Weight:          0.9,
+	}))
+
+	fakeVec := make([]float32, 384)
+	for i := range fakeVec {
+		fakeVec[i] = 0.2
+	}
+	emb := &fakeEmbedder{vec: fakeVec}
+	step := matcher.NewUserEmbedder(q, emb)
+	require.NoError(t, step.Run(ctx))
+
+	require.Len(t, emb.calls, 1)
+	require.Contains(t, emb.calls[0][0], "Phoebe Bridgers")
+	require.Contains(t, emb.calls[0][0], "indie")
+
+	// Second run should not re-embed.
+	require.NoError(t, step.Run(ctx))
+	require.Len(t, emb.calls, 1) // still 1
+}
