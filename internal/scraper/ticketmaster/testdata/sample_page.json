@@ -1,0 +1,50 @@
+{
+  "_embedded": {
+    "events": [
+      {
+        "id": "tm-aaa",
+        "name": "Phoebe Bridgers",
+        "url": "https://www.ticketmaster.com/event/tm-aaa",
+        "info": "Indie rock concert",
+        "images": [{"url": "https://example.com/p.jpg", "ratio": "16_9", "width": 1024}],
+        "dates": {
+          "start": {"dateTime": "2026-06-15T20:00:00Z", "localDate": "2026-06-15"}
+        },
+        "classifications": [
+          {"genre": {"name": "Rock"}, "subGenre": {"name": "Indie"}}
+        ],
+        "_embedded": {
+          "venues": [{
+            "name": "The Bowl",
+            "address": {"line1": "100 Main St"},
+            "location": {"latitude": "40.7", "longitude": "-74.0"},
+            "url": "https://example.com/venue"
+          }],
+          "attractions": [
+            {"name": "Phoebe Bridgers"},
+            {"name": "MUNA"}
+          ]
+        }
+      },
+      {
+        "id": "tm-bbb",
+        "name": "Hamilton",
+        "url": "https://www.ticketmaster.com/event/tm-bbb",
+        "dates": {
+          "start": {"dateTime": "2026-07-01T19:30:00Z"}
+        },
+        "classifications": [
+          {"genre": {"name": "Theatre"}, "subGenre": {"name": "Musical"}}
+        ],
+        "_embedded": {
+          "venues": [{
+            "name": "Richard Rodgers Theatre",
+            "address": {"line1": "226 W 46th St"}
+          }],
+          "attractions": [{"name": "Hamilton Cast"}]
+        }
+      }
+    ]
+  },
+  "page": {"size": 200, "totalElements": 2, "totalPages": 1, "number": 0}
+}
