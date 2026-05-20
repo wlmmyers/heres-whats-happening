@@ -1,4 +1,4 @@
-# event-calendar
+# Here's What's Happening
 
 A custom event calendar based on your interests.
 
@@ -10,12 +10,10 @@ Prerequisites: Go 1.24+, Docker, `sqlc` (`go install github.com/sqlc-dev/sqlc/cm
 
 ```bash
 cp .env.example .env
-
 # Start Postgres + pgvector (creates appdb and appdb_test)
 make db-up
 
 # Apply migrations to both databases
-set -a; source .env.example; set +a
 make migrate
 make migrate-test
 

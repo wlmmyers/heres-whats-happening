@@ -1,5 +1,10 @@
 .PHONY: db-up db-down db-reset migrate migrate-test test run
 
+ifneq (,$(wildcard .env))
+    include .env
+    export
+endif
+
 db-up:
 	docker compose up -d postgres
 
