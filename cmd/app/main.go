@@ -14,12 +14,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/wmyers/heres-whats-happening/internal/auth"
 	"github.com/wmyers/heres-whats-happening/internal/config"
+	"github.com/wmyers/heres-whats-happening/internal/crypto"
 	"github.com/wmyers/heres-whats-happening/internal/db"
 	hs "github.com/wmyers/heres-whats-happening/internal/http"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
 	"github.com/wmyers/heres-whats-happening/internal/queue"
 	"github.com/wmyers/heres-whats-happening/internal/scraper"
 	"github.com/wmyers/heres-whats-happening/internal/scraper/ticketmaster"
+	"github.com/wmyers/heres-whats-happening/internal/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
 
@@ -78,8 +80,9 @@ func serve() error {
 
 	// Build SQS client and consumer if EVENTS_QUEUE_URL is set.
 	var consumer *ingest.Consumer
+	var qClient *queue.Client
 	if cfg.EventsQueueURL != "" {
-		qClient, err := queue.NewClient(ctx, cfg.AWSRegion, cfg.SQSEndpoint)
+		qClient, err = queue.NewClient(ctx, cfg.AWSRegion, cfg.SQSEndpoint)
 		if err != nil {
 			return fmt.Errorf("queue client: %w", err)
 		}
@@ -87,14 +90,28 @@ func serve() error {
 		consumer = ingest.NewConsumer(qClient, cfg.EventsQueueURL, h, cfg.IngestWorkers, "events")
 	}
 
+	spClient := spotify.New(cfg.SpotifyClientID, cfg.SpotifyClientSecret, cfg.SpotifyRedirectURI, "")
+	var cipher *crypto.Cipher
+	if len(cfg.SpotifyTokenEncKey) > 0 {
+		cipher, err = crypto.NewCipher(cfg.SpotifyTokenEncKey)
+		if err != nil {
+			return fmt.Errorf("crypto: %w", err)
+		}
+	}
+
 	s := &hs.Server{
-		Addr:           cfg.HTTPAddr,
-		DB:             pool,
-		Queries:        q,
-		JWTSigner:      auth.NewJWTSigner(cfg.JWTSigningKey, cfg.JWTAccessTTL),
-		RefreshTTL:     cfg.RefreshTTL,
-		DefaultCityID:  cityIDString(city.ID),
-		IngestConsumer: consumer,
+		Addr:              cfg.HTTPAddr,
+		DB:                pool,
+		Queries:           q,
+		JWTSigner:         auth.NewJWTSigner(cfg.JWTSigningKey, cfg.JWTAccessTTL),
+		RefreshTTL:        cfg.RefreshTTL,
+		DefaultCityID:     cityIDString(city.ID),
+		IngestConsumer:    consumer,
+		SpotifyClient:     spClient,
+		SpotifyCipher:     cipher,
+		OAuthHMACKey:      []byte(cfg.JWTSigningKey),
+		InterestsQueueURL: cfg.InterestsQueueURL,
+		QueuePublisher:    qClient,
 	}
 	fmt.Printf("listening on %s (ingest workers=%d)\n", cfg.HTTPAddr, cfg.IngestWorkers)
 	return s.Run(ctx)

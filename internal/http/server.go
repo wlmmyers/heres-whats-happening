@@ -10,9 +10,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
+	"github.com/wmyers/heres-whats-happening/internal/crypto"
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
+	"github.com/wmyers/heres-whats-happening/internal/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
 
@@ -26,6 +28,12 @@ type Server struct {
 
 	// Optional. If non-nil, Run also starts the ingest consumer.
 	IngestConsumer *ingest.Consumer
+
+	SpotifyClient     *spotify.Client
+	SpotifyCipher     *crypto.Cipher
+	OAuthHMACKey      []byte
+	InterestsQueueURL string
+	QueuePublisher    handlers.CallbackPublisher // *queue.Client satisfies this
 }
 
 func (s *Server) Router() http.Handler {
@@ -54,6 +62,11 @@ func (s *Server) Router() http.Handler {
 		r.Get("/me/interests", handlers.ListInterests(s.Queries))
 		r.Post("/me/interests", handlers.CreateInterest(s.Queries))
 		r.Delete("/me/interests/{id}", handlers.DeleteInterest(s.Queries))
+		r.Get("/integrations/spotify/connect", handlers.SpotifyConnect(s.SpotifyClient, s.OAuthHMACKey))
+		r.Get("/integrations/spotify/callback", handlers.SpotifyCallback(
+			s.Queries, s.SpotifyClient, s.SpotifyCipher, s.OAuthHMACKey,
+			s.QueuePublisher, s.InterestsQueueURL))
+		r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
 	})
 
 	return r
