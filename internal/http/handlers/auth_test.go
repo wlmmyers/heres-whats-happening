@@ -230,3 +230,37 @@ func TestRefresh_RevokedRejected(t *testing.T) {
 	handlers.Refresh(q, signer)(rec2, req2)
 	require.Equal(t, http.StatusUnauthorized, rec2.Code)
 }
+
+func TestLogout_RevokesAndClears(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	cityID := defaultCityID(t, q)
+
+	body, _ := json.Marshal(map[string]string{"email": "lo@example.com", "password": "hunter22"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+	var refreshCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "refresh_token" {
+			refreshCookie = c
+		}
+	}
+	require.NotNil(t, refreshCookie)
+
+	req2 := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req2.AddCookie(refreshCookie)
+	rec2 := httptest.NewRecorder()
+	handlers.Logout(q)(rec2, req2)
+	require.Equal(t, http.StatusNoContent, rec2.Code)
+
+	// subsequent refresh should fail
+	req3 := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req3.AddCookie(refreshCookie)
+	rec3 := httptest.NewRecorder()
+	handlers.Refresh(q, signer)(rec3, req3)
+	require.Equal(t, http.StatusUnauthorized, rec3.Code)
+}

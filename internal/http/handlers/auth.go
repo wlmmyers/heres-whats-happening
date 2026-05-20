@@ -196,6 +196,27 @@ func Refresh(q *store.Queries, signer *auth.JWTSigner) http.HandlerFunc {
 	}
 }
 
+func Logout(q *store.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie("refresh_token")
+		if err == nil && c.Value != "" {
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			defer cancel()
+			_ = q.RevokeRefreshTokenByHash(ctx, auth.HashRefresh(c.Value))
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     "refresh_token",
+			Value:    "",
+			Path:     "/auth",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   -1,
+		})
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func setRefreshCookie(w http.ResponseWriter, token string, ttl time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refresh_token",
