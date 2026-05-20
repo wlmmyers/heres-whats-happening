@@ -96,3 +96,60 @@ func TestSignup_ShortPasswordReturns400(t *testing.T) {
 	h(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
+
+func signupAndGetCity(t *testing.T) (*store.Queries, *auth.JWTSigner, string) {
+	t.Helper()
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	cityID := defaultCityID(t, q)
+
+	body, _ := json.Marshal(map[string]string{"email": "login@example.com", "password": "hunter22"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+	return q, signer, cityID
+}
+
+func TestLogin_Success(t *testing.T) {
+	q, signer, _ := signupAndGetCity(t)
+
+	body, _ := json.Marshal(map[string]string{"email": "login@example.com", "password": "hunter22"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handlers.Login(q, signer, time.Hour)(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp struct {
+		AccessToken string `json:"access_token"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.NotEmpty(t, resp.AccessToken)
+}
+
+func TestLogin_WrongPassword(t *testing.T) {
+	q, signer, _ := signupAndGetCity(t)
+
+	body, _ := json.Marshal(map[string]string{"email": "login@example.com", "password": "nope"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handlers.Login(q, signer, time.Hour)(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestLogin_UnknownEmail(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+
+	body, _ := json.Marshal(map[string]string{"email": "no@example.com", "password": "whatever"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handlers.Login(q, signer, time.Hour)(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
