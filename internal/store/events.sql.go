@@ -9,7 +9,20 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pgvector/pgvector-go"
 )
+
+const archiveStaleEvents = `-- name: ArchiveStaleEvents :exec
+UPDATE events
+SET archived_at = NOW(), updated_at = NOW()
+WHERE archived_at IS NULL
+  AND last_seen_at < NOW() - INTERVAL '7 days'
+`
+
+func (q *Queries) ArchiveStaleEvents(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, archiveStaleEvents)
+	return err
+}
 
 const getEventByID = `-- name: GetEventByID :one
 SELECT id, source_id, source_event_id, title, description, starts_at, ends_at,
@@ -106,6 +119,139 @@ func (q *Queries) GetEventBySourceKey(ctx context.Context, arg GetEventBySourceK
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listEventGenresBatch = `-- name: ListEventGenresBatch :many
+SELECT event_id, genre_slug
+FROM event_genres
+WHERE event_id = ANY($1::uuid[])
+`
+
+func (q *Queries) ListEventGenresBatch(ctx context.Context, dollar_1 []pgtype.UUID) ([]EventGenre, error) {
+	rows, err := q.db.Query(ctx, listEventGenresBatch, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EventGenre{}
+	for rows.Next() {
+		var i EventGenre
+		if err := rows.Scan(&i.EventID, &i.GenreSlug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEventPerformersBatch = `-- name: ListEventPerformersBatch :many
+SELECT event_id, performer_name, normalized_name
+FROM event_performers
+WHERE event_id = ANY($1::uuid[])
+`
+
+func (q *Queries) ListEventPerformersBatch(ctx context.Context, dollar_1 []pgtype.UUID) ([]EventPerformer, error) {
+	rows, err := q.db.Query(ctx, listEventPerformersBatch, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EventPerformer{}
+	for rows.Next() {
+		var i EventPerformer
+		if err := rows.Scan(&i.EventID, &i.PerformerName, &i.NormalizedName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUpcomingEventsForMatching = `-- name: ListUpcomingEventsForMatching :many
+SELECT id, embedding
+FROM events
+WHERE archived_at IS NULL AND starts_at > NOW()
+`
+
+type ListUpcomingEventsForMatchingRow struct {
+	ID        pgtype.UUID      `json:"id"`
+	Embedding *pgvector.Vector `json:"embedding"`
+}
+
+func (q *Queries) ListUpcomingEventsForMatching(ctx context.Context) ([]ListUpcomingEventsForMatchingRow, error) {
+	rows, err := q.db.Query(ctx, listUpcomingEventsForMatching)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUpcomingEventsForMatchingRow{}
+	for rows.Next() {
+		var i ListUpcomingEventsForMatchingRow
+		if err := rows.Scan(&i.ID, &i.Embedding); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectEventsNeedingEmbedding = `-- name: SelectEventsNeedingEmbedding :many
+SELECT id, title, description
+FROM events
+WHERE embedding IS NULL
+  AND archived_at IS NULL
+  AND starts_at > NOW()
+`
+
+type SelectEventsNeedingEmbeddingRow struct {
+	ID          pgtype.UUID `json:"id"`
+	Title       string      `json:"title"`
+	Description string      `json:"description"`
+}
+
+func (q *Queries) SelectEventsNeedingEmbedding(ctx context.Context) ([]SelectEventsNeedingEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, selectEventsNeedingEmbedding)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SelectEventsNeedingEmbeddingRow{}
+	for rows.Next() {
+		var i SelectEventsNeedingEmbeddingRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.Description); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateEventEmbedding = `-- name: UpdateEventEmbedding :exec
+UPDATE events
+SET embedding = $2, embedding_updated_at = NOW(), updated_at = NOW()
+WHERE id = $1
+`
+
+type UpdateEventEmbeddingParams struct {
+	ID        pgtype.UUID      `json:"id"`
+	Embedding *pgvector.Vector `json:"embedding"`
+}
+
+func (q *Queries) UpdateEventEmbedding(ctx context.Context, arg UpdateEventEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, updateEventEmbedding, arg.ID, arg.Embedding)
+	return err
 }
 
 const upsertEvent = `-- name: UpsertEvent :one
