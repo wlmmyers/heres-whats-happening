@@ -80,14 +80,19 @@ func serve() error {
 		return fmt.Errorf("load default city: %w", err)
 	}
 
-	// Build SQS client and consumer if EVENTS_QUEUE_URL is set.
-	var consumer *ingest.Consumer
+	// Build the SQS client once if either queue URL is set. Without this guard
+	// hoist, a Spotify-only deployment (INTERESTS_QUEUE_URL set, EVENTS_QUEUE_URL
+	// unset) would pass a nil qClient to the interest consumer and panic.
 	var qClient *queue.Client
-	if cfg.EventsQueueURL != "" {
+	if cfg.EventsQueueURL != "" || cfg.InterestsQueueURL != "" {
 		qClient, err = queue.NewClient(ctx, cfg.AWSRegion, cfg.SQSEndpoint)
 		if err != nil {
 			return fmt.Errorf("queue client: %w", err)
 		}
+	}
+
+	var consumer *ingest.Consumer
+	if cfg.EventsQueueURL != "" {
 		h := ingest.NewEventHandler(q, city.ID)
 		consumer = ingest.NewConsumer(qClient, cfg.EventsQueueURL, h, cfg.IngestWorkers, "events")
 	}
