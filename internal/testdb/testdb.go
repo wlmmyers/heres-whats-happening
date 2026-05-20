@@ -82,9 +82,12 @@ func truncateAll(t *testing.T, p *pgxpool.Pool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	// Truncate tables that hold test data. `cities` is seeded by the migration
-	// and is not truncated. Add tables here as migrations introduce them.
+	// Order matters: children before parents to avoid FK violations on TRUNCATE CASCADE.
 	tables := []string{
+		"event_genres",
+		"event_performers",
+		"events",
+		"venues",
 		"user_interests",
 		"refresh_tokens",
 		"users",

@@ -17,5 +17,19 @@ services:
       timeout: 5s
       retries: 20
 
+  elasticmq:
+    image: softwaremill/elasticmq-native:1.6.7
+    container_name: hwh_elasticmq
+    ports:
+      - "9324:9324"
+      - "9325:9325"
+    volumes:
+      - ./scripts/elasticmq.conf:/opt/elasticmq.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:9324/?Action=ListQueues || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   pgdata:
