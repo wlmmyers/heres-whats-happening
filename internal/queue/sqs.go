@@ -9,6 +9,7 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
 type Client struct {
@@ -98,3 +99,24 @@ func (c *Client) Purge(ctx context.Context, queueURL string) error {
 	time.Sleep(500 * time.Millisecond)
 	return nil
 }
+
+// CreateTestQueue creates a fresh queue with the given name and returns its URL.
+// Test-only convenience for isolating tests from the shared events-queue.
+func (c *Client) CreateTestQueue(ctx context.Context, name string) (string, error) {
+	out, err := c.sqs.CreateQueue(ctx, &sqs.CreateQueueInput{QueueName: &name})
+	if err != nil {
+		return "", fmt.Errorf("create queue %q: %w", name, err)
+	}
+	return *out.QueueUrl, nil
+}
+
+// DeleteTestQueue removes a queue. Test-only.
+func (c *Client) DeleteTestQueue(ctx context.Context, queueURL string) error {
+	_, err := c.sqs.DeleteQueue(ctx, &sqs.DeleteQueueInput{QueueUrl: &queueURL})
+	if err != nil {
+		return fmt.Errorf("delete queue: %w", err)
+	}
+	return nil
+}
+
+var _ = sqstypes.QueueAttributeName("") // reserved for future attribute lookups
