@@ -17,3 +17,8 @@ WHERE id = $1 AND deleted_at IS NULL;
 UPDATE users
 SET deleted_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: GetDefaultCity :one
+SELECT id, slug, name, timezone
+FROM cities
+WHERE slug = 'v1-city';

@@ -42,6 +42,24 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 	return i, err
 }
 
+const getDefaultCity = `-- name: GetDefaultCity :one
+SELECT id, slug, name, timezone
+FROM cities
+WHERE slug = 'v1-city'
+`
+
+func (q *Queries) GetDefaultCity(ctx context.Context) (City, error) {
+	row := q.db.QueryRow(ctx, getDefaultCity)
+	var i City
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Timezone,
+	)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, password_hash, city_id, created_at
 FROM users
