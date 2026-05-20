@@ -16,6 +16,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/config"
 	"github.com/wmyers/heres-whats-happening/internal/db"
 	hs "github.com/wmyers/heres-whats-happening/internal/http"
+	"github.com/wmyers/heres-whats-happening/internal/ingest"
 	"github.com/wmyers/heres-whats-happening/internal/queue"
 	"github.com/wmyers/heres-whats-happening/internal/scraper"
 	"github.com/wmyers/heres-whats-happening/internal/scraper/ticketmaster"
@@ -75,15 +76,27 @@ func serve() error {
 		return fmt.Errorf("load default city: %w", err)
 	}
 
-	s := &hs.Server{
-		Addr:          cfg.HTTPAddr,
-		DB:            pool,
-		Queries:       q,
-		JWTSigner:     auth.NewJWTSigner(cfg.JWTSigningKey, cfg.JWTAccessTTL),
-		RefreshTTL:    cfg.RefreshTTL,
-		DefaultCityID: cityIDString(city.ID),
+	// Build SQS client and consumer if EVENTS_QUEUE_URL is set.
+	var consumer *ingest.Consumer
+	if cfg.EventsQueueURL != "" {
+		qClient, err := queue.NewClient(ctx, cfg.AWSRegion, cfg.SQSEndpoint)
+		if err != nil {
+			return fmt.Errorf("queue client: %w", err)
+		}
+		h := ingest.NewHandler(q, city.ID)
+		consumer = ingest.NewConsumer(qClient, cfg.EventsQueueURL, h, cfg.IngestWorkers)
 	}
-	fmt.Printf("listening on %s\n", cfg.HTTPAddr)
+
+	s := &hs.Server{
+		Addr:           cfg.HTTPAddr,
+		DB:             pool,
+		Queries:        q,
+		JWTSigner:      auth.NewJWTSigner(cfg.JWTSigningKey, cfg.JWTAccessTTL),
+		RefreshTTL:     cfg.RefreshTTL,
+		DefaultCityID:  cityIDString(city.ID),
+		IngestConsumer: consumer,
+	}
+	fmt.Printf("listening on %s (ingest workers=%d)\n", cfg.HTTPAddr, cfg.IngestWorkers)
 	return s.Run(ctx)
 }
 

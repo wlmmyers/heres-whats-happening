@@ -12,6 +12,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/auth"
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
+	"github.com/wmyers/heres-whats-happening/internal/ingest"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
 
@@ -22,6 +23,9 @@ type Server struct {
 	JWTSigner     *auth.JWTSigner
 	RefreshTTL    time.Duration
 	DefaultCityID string
+
+	// Optional. If non-nil, Run also starts the ingest consumer.
+	IngestConsumer *ingest.Consumer
 }
 
 func (s *Server) Router() http.Handler {
@@ -61,8 +65,13 @@ func (s *Server) Run(ctx context.Context) error {
 		Handler:           s.Router(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
 	go func() { errCh <- httpSrv.ListenAndServe() }()
+
+	if s.IngestConsumer != nil {
+		go func() { errCh <- s.IngestConsumer.Run(ctx) }()
+	}
+
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
