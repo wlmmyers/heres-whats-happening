@@ -1,0 +1,15 @@
+.git
+.gitignore
+docker-compose.yml
+Makefile
+README.md
+*.md
+.env
+.env.local
+.env.example
+docs/
+.superpowers/
+sql/queries/
+cmd/app/app
+*.test
+coverage.out
