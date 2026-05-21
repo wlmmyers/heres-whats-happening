@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and fill in.
+# Required:
+approval_email = "you@example.com"
+
+# Optional overrides:
+# aws_region      = "us-east-1"
+# app_name_prefix = "hwh"
+# github_owner    = "wmyers"
+# github_repo     = "heres-whats-happening"
+# github_branch   = "master"
