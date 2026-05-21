@@ -30,8 +30,9 @@ func seedCalendarFixture(t *testing.T, q *store.Queries, ctx context.Context) (p
 	})
 	require.NoError(t, err)
 	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	addr := "100 Main St"
 	venueID, _ := q.UpsertVenue(ctx, store.UpsertVenueParams{
-		CityID: city.ID, Name: "The Bowl", NormalizedName: "the bowl",
+		CityID: city.ID, Name: "The Bowl", NormalizedName: "the bowl", Address: &addr,
 	})
 	eventID, _ := q.UpsertEvent(ctx, store.UpsertEventParams{
 		SourceID:      src.ID,

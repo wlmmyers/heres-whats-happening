@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
@@ -126,4 +127,49 @@ func TestDeleteIcalToken_RemovesRow(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx,
 		"SELECT count(*) FROM ical_tokens WHERE user_id = $1", userRow.ID).Scan(&n))
 	require.Equal(t, 0, n)
+}
+
+func TestGetIcalFeed_ReturnsRFC5545(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	rawToken := "test-token-not-random-but-fine-for-test"
+	require.NoError(t, q.UpsertIcalToken(ctx, store.UpsertIcalTokenParams{
+		UserID:    userID,
+		TokenHash: auth.HashRefresh(rawToken),
+	}))
+
+	r := chi.NewRouter()
+	r.Get("/ical/{token}", handlers.GetIcalFeed(q))
+
+	req := httptest.NewRequest(http.MethodGet, "/ical/"+rawToken+".ics", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "text/calendar; charset=utf-8", rec.Result().Header.Get("Content-Type"))
+	require.Contains(t, rec.Result().Header.Get("Cache-Control"), "max-age=3600")
+	require.Equal(t, "PT1H", rec.Result().Header.Get("X-Published-Ttl"))
+
+	body := rec.Body.String()
+	require.Contains(t, body, "BEGIN:VCALENDAR")
+	require.Contains(t, body, "BEGIN:VEVENT")
+	require.Contains(t, body, "SUMMARY:PB Live")
+	require.Contains(t, body, `LOCATION:The Bowl\, 100 Main St`)
+	require.Contains(t, body, "END:VCALENDAR")
+}
+
+func TestGetIcalFeed_UnknownToken_404(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+
+	r := chi.NewRouter()
+	r.Get("/ical/{token}", handlers.GetIcalFeed(q))
+
+	req := httptest.NewRequest(http.MethodGet, "/ical/nope-not-a-real-token.ics", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusNotFound, rec.Code)
 }
