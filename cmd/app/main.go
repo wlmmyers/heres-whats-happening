@@ -134,6 +134,7 @@ func serve() error {
 		OAuthHMACKey:      []byte(cfg.JWTSigningKey),
 		InterestsQueueURL: cfg.InterestsQueueURL,
 		QueuePublisher:    qClient,
+		IcalBaseURL:       cfg.IcalBaseURL,
 	}
 	fmt.Printf("listening on %s (ingest workers=%d)\n", cfg.HTTPAddr, cfg.IngestWorkers)
 	return s.Run(ctx)
