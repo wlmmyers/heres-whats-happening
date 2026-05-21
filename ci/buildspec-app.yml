@@ -1,0 +1,63 @@
+version: 0.2
+
+# Dual-phase buildspec: same file used by both app-build and app-deploy
+# CodeBuild projects. The APP_PHASE env var (set in the CodeBuild project
+# config) selects which logic runs.
+
+phases:
+  install:
+    runtime-versions:
+      golang: 1.24
+    commands:
+      - go version
+
+  pre_build:
+    commands:
+      - echo "Phase = ${APP_PHASE}"
+      - SHORT_SHA=$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION}" | cut -c1-7)
+      - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${SHORT_SHA}"
+      - echo "IMAGE_URI=${IMAGE_URI}"
+      - aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+  build:
+    commands:
+      # BUILD PHASE — only when APP_PHASE=build
+      - |
+        if [ "${APP_PHASE}" = "build" ]; then
+          echo "=== Running tests ==="
+          go test ./... -count=1 || (echo "tests failed" && exit 1)
+          echo "=== Building Docker image ==="
+          docker build -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+          echo "${IMAGE_URI}" > image_uri.txt
+        fi
+
+      # DEPLOY PHASE — only when APP_PHASE=deploy
+      - |
+        if [ "${APP_PHASE}" = "deploy" ]; then
+          echo "=== Deploying ${IMAGE_URI} ==="
+          # Discover the API ECS service (created by Plan 8). If it doesn't
+          # exist yet, treat this as a no-op success — the image is in ECR
+          # and ready for Plan 8 to pick up.
+          SERVICE_NAME="${APP_NAME_PREFIX}-api"
+          CLUSTER_NAME="${APP_NAME_PREFIX}-cluster"
+
+          if aws ecs describe-services --cluster "${CLUSTER_NAME}" --services "${SERVICE_NAME}" --region "${AWS_REGION}" 2>/dev/null | grep -q '"status": "ACTIVE"'; then
+            TASK_DEF_ARN=$(aws ecs describe-services --cluster "${CLUSTER_NAME}" --services "${SERVICE_NAME}" --region "${AWS_REGION}" --query 'services[0].taskDefinition' --output text)
+            aws ecs describe-task-definition --task-definition "${TASK_DEF_ARN}" --region "${AWS_REGION}" --query 'taskDefinition' > taskdef.json
+            jq --arg img "${IMAGE_URI}" '
+              .containerDefinitions[0].image = $img |
+              del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
+            ' taskdef.json > taskdef.new.json
+            NEW_TASK_DEF=$(aws ecs register-task-definition --cli-input-json file://taskdef.new.json --region "${AWS_REGION}" --query 'taskDefinition.taskDefinitionArn' --output text)
+            aws ecs update-service --cluster "${CLUSTER_NAME}" --service "${SERVICE_NAME}" --task-definition "${NEW_TASK_DEF}" --region "${AWS_REGION}" > /dev/null
+            echo "Deployed ${NEW_TASK_DEF} to ${SERVICE_NAME}"
+          else
+            echo "Service ${SERVICE_NAME} not found in cluster ${CLUSTER_NAME} (Plan 8 not yet applied). Image is in ECR; skipping deploy."
+          fi
+        fi
+
+artifacts:
+  files:
+    - image_uri.txt
+  discard-paths: yes
