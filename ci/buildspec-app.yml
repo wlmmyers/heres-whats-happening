@@ -14,13 +14,16 @@ phases:
   pre_build:
     commands:
       - echo "Phase = ${APP_PHASE}"
+
+  build:
+    commands:
+      # All variables and docker login go here — CodeBuild phases run in
+      # separate shells, so variables set in pre_build do NOT carry over.
       - SHORT_SHA=$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION}" | cut -c1-7)
       - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${SHORT_SHA}"
       - echo "IMAGE_URI=${IMAGE_URI}"
       - aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-  build:
-    commands:
       # BUILD PHASE — only when APP_PHASE=build
       - |
         if [ "${APP_PHASE}" = "build" ]; then
