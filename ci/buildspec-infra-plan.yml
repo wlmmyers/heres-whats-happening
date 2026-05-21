@@ -1,0 +1,33 @@
+version: 0.2
+
+env:
+  variables:
+    TF_VERSION: "1.7.5"
+
+phases:
+  install:
+    commands:
+      - curl -sSL https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip -o tf.zip
+      - unzip -q tf.zip && mv terraform /usr/local/bin/terraform
+      - terraform version
+
+  pre_build:
+    commands:
+      - echo "Plan target: ${TF_STACK_DIR}"
+      - cd ${TF_STACK_DIR}
+      - terraform init -input=false
+      - terraform fmt -check -recursive
+      - terraform validate
+
+  build:
+    commands:
+      - cd ${TF_STACK_DIR}
+      - terraform plan -input=false -out=tfplan -detailed-exitcode || PLAN_EXIT=$?
+      - echo "Plan exit code (0=no-changes, 2=changes) ${PLAN_EXIT:-0}"
+      - terraform show -no-color tfplan > tfplan.txt
+      - echo "--- plan summary ---" && head -100 tfplan.txt
+
+artifacts:
+  base-directory: .
+  files:
+    - "**/*"

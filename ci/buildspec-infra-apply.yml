@@ -1,0 +1,23 @@
+version: 0.2
+
+env:
+  variables:
+    TF_VERSION: "1.7.5"
+
+phases:
+  install:
+    commands:
+      - curl -sSL https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip -o tf.zip
+      - unzip -q tf.zip && mv terraform /usr/local/bin/terraform
+      - terraform version
+
+  pre_build:
+    commands:
+      - cd ${TF_STACK_DIR}
+      - terraform init -input=false
+
+  build:
+    commands:
+      - cd ${TF_STACK_DIR}
+      - test -f tfplan || (echo "ERROR tfplan artifact missing — did the Plan stage succeed?" && exit 1)
+      - terraform apply -input=false -auto-approve tfplan

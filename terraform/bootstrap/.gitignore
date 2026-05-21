@@ -1,0 +1,11 @@
+# Local Terraform state (bootstrap uses local backend)
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfstate.*.backup
+
+# Terraform working dir (cached providers + modules)
+.terraform/
+.terraform.lock.hcl
+
+# Plan files
+*.tfplan
