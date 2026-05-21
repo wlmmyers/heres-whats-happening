@@ -188,3 +188,48 @@ curl -s -X DELETE -H "Authorization: Bearer $ACCESS" \
 ```
 
 The old URL stops working immediately. Generate a new one via POST.
+
+## Plan 7 quickstart — Terraform bootstrap + CI/CD pipelines
+
+Bootstrap creates the AWS-side scaffolding: state backend (S3 + DynamoDB),
+GitHub CodeStar connection, ECR repo, SNS approval topic, IAM roles, and
+two CodePipelines (infra + app). Run this **once** from a developer laptop
+with AWS admin credentials.
+
+```bash
+cd terraform/bootstrap
+
+# Configure your inputs
+cp terraform.tfvars.example terraform.tfvars
+# Open terraform.tfvars and set approval_email at minimum.
+
+# Apply
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
+After apply, the outputs print three required follow-ups:
+
+1. **Authorize the GitHub CodeStar Connection.** Terraform creates it in
+   `PENDING` state. Go to AWS Console → Developer Tools → Settings →
+   Connections → `hwh-github` → Update pending connection → authorize the
+   `AWS Connector for GitHub` app on the `wmyers/heres-whats-happening` repo.
+   Until you do this, the pipelines fail at their Source stage.
+
+2. **Confirm the SNS email subscription.** AWS emails the address you set
+   in `approval_email`. Click the link to confirm. Without confirmation,
+   manual-approval notifications won't arrive.
+
+3. **Store the local Terraform state file safely.**
+   `terraform/bootstrap/terraform.tfstate` is gitignored. Copy it to a
+   password manager / encrypted volume — without it you can't update
+   bootstrap resources later.
+
+The pipelines exist and will run on every push to `master`, but they're
+no-op until:
+- `terraform/prod/` is populated (Plan 8) — the infra pipeline will then
+  start producing meaningful plans for the manual-approval gate.
+- An ECS service exists (Plan 8) — the app pipeline's Deploy stage will
+  then actually update the running task definition. Until then, it just
+  pushes the image to ECR.
