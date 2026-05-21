@@ -181,14 +181,14 @@ data "aws_iam_policy_document" "codebuild_app" {
     ]
     resources = ["*"]
   }
-  # Pass roles to ECS tasks (Plan 8 will create task execution + task roles).
+  # Pass roles to ECS tasks and EventBridge schedules (Plan 8 will create both).
   statement {
     actions   = ["iam:PassRole"]
     resources = ["*"]
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
-      values   = ["ecs-tasks.amazonaws.com"]
+      values   = ["ecs-tasks.amazonaws.com", "scheduler.amazonaws.com"]
     }
   }
   # Update EventBridge Scheduler targets so scheduled tasks pick up new task-def revisions.
