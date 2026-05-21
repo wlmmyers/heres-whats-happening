@@ -15,3 +15,7 @@ coverage.out
 
 # TEI model cache (pre-seeded by make tei-seed; not checked in)
 /.tei-cache/
+
+# Terraform secrets
+*.tfvars
+!*.tfvars.example
