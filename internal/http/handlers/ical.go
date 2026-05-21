@@ -46,3 +46,22 @@ func CreateIcalToken(q *store.Queries, baseURL string) http.HandlerFunc {
 		})
 	}
 }
+
+// DeleteIcalToken removes the user's iCal subscription token. The previously
+// issued URL stops working immediately.
+func DeleteIcalToken(q *store.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid, ok := middleware.UserIDFromContext(r.Context())
+		if !ok {
+			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		if err := q.DeleteIcalTokenByUser(ctx, pgtype.UUID{Bytes: uid, Valid: true}); err != nil {
+			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not delete token")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}

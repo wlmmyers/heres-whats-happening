@@ -97,3 +97,33 @@ func TestCreateIcalToken_RotatesOnRepeat(t *testing.T) {
 
 	var _ pgtype.UUID
 }
+
+func TestDeleteIcalToken_RemovesRow(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "ical-del@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+	require.NoError(t, q.UpsertIcalToken(ctx, store.UpsertIcalTokenParams{
+		UserID:    userRow.ID,
+		TokenHash: []byte("hash-bytes"),
+	}))
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID))
+	mw := middleware.RequireAuth(signer)
+	h := mw(handlers.DeleteIcalToken(q))
+
+	req := httptest.NewRequest(http.MethodDelete, "/me/ical-token", nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusNoContent, rec.Code)
+
+	var n int
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT count(*) FROM ical_tokens WHERE user_id = $1", userRow.ID).Scan(&n))
+	require.Equal(t, 0, n)
+}
