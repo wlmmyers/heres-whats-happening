@@ -6,8 +6,6 @@ env:
 
 phases:
   install:
-    runtime-versions:
-      golang: latest
     commands:
       - curl -sSL https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip -o tf.zip
       - unzip -q tf.zip && mv terraform /usr/local/bin/terraform
