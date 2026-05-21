@@ -59,6 +59,13 @@ type Genre struct {
 	Label string `json:"label"`
 }
 
+type IcalToken struct {
+	UserID         pgtype.UUID        `json:"user_id"`
+	TokenHash      []byte             `json:"token_hash"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	LastAccessedAt pgtype.Timestamptz `json:"last_accessed_at"`
+}
+
 type MatchConfig struct {
 	Key       string             `json:"key"`
 	Value     []byte             `json:"value"`

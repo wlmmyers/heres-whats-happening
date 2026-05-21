@@ -35,6 +35,9 @@ type Server struct {
 	OAuthHMACKey      []byte
 	InterestsQueueURL string
 	QueuePublisher    handlers.CallbackPublisher // *queue.Client satisfies this
+
+	// Plan 5 addition
+	IcalBaseURL string
 }
 
 func (s *Server) Router() http.Handler {
@@ -48,6 +51,8 @@ func (s *Server) Router() http.Handler {
 	// Public
 	r.Get("/healthz", handlers.Healthz())
 	r.Get("/readyz", handlers.Readyz(s.DB))
+	// Public iCal feed — token in URL is the credential.
+	r.Get("/ical/{token}", handlers.GetIcalFeed(s.Queries))
 
 	// Auth (public)
 	r.Post("/auth/signup", handlers.Signup(s.Queries, s.JWTSigner, s.RefreshTTL, s.DefaultCityID))
@@ -68,6 +73,10 @@ func (s *Server) Router() http.Handler {
 			s.Queries, s.SpotifyClient, s.SpotifyCipher, s.OAuthHMACKey,
 			s.QueuePublisher, s.InterestsQueueURL))
 		r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
+		r.Get("/me/calendar", handlers.GetMyCalendar(s.Queries))
+		r.Get("/events/{id}", handlers.GetEventByIDForUser(s.Queries))
+		r.Post("/me/ical-token", handlers.CreateIcalToken(s.Queries, s.IcalBaseURL))
+		r.Delete("/me/ical-token", handlers.DeleteIcalToken(s.Queries))
 	})
 
 	return r

@@ -149,3 +149,42 @@ docker exec hwh_postgres psql -U app -d appdb -c "
   LIMIT 20;
 "
 ```
+
+## Plan 5 quickstart — calendar API + iCal feed
+
+```bash
+# Make sure ICAL_BASE_URL is set in .env (default http://localhost:8080)
+make db-up && make run
+```
+
+### Read your matched calendar
+
+```bash
+ACCESS=...  # JWT from /auth/login
+curl -s -H "Authorization: Bearer $ACCESS" \
+  "http://localhost:8080/me/calendar?from=2026-05-20&to=2026-08-01" \
+  | python3 -m json.tool | head -40
+```
+
+### Subscribe via your calendar app
+
+```bash
+# Generate a token — the URL is returned exactly once.
+ACCESS=...
+curl -s -X POST -H "Authorization: Bearer $ACCESS" \
+  http://localhost:8080/me/ical-token
+# → {"url":"http://localhost:8080/ical/<token>.ics"}
+```
+
+Paste that URL into iOS Calendar → Add Account → Other → Add Subscribed
+Calendar, or Google Calendar → Other Calendars → From URL. Your calendar
+app will pull the feed roughly hourly (the `X-PUBLISHED-TTL: PT1H` hint).
+
+### Revoke
+
+```bash
+curl -s -X DELETE -H "Authorization: Bearer $ACCESS" \
+  http://localhost:8080/me/ical-token  # → 204
+```
+
+The old URL stops working immediately. Generate a new one via POST.

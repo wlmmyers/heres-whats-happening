@@ -34,6 +34,9 @@ type Config struct {
 
 	// Plan 4 additions
 	TEIEndpoint string
+
+	// Plan 5 additions
+	IcalBaseURL string
 }
 
 func Load() (*Config, error) {
@@ -101,6 +104,7 @@ func Load() (*Config, error) {
 		SpotifyTokenEncKey:  encKey,
 		InterestsQueueURL:   os.Getenv("INTERESTS_QUEUE_URL"),
 		TEIEndpoint:         os.Getenv("TEI_ENDPOINT"),
+		IcalBaseURL:         os.Getenv("ICAL_BASE_URL"),
 	}
 	return cfg, nil
 }
