@@ -94,3 +94,12 @@ func TestLoad_TEIEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "http://localhost:8081", cfg.TEIEndpoint)
 }
+
+func TestLoad_IcalBaseURL(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("ICAL_BASE_URL", "http://localhost:8080")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "http://localhost:8080", cfg.IcalBaseURL)
+}
