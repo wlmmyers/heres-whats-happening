@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
@@ -131,4 +132,97 @@ func TestGetMyCalendar_MissingDates_Returns400(t *testing.T) {
 	mw := middleware.RequireAuth(signer)
 	mw(handlers.GetMyCalendar(q)).ServeHTTP(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestGetEventByID_MatchedEvent(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, eventID := seedCalendarFixture(t, q, ctx)
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID))
+
+	r := chi.NewRouter()
+	mw := middleware.RequireAuth(signer)
+	r.With(mw).Get("/events/{id}", handlers.GetEventByIDForUser(q))
+
+	url := "/events/" + uuidFromPgCal(eventID).String()
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		ID    string  `json:"id"`
+		Title string  `json:"title"`
+		Score float64 `json:"score"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.Equal(t, "PB Live", resp.Title)
+	require.InDelta(t, 0.82, resp.Score, 0.01)
+}
+
+func TestGetEventByID_UnmatchedEvent_ScoreIsZero(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "lone@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+	venueID, _ := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Q", NormalizedName: "q",
+	})
+	eventID, _ := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:      src.ID,
+		SourceEventID: "unmatched-1",
+		Title:         "Unmatched",
+		StartsAt:      pgtype.Timestamptz{Time: time.Now().Add(48 * time.Hour), Valid: true},
+		VenueID:       venueID,
+	})
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID))
+	r := chi.NewRouter()
+	mw := middleware.RequireAuth(signer)
+	r.With(mw).Get("/events/{id}", handlers.GetEventByIDForUser(q))
+
+	req := httptest.NewRequest(http.MethodGet, "/events/"+uuidFromPgCal(eventID).String(), nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Title string  `json:"title"`
+		Score float64 `json:"score"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.Equal(t, "Unmatched", resp.Title)
+	require.Equal(t, 0.0, resp.Score)
+}
+
+func TestGetEventByID_NotFound(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "nf@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID))
+
+	r := chi.NewRouter()
+	mw := middleware.RequireAuth(signer)
+	r.With(mw).Get("/events/{id}", handlers.GetEventByIDForUser(q))
+
+	req := httptest.NewRequest(http.MethodGet, "/events/00000000-0000-0000-0000-000000000000", nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusNotFound, rec.Code)
 }

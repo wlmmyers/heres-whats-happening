@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/wmyers/heres-whats-happening/internal/http/httperr"
@@ -149,4 +151,58 @@ func uuidString(u pgtype.UUID) string {
 		}
 	}
 	return string(out)
+}
+
+// GetEventByIDForUser returns one event with the user's match info (or
+// score=0 + empty matched_because if the user doesn't have a match for it).
+func GetEventByIDForUser(q *store.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid, ok := middleware.UserIDFromContext(r.Context())
+		if !ok {
+			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
+			return
+		}
+		idStr := chi.URLParam(r, "id")
+		eventUUID, err := uuid.Parse(idStr)
+		if err != nil {
+			httperr.Write(w, http.StatusBadRequest, "bad_id", "id is not a valid uuid")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		row, err := q.GetMatchedEventForUser(ctx, store.GetMatchedEventForUserParams{
+			ID:     pgtype.UUID{Bytes: eventUUID, Valid: true},
+			UserID: pgtype.UUID{Bytes: uid, Valid: true},
+		})
+		if err != nil {
+			httperr.Write(w, http.StatusNotFound, "not_found", "event not found")
+			return
+		}
+
+		bd := parseBreakdown(row.ScoreBreakdown)
+		var score float64
+		if row.Score != nil {
+			score = *row.Score
+		}
+		ev := calendarEvent{
+			ID:          uuidString(row.EventID),
+			Title:       row.Title,
+			Description: row.Description,
+			StartsAt:    row.StartsAt.Time.UTC().Format(time.RFC3339),
+			Score:       score,
+			Venue: calendarVenue{
+				Name:    row.VenueName,
+				Address: textPtrToString(row.VenueAddress),
+			},
+			MatchedBecause: bd,
+		}
+		if row.EndsAt.Valid {
+			ev.EndsAt = row.EndsAt.Time.UTC().Format(time.RFC3339)
+		}
+		ev.ImageURL = textPtrToString(row.ImageUrl)
+		ev.URL = textPtrToString(row.Url)
+		writeJSON(w, http.StatusOK, ev)
+	}
 }
