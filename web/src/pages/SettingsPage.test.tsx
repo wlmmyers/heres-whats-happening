@@ -21,6 +21,7 @@ vi.mock('../api/ical', () => ({
 
 import * as interestsApi from '../api/interests';
 import * as icalApi from '../api/ical';
+import * as spotifyApi from '../api/spotify';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -38,6 +39,7 @@ function renderPage() {
 beforeEach(() => {
   vi.resetAllMocks();
   (interestsApi.listInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+  (spotifyApi.buildSpotifyConnectURL as ReturnType<typeof vi.fn>).mockReturnValue('/api/integrations/spotify/connect');
 });
 
 describe('SettingsPage', () => {

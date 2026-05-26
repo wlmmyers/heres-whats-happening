@@ -61,7 +61,7 @@ export default function SettingsPage() {
         </p>
         <div className="flex gap-2">
           <a
-            href={buildSpotifyConnectURL() ?? '#'}
+            href={buildSpotifyConnectURL()}
             className="bg-green-600 hover:bg-green-700 text-white rounded px-4 py-2"
           >
             Connect Spotify
