@@ -279,3 +279,53 @@ cd web && pnpm deploy
 The Go API needs `CORS_ALLOWED_ORIGINS=https://example.com` set so the SPA
 can call cross-origin from CloudFront → ALB. In dev this is unnecessary
 (Vite's proxy makes everything same-origin).
+
+## Plan 8 quickstart — Terraform prod infrastructure
+
+This is the big one — the actual production runtime. Requires Plan 7 bootstrap
+applied and the prerequisites listed in `docs/superpowers/plans/2026-05-26-plan-08-terraform-prod.md`.
+
+### Prereqs (one-time)
+
+1. Plan 7 bootstrap is applied (you already did this — Plan 7 outputs printed
+   the state bucket name).
+2. Register a domain. Create a Route53 public hosted zone for it. Update your
+   registrar's nameservers to the four NS records in the zone. Wait for DNS
+   propagation (`dig +short NS your-domain.com` returns the AWS nameservers).
+3. Replace `REPLACE_WITH_ACCOUNT_ID` in `terraform/prod/backend.tf` with your
+   AWS account ID (visible in any IAM resource ARN from Plan 7's outputs, or via
+   `aws sts get-caller-identity --query Account --output text`).
+
+### Apply
+
+```bash
+cd terraform/prod
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars and set domain_name to your real domain.
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
+First apply takes ~15 minutes (RDS, CloudFront, ACM cert validation).
+
+### Post-apply checklist
+
+The outputs print a `post_apply_steps` heredoc — follow it:
+
+1. **Seed Secrets Manager values** — Terraform creates the secret shells with
+   placeholder values; you write the real secrets via `aws secretsmanager
+   put-secret-value` for `jwt-signing-key`, `spotify-client-id`, etc.
+2. **Push a bootstrap image to ECR** — needed before the first ECS service
+   deploy. The output prints the exact docker commands.
+3. **Trigger the app pipeline** — push a commit to master, or manually start
+   the `hwh-app-pipeline` in the AWS console. This builds the real Go image
+   and rolls the api service.
+4. **Run database migrations** — connect to RDS using the master credentials
+   from Secrets Manager, run all migrations under `sql/migrations/`. A future
+   plan should automate this; for v1 it's a one-time setup.
+5. **Deploy the frontend** — fill in `web/.env.deploy` with the bucket name +
+   distribution ID from the outputs, then `cd web && pnpm deploy`.
+
+After all five: hit `https://api.your-domain.com/healthz` (should return
+`{"status":"ok"}`) and load `https://your-domain.com` in a browser.
