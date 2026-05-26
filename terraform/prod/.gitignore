@@ -1,0 +1,11 @@
+# Terraform working dir (cached providers + modules)
+.terraform/
+
+# Plan files
+*.tfplan
+
+# Local override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
