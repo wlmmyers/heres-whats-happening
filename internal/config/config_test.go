@@ -103,3 +103,12 @@ func TestLoad_IcalBaseURL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "http://localhost:8080", cfg.IcalBaseURL)
 }
+
+func TestLoad_CORSAllowedOrigins(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://example.com, https://staging.example.com")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"https://example.com", "https://staging.example.com"}, cfg.CORSAllowedOrigins)
+}

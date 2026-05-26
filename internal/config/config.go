@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,9 @@ type Config struct {
 
 	// Plan 5 additions
 	IcalBaseURL string
+
+	// Plan 6 additions
+	CORSAllowedOrigins []string
 }
 
 func Load() (*Config, error) {
@@ -85,6 +89,16 @@ func Load() (*Config, error) {
 		encKey = decoded
 	}
 
+	var corsOrigins []string
+	if v := os.Getenv("CORS_ALLOWED_ORIGINS"); v != "" {
+		for _, o := range strings.Split(v, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				corsOrigins = append(corsOrigins, o)
+			}
+		}
+	}
+
 	cfg := &Config{
 		DatabaseURL:        dbURL,
 		HTTPAddr:           addr,
@@ -105,6 +119,7 @@ func Load() (*Config, error) {
 		InterestsQueueURL:   os.Getenv("INTERESTS_QUEUE_URL"),
 		TEIEndpoint:         os.Getenv("TEI_ENDPOINT"),
 		IcalBaseURL:         os.Getenv("ICAL_BASE_URL"),
+		CORSAllowedOrigins:  corsOrigins,
 	}
 	return cfg, nil
 }

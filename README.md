@@ -233,3 +233,49 @@ no-op until:
 - An ECS service exists (Plan 8) — the app pipeline's Deploy stage will
   then actually update the running task definition. Until then, it just
   pushes the image to ECR.
+
+## Plan 6 quickstart — React + Vite frontend
+
+The SPA lives in `web/`. In dev it runs on Vite (port 5173) and proxies API
+calls to the Go backend on port 8080.
+
+```bash
+# One-time setup
+cd web
+pnpm install
+
+# Daily dev (alongside `make run` for the API)
+pnpm dev
+# Open http://localhost:5173
+```
+
+### Tests
+
+```bash
+cd web
+pnpm test          # one-shot
+pnpm test:watch    # watch mode
+```
+
+### Production build + deploy
+
+The deploy script builds, syncs to S3, and invalidates CloudFront. Bucket name +
+distribution ID come from Plan 8's Terraform outputs.
+
+```bash
+# Configure once (gitignored)
+cat > web/.env.deploy <<EOF
+S3_BUCKET=heres-whats-happening-frontend
+CLOUDFRONT_DISTRIBUTION_ID=E2XXXXXXXXX
+VITE_API_BASE_URL=https://api.example.com
+EOF
+
+# Deploy
+cd web && pnpm deploy
+```
+
+### Production CORS
+
+The Go API needs `CORS_ALLOWED_ORIGINS=https://example.com` set so the SPA
+can call cross-origin from CloudFront → ALB. In dev this is unnecessary
+(Vite's proxy makes everything same-origin).

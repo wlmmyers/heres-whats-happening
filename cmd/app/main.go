@@ -133,8 +133,9 @@ func serve() error {
 		SpotifyCipher:     cipher,
 		OAuthHMACKey:      []byte(cfg.JWTSigningKey),
 		InterestsQueueURL: cfg.InterestsQueueURL,
-		QueuePublisher:    qClient,
-		IcalBaseURL:       cfg.IcalBaseURL,
+		QueuePublisher:     qClient,
+		IcalBaseURL:        cfg.IcalBaseURL,
+		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 	}
 	fmt.Printf("listening on %s (ingest workers=%d)\n", cfg.HTTPAddr, cfg.IngestWorkers)
 	return s.Run(ctx)
