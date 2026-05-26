@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "deploy": "./scripts/deploy.sh"
   },
   "dependencies": {
     "@tanstack/react-query": "^5",
