@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import * as authApi from '../api/auth';
+import { useAuth } from '../auth/useAuth';
 
 interface LocationState {
   from?: { pathname?: string };
@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const dest = (location.state as LocationState | null)?.from?.pathname ?? '/calendar';
@@ -20,15 +21,14 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await authApi.login(email, password);
+      await login(email, password);
       navigate(dest, { replace: true });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Login failed';
       const code = (err as { code?: string }).code;
-      if (code === 'invalid_credentials' || msg.includes('credentials')) {
+      if (code === 'invalid_credentials') {
         setError('Email or password is wrong');
       } else {
-        setError(msg);
+        setError(err instanceof Error ? err.message : 'Login failed');
       }
     } finally {
       setSubmitting(false);

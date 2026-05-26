@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import * as authApi from '../api/auth';
+import { useAuth } from '../auth/useAuth';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { signup } = useAuth();
   const navigate = useNavigate();
 
   async function onSubmit(e: FormEvent) {
@@ -14,7 +15,7 @@ export default function SignupPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await authApi.signup(email, password);
+      await signup(email, password);
       navigate('/onboarding', { replace: true });
     } catch (err) {
       const code = (err as { code?: string }).code;

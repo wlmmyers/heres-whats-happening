@@ -6,7 +6,7 @@ import { AuthProvider } from '../auth/AuthContext';
 import LoginPage from './LoginPage';
 
 vi.mock('../api/auth', () => ({
-  getMe: vi.fn().mockRejectedValue(new Error('401')),
+  getMe: vi.fn(),
   login: vi.fn(),
   logout: vi.fn(),
   signup: vi.fn(),
@@ -16,7 +16,6 @@ import * as authApi from '../api/auth';
 
 beforeEach(() => {
   vi.resetAllMocks();
-  (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('401'));
 });
 
 function renderPage() {
@@ -34,8 +33,12 @@ function renderPage() {
 
 describe('LoginPage', () => {
   it('submits credentials and redirects on success', async () => {
+    // AuthProvider's mount call rejects → boots anonymous.
+    (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('401'));
     (authApi.login as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+    // useAuth().login internally calls getMe again — return the user this time.
     (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ id: 'u', email: 'a@x' });
+
     renderPage();
     await userEvent.type(screen.getByLabelText(/email/i), 'a@x');
     await userEvent.type(screen.getByLabelText(/password/i), 'hunter22');
@@ -47,14 +50,16 @@ describe('LoginPage', () => {
   });
 
   it('renders error message on failure', async () => {
+    (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('401'));
     const err = Object.assign(new Error('Invalid'), { status: 401, code: 'invalid_credentials' });
     (authApi.login as ReturnType<typeof vi.fn>).mockRejectedValueOnce(err);
+
     renderPage();
     await userEvent.type(screen.getByLabelText(/email/i), 'a@x');
     await userEvent.type(screen.getByLabelText(/password/i), 'wrong');
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
     await waitFor(() => {
-      expect(screen.getByText(/email or password is wrong|invalid/i)).toBeInTheDocument();
+      expect(screen.getByText(/email or password is wrong/i)).toBeInTheDocument();
     });
   });
 });
