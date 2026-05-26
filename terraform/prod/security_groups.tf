@@ -68,14 +68,6 @@ resource "aws_security_group" "tei_task" {
     security_groups = [aws_security_group.api_task.id]
   }
 
-  ingress {
-    description = "HTTP from match-job + scrapers (same SG once they're launched)"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    self        = true
-  }
-
   egress {
     from_port   = 0
     to_port     = 0

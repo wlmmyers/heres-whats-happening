@@ -2,6 +2,11 @@ variable "aws_region" {
   description = "AWS region for all prod resources."
   type        = string
   default     = "us-east-1"
+
+  validation {
+    condition     = var.aws_region == "us-east-1"
+    error_message = "aws_region must be us-east-1: the frontend ACM certificate is consumed by CloudFront, which only accepts certificates from us-east-1."
+  }
 }
 
 variable "app_name_prefix" {
@@ -14,12 +19,6 @@ variable "domain_name" {
   description = "Apex domain. The SPA is served from this; the API from api.<domain>. Override in terraform.tfvars."
   type        = string
   default     = "example.com"
-}
-
-variable "default_city_slug" {
-  description = "Slug of the default city seeded in migration 0001. The API uses this for new signups."
-  type        = string
-  default     = "v1-city"
 }
 
 variable "ticketmaster_city" {
