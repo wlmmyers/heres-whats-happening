@@ -38,12 +38,18 @@ type Server struct {
 
 	// Plan 5 addition
 	IcalBaseURL string
+
+	// Plan 6 addition — list of Origin values to allow CORS for. If empty, CORS is disabled.
+	CORSAllowedOrigins []string
 }
 
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
+	if len(s.CORSAllowedOrigins) > 0 {
+		r.Use(middleware.CORS(s.CORSAllowedOrigins))
+	}
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Timeout(30 * time.Second))
