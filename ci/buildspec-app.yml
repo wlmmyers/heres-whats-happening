@@ -39,22 +39,31 @@ phases:
       - |
         if [ "${APP_PHASE}" = "deploy" ]; then
           echo "=== Deploying ${IMAGE_URI} ==="
-          # Discover the API ECS service (created by Plan 8). If it doesn't
-          # exist yet, treat this as a no-op success — the image is in ECR
-          # and ready for Plan 8 to pick up.
           SERVICE_NAME="${APP_NAME_PREFIX}-api"
           CLUSTER_NAME="${APP_NAME_PREFIX}-cluster"
+          # All task-def families managed by Plan 8.
+          FAMILIES="${APP_NAME_PREFIX}-api ${APP_NAME_PREFIX}-scrape-events-ticketmaster ${APP_NAME_PREFIX}-scrape-spotify ${APP_NAME_PREFIX}-match"
 
           if aws ecs describe-services --cluster "${CLUSTER_NAME}" --services "${SERVICE_NAME}" --region "${AWS_REGION}" 2>/dev/null | grep -q '"status": "ACTIVE"'; then
-            TASK_DEF_ARN=$(aws ecs describe-services --cluster "${CLUSTER_NAME}" --services "${SERVICE_NAME}" --region "${AWS_REGION}" --query 'services[0].taskDefinition' --output text)
-            aws ecs describe-task-definition --task-definition "${TASK_DEF_ARN}" --region "${AWS_REGION}" --query 'taskDefinition' > taskdef.json
-            jq --arg img "${IMAGE_URI}" '
-              .containerDefinitions[0].image = $img |
-              del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
-            ' taskdef.json > taskdef.new.json
-            NEW_TASK_DEF=$(aws ecs register-task-definition --cli-input-json file://taskdef.new.json --region "${AWS_REGION}" --query 'taskDefinition.taskDefinitionArn' --output text)
-            aws ecs update-service --cluster "${CLUSTER_NAME}" --service "${SERVICE_NAME}" --task-definition "${NEW_TASK_DEF}" --region "${AWS_REGION}" > /dev/null
-            echo "Deployed ${NEW_TASK_DEF} to ${SERVICE_NAME}"
+            # Register a new revision per family, image swapped to the freshly-built one.
+            for FAMILY in $FAMILIES; do
+              echo "--- registering new revision for $FAMILY ---"
+              CURRENT_ARN=$(aws ecs describe-task-definition --task-definition "$FAMILY" --region "${AWS_REGION}" --query 'taskDefinition.taskDefinitionArn' --output text)
+              aws ecs describe-task-definition --task-definition "$CURRENT_ARN" --region "${AWS_REGION}" --query 'taskDefinition' > taskdef.json
+              jq --arg img "${IMAGE_URI}" '
+                .containerDefinitions[0].image = $img |
+                del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
+              ' taskdef.json > taskdef.new.json
+              NEW_ARN=$(aws ecs register-task-definition --cli-input-json file://taskdef.new.json --region "${AWS_REGION}" --query 'taskDefinition.taskDefinitionArn' --output text)
+              echo "registered $NEW_ARN"
+
+              # api gets a rolling deploy via update-service. Others rely on EventBridge
+              # picking up :LATEST next firing.
+              if [ "$FAMILY" = "${APP_NAME_PREFIX}-api" ]; then
+                aws ecs update-service --cluster "${CLUSTER_NAME}" --service "${SERVICE_NAME}" --task-definition "$NEW_ARN" --region "${AWS_REGION}" > /dev/null
+                echo "deployed $NEW_ARN to $SERVICE_NAME"
+              fi
+            done
           else
             echo "Service ${SERVICE_NAME} not found in cluster ${CLUSTER_NAME} (Plan 8 not yet applied). Image is in ECR; skipping deploy."
           fi
