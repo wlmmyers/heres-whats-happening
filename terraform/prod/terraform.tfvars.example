@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars and fill in.
+# Required overrides:
+domain_name = "your-actual-domain.com"
+
+# Optional overrides:
+# aws_region              = "us-east-1"
+# app_name_prefix         = "hwh"
+# ticketmaster_city       = "New York"
+# db_instance_class       = "db.t4g.small"
+# db_backup_retention_days = 7
+# ingest_workers          = 4
