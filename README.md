@@ -4,7 +4,7 @@ A custom event calendar based on your interests.
 
 See [docs/superpowers/specs/2026-05-19-event-calendar-design.md](docs/superpowers/specs/2026-05-19-event-calendar-design.md) for the v1 design.
 
-## Local dev quickstart (Plan 1 — backend foundation)
+## Local dev quickstart — backend foundation
 
 Prerequisites: Go 1.24+, Docker, `sqlc` (`go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0`).
 
@@ -42,7 +42,7 @@ curl -X POST http://localhost:8080/me/interests \
 curl http://localhost:8080/me/interests -H "Authorization: Bearer $ACCESS"
 ```
 
-## Plan 2 quickstart — event ingest
+## Event ingest quickstart
 
 ```bash
 # Start ElasticMQ (local SQS) alongside Postgres
@@ -67,7 +67,7 @@ processes that communicate through the queue. You can run the scraper without
 the server (messages queue up) or the server without the scraper (consumer
 sits idle, long-polling).
 
-## Plan 3 quickstart — Spotify integration
+## Spotify integration quickstart
 
 ```bash
 # Prereqs: register a Spotify app at https://developer.spotify.com/dashboard
@@ -87,7 +87,7 @@ make run    # starts api + events consumer + interests consumer
 
 ### Connect a user
 
-1. Sign up + log in via the auth flow (Plan 1 quickstart).
+1. Sign up + log in via the auth flow (Local dev quickstart).
 2. Visit `http://localhost:8080/integrations/spotify/connect` in a browser
    with your access token in the `Authorization` header (use a REST client
    like Postman, or wrap in a small HTML form).
@@ -108,7 +108,7 @@ docker exec hwh_postgres psql -U app -d appdb -c \
 ./app scrape spotify   # iterates all connected users, publishes fresh InterestMessages
 ```
 
-## Plan 4 quickstart — match-job
+## Match-job quickstart
 
 ```bash
 # Start the TEI sidecar (BAAI/bge-small-en-v1.5)
@@ -150,7 +150,7 @@ docker exec hwh_postgres psql -U app -d appdb -c "
 "
 ```
 
-## Plan 5 quickstart — calendar API + iCal feed
+## Calendar API + iCal feed quickstart
 
 ```bash
 # Make sure ICAL_BASE_URL is set in .env (default http://localhost:8080)
@@ -189,7 +189,7 @@ curl -s -X DELETE -H "Authorization: Bearer $ACCESS" \
 
 The old URL stops working immediately. Generate a new one via POST.
 
-## Plan 7 quickstart — Terraform bootstrap + CI/CD pipelines
+## Terraform bootstrap + CI/CD pipelines quickstart
 
 Bootstrap creates the AWS-side scaffolding: state backend (S3 + DynamoDB),
 GitHub CodeStar connection, ECR repo, SNS approval topic, IAM roles, and
@@ -228,13 +228,14 @@ After apply, the outputs print three required follow-ups:
 
 The pipelines exist and will run on every push to `master`, but they're
 no-op until:
-- `terraform/prod/` is populated (Plan 8) — the infra pipeline will then
-  start producing meaningful plans for the manual-approval gate.
-- An ECS service exists (Plan 8) — the app pipeline's Deploy stage will
+- `terraform/prod/` is populated (see the Terraform prod infrastructure
+  quickstart) — the infra pipeline will then start producing meaningful
+  plans for the manual-approval gate.
+- An ECS service exists (same quickstart) — the app pipeline's Deploy stage will
   then actually update the running task definition. Until then, it just
   pushes the image to ECR.
 
-## Plan 6 quickstart — React + Vite frontend
+## React + Vite frontend quickstart
 
 The SPA lives in `web/`. In dev it runs on Vite (port 5173) and proxies API
 calls to the Go backend on port 8080.
@@ -260,7 +261,8 @@ pnpm test:watch    # watch mode
 ### Production build + deploy
 
 The deploy script builds, syncs to S3, and invalidates CloudFront. Bucket name +
-distribution ID come from Plan 8's Terraform outputs.
+distribution ID come from the prod Terraform outputs (Terraform prod
+infrastructure quickstart).
 
 ```bash
 # Configure once (gitignored)
@@ -280,20 +282,21 @@ The Go API needs `CORS_ALLOWED_ORIGINS=https://example.com` set so the SPA
 can call cross-origin from CloudFront → ALB. In dev this is unnecessary
 (Vite's proxy makes everything same-origin).
 
-## Plan 8 quickstart — Terraform prod infrastructure
+## Terraform prod infrastructure quickstart
 
-This is the big one — the actual production runtime. Requires Plan 7 bootstrap
-applied and the prerequisites listed in `docs/superpowers/plans/2026-05-26-plan-08-terraform-prod.md`.
+This is the big one — the actual production runtime. Requires the Terraform
+bootstrap + CI/CD pipelines quickstart to have been completed, and the
+prerequisites listed in `docs/superpowers/plans/2026-05-26-plan-08-terraform-prod.md`.
 
 ### Prereqs (one-time)
 
-1. Plan 7 bootstrap is applied (you already did this — Plan 7 outputs printed
-   the state bucket name).
+1. The Terraform bootstrap is applied (you already did this — the bootstrap
+   outputs printed the state bucket name).
 2. Register a domain. Create a Route53 public hosted zone for it. Update your
    registrar's nameservers to the four NS records in the zone. Wait for DNS
    propagation (`dig +short NS your-domain.com` returns the AWS nameservers).
 3. Replace `REPLACE_WITH_ACCOUNT_ID` in `terraform/prod/backend.tf` with your
-   AWS account ID (visible in any IAM resource ARN from Plan 7's outputs, or via
+   AWS account ID (visible in any IAM resource ARN from the bootstrap outputs, or via
    `aws sts get-caller-identity --query Account --output text`).
 
 ### Apply
