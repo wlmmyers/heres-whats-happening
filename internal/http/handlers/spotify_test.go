@@ -191,3 +191,64 @@ func (p *fakePub) Send(ctx context.Context, qURL string, body []byte) error {
 	p.sent = append(p.sent, body)
 	return nil
 }
+
+func TestSpotifyStatus_Connected(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "spotify-status-connected@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+
+	// Seed a token row so the user is "connected".
+	_ = q.UpsertUserSpotifyTokens(ctx, store.UpsertUserSpotifyTokensParams{
+		UserID:          userRow.ID,
+		AccessTokenEnc:  []byte{1, 2, 3},
+		RefreshTokenEnc: []byte{4, 5, 6},
+		ExpiresAt:       pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		Scope:           "user-top-read",
+	})
+
+	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes))
+	h := middleware.RequireAuth(signer)(handlers.SpotifyStatus(q))
+
+	req := httptest.NewRequest(http.MethodGet, "/integrations/spotify/status", nil)
+	req.Header.Set("Authorization", "Bearer "+access)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		Connected bool `json:"connected"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.True(t, body.Connected)
+}
+
+func TestSpotifyStatus_NotConnected(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "spotify-status-disconnected@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+
+	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes))
+	h := middleware.RequireAuth(signer)(handlers.SpotifyStatus(q))
+
+	req := httptest.NewRequest(http.MethodGet, "/integrations/spotify/status", nil)
+	req.Header.Set("Authorization", "Bearer "+access)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		Connected bool `json:"connected"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.False(t, body.Connected)
+}

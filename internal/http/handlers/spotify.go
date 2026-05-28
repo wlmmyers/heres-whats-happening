@@ -3,9 +3,11 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/wmyers/heres-whats-happening/internal/crypto"
@@ -179,5 +181,26 @@ func SpotifyDisconnect(q *store.Queries) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// SpotifyStatus reports whether the authenticated user has Spotify
+// connected, i.e. whether a row exists in user_spotify_tokens.
+func SpotifyStatus(q *store.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid, ok := middleware.UserIDFromContext(r.Context())
+		if !ok {
+			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		_, err := q.GetUserSpotifyTokens(ctx, pgtype.UUID{Bytes: uid, Valid: true})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not load tokens")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"connected": err == nil})
 	}
 }
