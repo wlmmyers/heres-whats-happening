@@ -4,15 +4,18 @@ resource "aws_db_subnet_group" "main" {
   tags       = { Name = "${var.app_name_prefix}-db" }
 }
 
-# Custom parameter group: pre-load pgvector + log statements > 1s for visibility.
+# Custom parameter group: preload pg_stat_statements + log statements > 1s for visibility.
+# (pgvector needs no preload — it's enabled per-database via CREATE EXTENSION vector.)
 resource "aws_db_parameter_group" "pg16" {
   name        = "${var.app_name_prefix}-pg16-pgvector"
   family      = "postgres16"
-  description = "Plan 8 — Postgres 16 with pgvector preload + slow-query log."
+  description = "Plan 8 - Postgres 16 with pg_stat_statements preload + slow-query log."
 
+  # pgvector does NOT need preloading — it's enabled per-database with
+  # `CREATE EXTENSION vector;`. Only pg_stat_statements needs to be preloaded.
   parameter {
     name         = "shared_preload_libraries"
-    value        = "pg_stat_statements,vector"
+    value        = "pg_stat_statements"
     apply_method = "pending-reboot"
   }
   parameter {

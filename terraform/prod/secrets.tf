@@ -12,7 +12,7 @@ resource "aws_secretsmanager_secret" "app" {
   for_each = toset(local.secret_names)
   name     = "${var.app_name_prefix}/${each.key}"
 
-  description = "Plan 8 — seeded out-of-band; value not managed by Terraform."
+  description = "Plan 8 - seeded out-of-band; value not managed by Terraform."
 
   recovery_window_in_days = 7
 
