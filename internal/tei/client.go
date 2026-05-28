@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+// maxBatchSize matches TEI's default --max-client-batch-size. Requests larger
+// than this are split into sub-batches by Embed.
+const maxBatchSize = 32
+
 type Client struct {
 	baseURL string
 	http    *http.Client
@@ -24,12 +28,29 @@ func New(baseURL string) *Client {
 	}
 }
 
-// Embed sends inputs to TEI's /embed endpoint and returns a vector per input.
+// Embed sends inputs to TEI's /embed endpoint and returns a vector per input,
+// chunking into sub-batches of maxBatchSize to stay under TEI's server limit.
 // Empty input → empty output without an HTTP call.
 func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error) {
 	if len(inputs) == 0 {
 		return nil, nil
 	}
+	out := make([][]float32, 0, len(inputs))
+	for start := 0; start < len(inputs); start += maxBatchSize {
+		end := start + maxBatchSize
+		if end > len(inputs) {
+			end = len(inputs)
+		}
+		chunk, err := c.embedChunk(ctx, inputs[start:end])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, chunk...)
+	}
+	return out, nil
+}
+
+func (c *Client) embedChunk(ctx context.Context, inputs []string) ([][]float32, error) {
 	body, err := json.Marshal(struct {
 		Inputs []string `json:"inputs"`
 	}{Inputs: inputs})

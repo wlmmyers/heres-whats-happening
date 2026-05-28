@@ -23,6 +23,7 @@ export default function SpotifyCallbackPage() {
     const oauthError = params.get('error');
 
     if (oauthError) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStatus('error');
       setErrorMsg(oauthError);
       return;

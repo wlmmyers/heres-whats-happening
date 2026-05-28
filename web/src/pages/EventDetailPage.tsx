@@ -30,6 +30,14 @@ export default function EventDetailPage() {
     <article className="space-y-4">
       <Link to="/calendar" className="text-sm text-blue-600 hover:underline">← Calendar</Link>
 
+      {data.image_url && (
+        <img
+          src={data.image_url}
+          alt={data.title}
+          className="w-full max-h-96 object-cover rounded"
+        />
+      )}
+
       <header className="space-y-1">
         <h1 className="text-3xl font-semibold">{data.title}</h1>
         <div className="text-gray-700">{dateLabel}</div>
