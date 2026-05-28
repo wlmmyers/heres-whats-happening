@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -24,7 +25,10 @@ type CallbackPublisher interface {
 }
 
 // SpotifyConnect builds the Spotify authorize URL with a fresh PKCE verifier
-// and state, stores both in a signed cookie, and redirects the user there.
+// and state, stores both in a signed cookie, and returns the authorize URL as
+// JSON. The client navigates the top-level window there. (We can't 302 here
+// because this route requires a Bearer token, which browsers won't attach to
+// top-level link navigations.)
 func SpotifyConnect(client *spotify.Client, hmacKey []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		verifier, err := spotify.NewVerifier()
@@ -45,21 +49,24 @@ func SpotifyConnect(client *spotify.Client, hmacKey []byte) http.HandlerFunc {
 		http.SetCookie(w, &http.Cookie{
 			Name:     oauthCookieName,
 			Value:    cookieValue,
-			Path:     "/integrations/spotify",
+			Path:     "/",
 			HttpOnly: true,
 			Secure:   true,
 			SameSite: http.SameSiteLaxMode,
 			MaxAge:   int(oauthCookieTTL / time.Second),
 		})
 		challenge := spotify.Challenge(verifier)
-		http.Redirect(w, r, client.AuthorizeURL(state, challenge), http.StatusFound)
+		writeJSON(w, http.StatusOK, map[string]string{
+			"authorize_url": client.AuthorizeURL(state, challenge),
+		})
 	}
 }
 
-// SpotifyCallback handles the OAuth redirect-back from Spotify. It validates
-// the state cookie, exchanges the code for tokens, persists them (encrypted),
-// and triggers an immediate one-user scrape.
-func SpotifyCallback(
+// SpotifyExchange completes the OAuth flow. The SPA's callback page calls
+// this with the {code, state} returned by Spotify; the server validates the
+// state cookie (set by SpotifyConnect), exchanges the code for tokens,
+// persists them (encrypted), and triggers an immediate one-user scrape.
+func SpotifyExchange(
 	q *store.Queries,
 	client *spotify.Client,
 	cipher *crypto.Cipher,
@@ -73,6 +80,14 @@ func SpotifyCallback(
 			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
 			return
 		}
+		var body struct {
+			Code  string `json:"code"`
+			State string `json:"state"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			httperr.Write(w, http.StatusBadRequest, "bad_body", "could not parse request body")
+			return
+		}
 		c, err := r.Cookie(oauthCookieName)
 		if err != nil || c.Value == "" {
 			httperr.Write(w, http.StatusBadRequest, "no_state", "missing oauth state cookie")
@@ -83,11 +98,11 @@ func SpotifyCallback(
 			httperr.Write(w, http.StatusBadRequest, "bad_state", "oauth state is not valid")
 			return
 		}
-		if r.URL.Query().Get("state") != expectedState {
+		if body.State != expectedState {
 			httperr.Write(w, http.StatusBadRequest, "state_mismatch", "oauth state does not match")
 			return
 		}
-		code := r.URL.Query().Get("code")
+		code := body.Code
 		if code == "" {
 			httperr.Write(w, http.StatusBadRequest, "no_code", "missing oauth code")
 			return
@@ -127,7 +142,7 @@ func SpotifyCallback(
 		http.SetCookie(w, &http.Cookie{
 			Name:     oauthCookieName,
 			Value:    "",
-			Path:     "/integrations/spotify",
+			Path:     "/",
 			HttpOnly: true,
 			Secure:   true,
 			SameSite: http.SameSiteLaxMode,

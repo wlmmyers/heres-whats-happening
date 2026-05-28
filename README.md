@@ -10,14 +10,16 @@ Prerequisites: Go 1.24+, Docker, `sqlc` (`go install github.com/sqlc-dev/sqlc/cm
 
 ```bash
 cp .env.example .env
-# Start Postgres + pgvector (creates appdb and appdb_test)
+# Start Postgres + pgvector (creates appdb and appdb_test) and ElasticMQ (local
+# SQS). The test suite includes end-to-end tests that need both services up.
 make db-up
+make queue-up
 
 # Apply migrations to both databases
 make migrate
 make migrate-test
 
-# Run the test suite (integration tests against appdb_test)
+# Run the test suite (integration + e2e tests against appdb_test and ElasticMQ)
 make test
 
 # Run the server
@@ -52,8 +54,9 @@ make queue-up
 export TICKETMASTER_API_KEY=<your-key>
 export TICKETMASTER_CITY="New York"
 
-# Run a one-shot scrape (publishes EventMessage records to events-queue)
-./app scrape events --source=ticketmaster
+# Run a one-shot scrape (publishes EventMessage records to events-queue).
+# `make scrape` is a shortcut for this exact command.
+go run ./cmd/app scrape events --source=ticketmaster
 
 # Run the server with the ingest consumer enabled. The consumer drains
 # events-queue and upserts into Postgres.
@@ -75,7 +78,7 @@ sits idle, long-polling).
 # Copy Client ID + Secret into .env
 export SPOTIFY_CLIENT_ID=<your-id>
 export SPOTIFY_CLIENT_SECRET=<your-secret>
-export SPOTIFY_REDIRECT_URI=http://localhost:8080/integrations/spotify/callback
+export SPOTIFY_REDIRECT_URI=http://[::1]:8000/integrations/spotify/callback
 
 # Generate an at-rest encryption key for Spotify tokens
 openssl rand -base64 32   # paste into .env as SPOTIFY_TOKEN_ENC_KEY
@@ -105,7 +108,7 @@ docker exec hwh_postgres psql -U app -d appdb -c \
 ### Periodic scrape
 
 ```bash
-./app scrape spotify   # iterates all connected users, publishes fresh InterestMessages
+go run ./cmd/app scrape spotify   # iterates all connected users, publishes fresh InterestMessages
 ```
 
 ## Match-job quickstart
@@ -118,8 +121,8 @@ make tei-up
 # Verify TEI is healthy
 curl -s http://localhost:8081/health
 
-# Run the match-job
-./app match
+# Run the match-job (`make match` is a shortcut for this)
+go run ./cmd/app match
 # Steps it runs:
 #  1. Embed any events whose embedding column is NULL
 #  2. Embed any users whose interests changed since last embedding
@@ -130,7 +133,7 @@ curl -s http://localhost:8081/health
 ### Tuning weights
 
 Match weights live in the `match_config` table; change them with SQL and the
-next `./app match` picks them up — no rebuild needed.
+next `go run ./cmd/app match` picks them up — no rebuild needed.
 
 ```sql
 UPDATE match_config SET value = '0.7'::jsonb WHERE key = 'w_string';

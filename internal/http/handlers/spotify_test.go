@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,7 +22,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/testdb"
 )
 
-func TestSpotifyConnect_RedirectsWithPKCE(t *testing.T) {
+func TestSpotifyConnect_ReturnsAuthorizeURLWithPKCE(t *testing.T) {
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
 	client := spotify.New("cid", "csec", "http://localhost:8080/integrations/spotify/callback", "")
 	access, err := signer.SignAccess(uuid.New())
@@ -35,12 +36,15 @@ func TestSpotifyConnect_RedirectsWithPKCE(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusFound, rec.Code)
-	loc := rec.Result().Header.Get("Location")
-	require.True(t, strings.HasPrefix(loc, "https://accounts.spotify.com/authorize?"))
-	require.Contains(t, loc, "code_challenge_method=S256")
-	require.Contains(t, loc, "state=")
-	require.Contains(t, loc, "code_challenge=")
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		AuthorizeURL string `json:"authorize_url"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.True(t, strings.HasPrefix(body.AuthorizeURL, "https://accounts.spotify.com/authorize?"))
+	require.Contains(t, body.AuthorizeURL, "code_challenge_method=S256")
+	require.Contains(t, body.AuthorizeURL, "state=")
+	require.Contains(t, body.AuthorizeURL, "code_challenge=")
 
 	// Cookie set
 	var found *http.Cookie
@@ -53,7 +57,7 @@ func TestSpotifyConnect_RedirectsWithPKCE(t *testing.T) {
 	require.True(t, found.HttpOnly)
 }
 
-func TestSpotifyCallback_HappyPath(t *testing.T) {
+func TestSpotifyExchange_HappyPath(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
@@ -80,7 +84,7 @@ func TestSpotifyCallback_HappyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := spotify.New("cid", "csec", "http://localhost:8080/integrations/spotify/callback", srv.URL)
+	client := spotify.New("cid", "csec", "http://localhost:5175/integrations/spotify/callback", srv.URL)
 	hmacKey := []byte("test-key-test-key-test-key-32xx")
 	encKey := make([]byte, 32)
 	for i := range encKey {
@@ -93,11 +97,12 @@ func TestSpotifyCallback_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 
 	h := middleware.RequireAuth(signer)(
-		handlers.SpotifyCallback(q, client, cipher, hmacKey, pub, "http://q/interests-queue"))
+		handlers.SpotifyExchange(q, client, cipher, hmacKey, pub, "http://q/interests-queue"))
 
-	req := httptest.NewRequest(http.MethodGet,
-		"/integrations/spotify/callback?code=THE-CODE&state=STATE-XYZ", nil)
+	req := httptest.NewRequest(http.MethodPost, "/integrations/spotify/exchange",
+		strings.NewReader(`{"code":"THE-CODE","state":"STATE-XYZ"}`))
 	req.Header.Set("Authorization", "Bearer "+access)
+	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: "spotify_oauth", Value: cookieValue})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -115,18 +120,19 @@ func TestSpotifyCallback_HappyPath(t *testing.T) {
 	require.Len(t, pub.sent, 1)
 }
 
-func TestSpotifyCallback_StateMismatch(t *testing.T) {
+func TestSpotifyExchange_StateMismatch(t *testing.T) {
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
 	access, _ := signer.SignAccess(uuid.New())
 
 	hmacKey := []byte("test-key-test-key-test-key-32xx")
 	cookieValue, _ := spotify.SealOAuthState(hmacKey, "EXPECTED", "verifier", time.Minute)
 
-	h := middleware.RequireAuth(signer)(handlers.SpotifyCallback(nil, nil, nil, hmacKey, nil, ""))
+	h := middleware.RequireAuth(signer)(handlers.SpotifyExchange(nil, nil, nil, hmacKey, nil, ""))
 
-	req := httptest.NewRequest(http.MethodGet,
-		"/integrations/spotify/callback?code=X&state=WRONG", nil)
+	req := httptest.NewRequest(http.MethodPost, "/integrations/spotify/exchange",
+		strings.NewReader(`{"code":"X","state":"WRONG"}`))
 	req.Header.Set("Authorization", "Bearer "+access)
+	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: "spotify_oauth", Value: cookieValue})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

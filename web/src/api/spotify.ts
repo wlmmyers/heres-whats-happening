@@ -1,14 +1,25 @@
 import { apiFetch } from './client';
 
-const BASE = import.meta.env.VITE_API_BASE_URL ?? '';
+// Start the Spotify OAuth flow. The server sets the PKCE/state cookie and
+// returns the authorize URL; the caller does a top-level navigation to it.
+// Done this way (rather than a 302 redirect) because the connect endpoint is
+// behind Bearer auth — top-level link navigations can't attach Authorization.
+export async function startSpotifyConnect(): Promise<string> {
+  const { authorize_url } = await apiFetch<{ authorize_url: string }>(
+    '/integrations/spotify/connect',
+  );
+  return authorize_url;
+}
 
-// The Spotify Connect endpoint is a redirect — we build the URL and let the
-// browser navigate to it. apiFetch can't be used (no JSON response and
-// the request must be issued by the browser top-level navigation so the
-// session cookies + redirects all flow correctly).
-export function buildSpotifyConnectURL(): string {
-  if (BASE === '') return '/api/integrations/spotify/connect';
-  return `${BASE}/integrations/spotify/connect`;
+// Complete the Spotify OAuth flow. Called by the SPA's callback page with the
+// {code, state} Spotify appended to the redirect URL. Server validates state
+// against the cookie set during connect, exchanges the code for tokens, and
+// persists them.
+export async function exchangeSpotifyCode(code: string, state: string): Promise<void> {
+  await apiFetch<{ status: string }>('/integrations/spotify/exchange', {
+    method: 'POST',
+    body: { code, state },
+  });
 }
 
 export async function disconnectSpotify(): Promise<void> {

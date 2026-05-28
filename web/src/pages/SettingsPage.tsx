@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createInterest, deleteInterest, listInterests, type Interest } from '../api/interests';
-import { buildSpotifyConnectURL, disconnectSpotify } from '../api/spotify';
+import { startSpotifyConnect, disconnectSpotify } from '../api/spotify';
 import { createIcalToken, revokeIcalToken } from '../api/ical';
 import TagInput from '../components/TagInput';
 
@@ -23,6 +23,12 @@ export default function SettingsPage() {
       return deleteInterest(target.id);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['interests'] }),
+  });
+  const connectSpotifyMut = useMutation({
+    mutationFn: startSpotifyConnect,
+    onSuccess: (authorizeURL) => {
+      window.location.assign(authorizeURL);
+    },
   });
   const disconnectSpotifyMut = useMutation({
     mutationFn: disconnectSpotify,
@@ -60,12 +66,14 @@ export default function SettingsPage() {
           Connect Spotify to get matches based on your top artists and genres.
         </p>
         <div className="flex gap-2">
-          <a
-            href={buildSpotifyConnectURL()}
-            className="bg-green-600 hover:bg-green-700 text-white rounded px-4 py-2"
+          <button
+            type="button"
+            onClick={() => connectSpotifyMut.mutate()}
+            disabled={connectSpotifyMut.isPending}
+            className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded px-4 py-2"
           >
             Connect Spotify
-          </a>
+          </button>
           <button
             type="button"
             onClick={() => disconnectSpotifyMut.mutate()}

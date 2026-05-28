@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-reset migrate migrate-test test run queue-up queue-down queue-reset scrape tei-up tei-down tei-seed match
+.PHONY: db-up db-down db-reset migrate migrate-test test run run-web run-all queue-up queue-down queue-reset scrape tei-up tei-down tei-seed match
 
 ifneq (,$(wildcard .env))
     include .env
@@ -30,6 +30,15 @@ test:
 
 run:
 	go run ./cmd/app serve
+
+run-web:
+	cd web && pnpm dev
+
+run-all:
+	@trap 'kill 0' INT TERM EXIT; \
+	$(MAKE) run & \
+	$(MAKE) run-web & \
+	wait
 
 queue-up:
 	docker compose up -d elasticmq

@@ -11,7 +11,7 @@ vi.mock('../api/interests', () => ({
   deleteInterest: vi.fn(),
 }));
 vi.mock('../api/spotify', () => ({
-  buildSpotifyConnectURL: vi.fn().mockReturnValue('/api/integrations/spotify/connect'),
+  startSpotifyConnect: vi.fn(),
   disconnectSpotify: vi.fn(),
 }));
 vi.mock('../api/ical', () => ({
@@ -39,13 +39,32 @@ function renderPage() {
 beforeEach(() => {
   vi.resetAllMocks();
   (interestsApi.listInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-  (spotifyApi.buildSpotifyConnectURL as ReturnType<typeof vi.fn>).mockReturnValue('/api/integrations/spotify/connect');
 });
 
 describe('SettingsPage', () => {
-  it('shows the Connect Spotify link', async () => {
-    renderPage();
-    await waitFor(() => expect(screen.getByRole('link', { name: /connect spotify/i })).toBeInTheDocument());
+  it('navigates to the Spotify authorize URL when Connect Spotify is clicked', async () => {
+    (spotifyApi.startSpotifyConnect as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      'https://accounts.spotify.com/authorize?x=1',
+    );
+    const assign = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, assign },
+    });
+
+    try {
+      renderPage();
+      await userEvent.click(await screen.findByRole('button', { name: /connect spotify/i }));
+      await waitFor(() =>
+        expect(assign).toHaveBeenCalledWith('https://accounts.spotify.com/authorize?x=1'),
+      );
+    } finally {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
   });
 
   it('generates an iCal URL on demand and reveals it', async () => {
