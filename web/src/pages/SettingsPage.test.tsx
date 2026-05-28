@@ -13,6 +13,7 @@ vi.mock('../api/interests', () => ({
 vi.mock('../api/spotify', () => ({
   startSpotifyConnect: vi.fn(),
   disconnectSpotify: vi.fn(),
+  getSpotifyStatus: vi.fn(),
 }));
 vi.mock('../api/ical', () => ({
   createIcalToken: vi.fn(),
@@ -39,6 +40,7 @@ function renderPage() {
 beforeEach(() => {
   vi.resetAllMocks();
   (interestsApi.listInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+  (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: false });
 });
 
 describe('SettingsPage', () => {
@@ -85,5 +87,19 @@ describe('SettingsPage', () => {
     await userEvent.type(screen.getByPlaceholderText(/add an interest/i), 'theater{enter}');
     await waitFor(() => expect(interestsApi.createInterest).toHaveBeenCalledWith('theater'));
     await waitFor(() => expect(screen.getByText('theater')).toBeInTheDocument());
+  });
+
+  it('shows only the Disconnect button when Spotify is connected', async () => {
+    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: true });
+    renderPage();
+    expect(await screen.findByRole('button', { name: /disconnect/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /connect spotify/i })).not.toBeInTheDocument();
+  });
+
+  it('shows only the Connect button when Spotify is not connected', async () => {
+    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: false });
+    renderPage();
+    expect(await screen.findByRole('button', { name: /connect spotify/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
   });
 });

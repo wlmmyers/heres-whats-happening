@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createInterest, deleteInterest, listInterests, type Interest } from '../api/interests';
-import { startSpotifyConnect, disconnectSpotify } from '../api/spotify';
+import { startSpotifyConnect, disconnectSpotify, getSpotifyStatus } from '../api/spotify';
 import { createIcalToken, revokeIcalToken } from '../api/ical';
 import TagInput from '../components/TagInput';
 
@@ -24,6 +24,10 @@ export default function SettingsPage() {
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['interests'] }),
   });
+  const { data: spotifyStatus, isLoading: spotifyStatusLoading } = useQuery({
+    queryKey: ['spotify-status'],
+    queryFn: getSpotifyStatus,
+  });
   const connectSpotifyMut = useMutation({
     mutationFn: startSpotifyConnect,
     onSuccess: (authorizeURL) => {
@@ -32,6 +36,7 @@ export default function SettingsPage() {
   });
   const disconnectSpotifyMut = useMutation({
     mutationFn: disconnectSpotify,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['spotify-status'] }),
   });
 
   const [icalURL, setIcalURL] = useState<string | null>(null);
@@ -65,23 +70,32 @@ export default function SettingsPage() {
         <p className="text-gray-700 text-sm">
           Connect Spotify to get matches based on your top artists and genres.
         </p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => connectSpotifyMut.mutate()}
-            disabled={connectSpotifyMut.isPending}
-            className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded px-4 py-2"
-          >
-            Connect Spotify
-          </button>
-          <button
-            type="button"
-            onClick={() => disconnectSpotifyMut.mutate()}
-            className="border rounded px-4 py-2 hover:bg-gray-50"
-          >
-            Disconnect
-          </button>
-        </div>
+        {!spotifyStatusLoading && (
+          <div className="flex gap-2 items-center">
+            {spotifyStatus?.connected ? (
+              <>
+                <span className="text-sm text-gray-700">Connected.</span>
+                <button
+                  type="button"
+                  onClick={() => disconnectSpotifyMut.mutate()}
+                  disabled={disconnectSpotifyMut.isPending}
+                  className="border rounded px-4 py-2 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  Disconnect
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => connectSpotifyMut.mutate()}
+                disabled={connectSpotifyMut.isPending}
+                className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded px-4 py-2"
+              >
+                Connect Spotify
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
       {/* iCal */}
