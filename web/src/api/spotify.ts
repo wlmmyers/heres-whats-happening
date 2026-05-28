@@ -25,3 +25,7 @@ export async function exchangeSpotifyCode(code: string, state: string): Promise<
 export async function disconnectSpotify(): Promise<void> {
   await apiFetch<void>('/integrations/spotify', { method: 'DELETE' });
 }
+
+export async function getSpotifyStatus(): Promise<{ connected: boolean }> {
+  return apiFetch<{ connected: boolean }>('/integrations/spotify/status');
+}
