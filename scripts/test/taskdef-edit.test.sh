@@ -41,5 +41,19 @@ check "set-env leaves no duplicate" \
   "1" \
   "$(jq '[.containerDefinitions[0].environment[]|select(.name=="LOG_LEVEL")]|length' <<<"$out")"
 
+# --- set-secret: add a ref with an arn: value (verbatim) ----------------------
+STRIPE_ARN='arn:aws:secretsmanager:us-east-1:111111111111:secret:hwh/stripe-key-AbCdEf'
+out=$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-secret STRIPE_KEY="$STRIPE_ARN")
+check "set-secret adds ref verbatim" \
+  "$STRIPE_ARN" \
+  "$(jq -r '.containerDefinitions[0].secrets[]|select(.name=="STRIPE_KEY").valueFrom' <<<"$out")"
+check "set-secret preserves existing secrets" \
+  "2" \
+  "$(jq '[.containerDefinitions[0].secrets[]|select(.name=="DB_USER" or .name=="JWT_SIGNING_KEY")]|length' <<<"$out")"
+check "set-secret replaces same-name (no duplicate)" \
+  "1" \
+  "$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-secret JWT_SIGNING_KEY="$STRIPE_ARN" \
+     | jq '[.containerDefinitions[0].secrets[]|select(.name=="JWT_SIGNING_KEY")]|length')"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 ((fail == 0))
