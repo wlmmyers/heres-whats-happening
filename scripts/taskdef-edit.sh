@@ -94,7 +94,9 @@ maps() {
     sec: ((.containerDefinitions[0].secrets     // []) | map({(.name): .valueFrom}) | add // {})
   }' "$1"
 }
-if [[ "$(maps "$WORKDIR/current.json")" == "$(maps "$WORKDIR/new.json")" ]]; then
+current_maps=$(maps "$WORKDIR/current.json")
+new_maps=$(maps "$WORKDIR/new.json")
+if [[ "$current_maps" == "$new_maps" ]]; then
   echo "no changes — nothing to register"
   exit 0
 fi

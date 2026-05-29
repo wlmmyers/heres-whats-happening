@@ -72,9 +72,15 @@ check "unset leaves untouched env vars" \
 
 # --- no-op: setting a var to its current value registers nothing --------------
 out=$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-env LOG_LEVEL=info)
-check "no-op change is detected" \
+check "no-op: identical value produces no-changes message" \
   "no changes — nothing to register" \
   "$out"
+
+# --- no-op guard does NOT fire on a real change -------------------------------
+out=$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-env LOG_LEVEL=debug)
+check "real change bypasses no-op guard" \
+  "debug" \
+  "$(jq -r '.containerDefinitions[0].environment[]|select(.name=="LOG_LEVEL").value' <<<"$out")"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 ((fail == 0))
