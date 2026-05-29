@@ -159,8 +159,12 @@ jq -rn --slurpfile c "$WORKDIR/current.json" --slurpfile n "$WORKDIR/new.json" '
 
 # --- confirm before the (mutating) register -----------------------------------
 if ! ((YES)); then
-  printf 'Register new revision for %s? [y/N] ' "$FAMILY" > /dev/tty
-  read -r reply < /dev/tty
+  reply=""
+  printf 'Register new revision for %s? [y/N] ' "$FAMILY" > /dev/tty || true
+  read -r reply < /dev/tty || {
+    echo "error: no controlling terminal — re-run with --yes to skip confirmation" >&2
+    exit 1
+  }
   case "$reply" in
     y|Y) ;;
     *) echo "aborted — nothing registered"; exit 1 ;;
