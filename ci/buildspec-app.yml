@@ -27,8 +27,28 @@ phases:
       # BUILD PHASE — only when APP_PHASE=build
       - |
         if [ "${APP_PHASE}" = "build" ]; then
+          # Authenticate to Docker Hub before any pull (compose images, the
+          # golang build stage, and the BuildKit frontend) so we use our own
+          # per-account rate limit instead of the shared anonymous per-IP one.
+          echo "${DOCKERHUB_TOKEN}" | docker login --username "${DOCKERHUB_USER}" --password-stdin
+
+          # Integration tests need Postgres (localhost:5432, db appdb_test) and
+          # ElasticMQ (localhost:9324). Reuse the docker-compose definitions used
+          # for local dev. TEI is intentionally excluded — matcher tests use a
+          # fakeEmbedder, so the heavy embeddings image is never needed in CI.
+          echo "=== Starting test dependencies ==="
+          docker compose up -d --wait postgres elasticmq
+
           echo "=== Running tests ==="
-          go test ./... -count=1 || (echo "tests failed" && exit 1)
+          # Capture rc via || so a non-zero exit is "handled" (won't trip set -e
+          # before teardown), then fail explicitly after stopping the containers.
+          go test ./... -count=1 && TEST_RC=0 || TEST_RC=$?
+
+          echo "=== Stopping test dependencies ==="
+          docker compose down -v
+
+          if [ "$TEST_RC" -ne 0 ]; then echo "tests failed" && exit 1; fi
+
           echo "=== Building Docker image ==="
           docker build -t "${IMAGE_URI}" .
           docker push "${IMAGE_URI}"

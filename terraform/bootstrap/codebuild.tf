@@ -126,6 +126,17 @@ resource "aws_codebuild_project" "app_build" {
       name  = "APP_PHASE"
       value = "build"
     }
+    # Docker Hub creds for authenticated pulls — pulled from the JSON secret's keys.
+    environment_variable {
+      name  = "DOCKERHUB_USER"
+      value = "${aws_secretsmanager_secret.dockerhub.name}:username"
+      type  = "SECRETS_MANAGER"
+    }
+    environment_variable {
+      name  = "DOCKERHUB_TOKEN"
+      value = "${aws_secretsmanager_secret.dockerhub.name}:token"
+      type  = "SECRETS_MANAGER"
+    }
   }
 
   source {

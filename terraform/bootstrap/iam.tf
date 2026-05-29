@@ -216,6 +216,11 @@ data "aws_iam_policy_document" "codebuild_app" {
     ]
     resources = ["*"]
   }
+  # Read Docker Hub creds for authenticated CI pulls (seeded out-of-band).
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.dockerhub.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "codebuild_app" {
