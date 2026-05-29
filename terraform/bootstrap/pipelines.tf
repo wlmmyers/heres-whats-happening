@@ -132,12 +132,16 @@ resource "aws_codepipeline" "app" {
   stage {
     name = "Deploy"
     action {
-      name            = "DeployECS"
-      category        = "Build"
-      owner           = "AWS"
-      provider        = "CodeBuild"
-      version         = "1"
-      input_artifacts = ["build_output"]
+      name     = "DeployECS"
+      category = "Build"
+      owner    = "AWS"
+      provider = "CodeBuild"
+      version  = "1"
+      # Read from source_output, not build_output: CodeBuild locates its
+      # buildspec (ci/buildspec-app.yml) relative to the input artifact, and
+      # only the source artifact carries the ci/ dir. Deploy recomputes
+      # IMAGE_URI from the source revision, so it needs nothing from the build.
+      input_artifacts = ["source_output"]
 
       configuration = {
         ProjectName = aws_codebuild_project.app_deploy.name
