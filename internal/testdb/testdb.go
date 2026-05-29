@@ -16,19 +16,40 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"github.com/wmyers/heres-whats-happening/internal/dsn"
 )
 
-// DefaultTestDSN matches the test database provisioned by docker-compose.yml
-// and scripts/db-init.sh. Used when TEST_DATABASE_URL is unset so that
+// defaultTestComponents match the test database provisioned by docker-compose.yml
+// and scripts/db-init.sh. Used for any TEST_DB_* field left unset so that
 // `go test ./...` works without sourcing .env.example.
-const DefaultTestDSN = "postgres://app:app@localhost:5432/appdb_test?sslmode=disable"
+var defaultTestComponents = dsn.Components{
+	User: "app", Password: "app", Host: "localhost", Port: "5432",
+	Name: "appdb_test", SSLMode: "disable",
+}
 
-// DSN returns TEST_DATABASE_URL, falling back to DefaultTestDSN.
+// DSN assembles the test DSN from TEST_DB_* env vars, falling back to
+// defaultTestComponents for any field left unset.
 func DSN() string {
-	if v := os.Getenv("TEST_DATABASE_URL"); v != "" {
-		return v
+	c := defaultTestComponents
+	if v := os.Getenv("TEST_DB_USER"); v != "" {
+		c.User = v
 	}
-	return DefaultTestDSN
+	if v := os.Getenv("TEST_DB_PASSWORD"); v != "" {
+		c.Password = v
+	}
+	if v := os.Getenv("TEST_DB_HOST"); v != "" {
+		c.Host = v
+	}
+	if v := os.Getenv("TEST_DB_PORT"); v != "" {
+		c.Port = v
+	}
+	if v := os.Getenv("TEST_DB_NAME"); v != "" {
+		c.Name = v
+	}
+	if v := os.Getenv("TEST_DB_SSLMODE"); v != "" {
+		c.SSLMode = v
+	}
+	return c.DSN()
 }
 
 var (
