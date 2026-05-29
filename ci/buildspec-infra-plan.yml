@@ -14,14 +14,14 @@ phases:
   pre_build:
     commands:
       - 'echo "Plan target: ${TF_STACK_DIR}"'
-      - cd ${TF_STACK_DIR}
+      - cd "$CODEBUILD_SRC_DIR/${TF_STACK_DIR}"
       - terraform init -input=false
       - terraform fmt -check -recursive
       - terraform validate
 
   build:
     commands:
-      - cd ${TF_STACK_DIR}
+      - cd "$CODEBUILD_SRC_DIR/${TF_STACK_DIR}"
       - terraform plan -input=false -out=tfplan -detailed-exitcode || PLAN_EXIT=$?
       - echo "Plan exit code (0=no-changes, 2=changes) ${PLAN_EXIT:-0}"
       - terraform show -no-color tfplan > tfplan.txt
