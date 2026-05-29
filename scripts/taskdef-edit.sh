@@ -52,7 +52,7 @@ if ((${#SET_SECRET[@]})); then
   for nv in "${SET_SECRET[@]}"; do
     name=${nv%%=*}; ref=${nv#*=}
     valueFrom=$(resolve_secret_ref "$ref")
-    SEC_JSON=$(jq -c --arg n "$name" --arg v "$valueFrom" '. + [{name:$n, valueFrom:$v}]' <<<"$SEC_JSON")
+    SEC_JSON=$(jq -c --arg n "$name" --arg vf "$valueFrom" '. + [{name:$n, valueFrom:$vf}]' <<<"$SEC_JSON")
   done
 fi
 

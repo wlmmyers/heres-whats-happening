@@ -50,6 +50,9 @@ check "set-secret adds ref verbatim" \
 check "set-secret preserves existing secrets" \
   "2" \
   "$(jq '[.containerDefinitions[0].secrets[]|select(.name=="DB_USER" or .name=="JWT_SIGNING_KEY")]|length' <<<"$out")"
+check "set-secret leaves env untouched" \
+  "3" \
+  "$(jq '[.containerDefinitions[0].environment[]]|length' <<<"$out")"
 check "set-secret replaces same-name (no duplicate)" \
   "1" \
   "$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-secret JWT_SIGNING_KEY="$STRIPE_ARN" \
