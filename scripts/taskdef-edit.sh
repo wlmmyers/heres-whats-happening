@@ -89,11 +89,23 @@ if ((${#UNSET[@]})); then
   UNSET_JSON=$(printf '%s\n' "${UNSET[@]}" | jq -R . | jq -cs .)
 fi
 
+# jq is always needed; aws only when we'll actually call it (live fetch or any
+# register/deploy). This keeps `--dry-run` + TASKDEF_INPUT (the test path)
+# runnable without the aws CLI installed.
+command -v jq >/dev/null 2>&1 || { echo "error: 'jq' not found on PATH" >&2; exit 1; }
+if ((! DRY_RUN)) || [[ -z "${TASKDEF_INPUT:-}" ]]; then
+  command -v aws >/dev/null 2>&1 || { echo "error: 'aws' not found on PATH" >&2; exit 1; }
+fi
+
 WORKDIR=$(mktemp -d); trap 'rm -rf "$WORKDIR"' EXIT
 
-# Current revision. AWS fetch is added in a later task; for now require a file.
-: "${TASKDEF_INPUT:?TASKDEF_INPUT must point to a task-def JSON (AWS fetch added later)}"
-cp "$TASKDEF_INPUT" "$WORKDIR/current.json"
+# Current revision: from TASKDEF_INPUT (tests) or live from AWS.
+if [[ -n "${TASKDEF_INPUT:-}" ]]; then
+  cp "$TASKDEF_INPUT" "$WORKDIR/current.json"
+else
+  aws ecs describe-task-definition --task-definition "$FAMILY" \
+    --query 'taskDefinition' > "$WORKDIR/current.json"
+fi
 
 # Upsert env/secrets and drop --unset names from both; strip metadata.
 jq --argjson envUp "$ENV_JSON" --argjson secUp "$SEC_JSON" --argjson unset "$UNSET_JSON" '
@@ -128,3 +140,50 @@ if [[ "$current_maps" == "$new_maps" ]]; then
 fi
 
 if ((DRY_RUN)); then cat "$WORKDIR/new.json"; exit 0; fi
+
+# --- diff: show what changes relative to the current revision -----------------
+echo "=== changes for $FAMILY ==="
+jq -rn --slurpfile c "$WORKDIR/current.json" --slurpfile n "$WORKDIR/new.json" '
+  ($c[0].containerDefinitions[0].environment // [] | map({(.name): .value})     | add // {}) as $ce
+  | ($n[0].containerDefinitions[0].environment // [] | map({(.name): .value})     | add // {}) as $ne
+  | ($c[0].containerDefinitions[0].secrets     // [] | map({(.name): .valueFrom}) | add // {}) as $cs
+  | ($n[0].containerDefinitions[0].secrets     // [] | map({(.name): .valueFrom}) | add // {}) as $ns
+  | ( [ ($ne | keys[]) | select($ce[.] == null)                          | "ENV    + \(.)=\($ne[.])" ]
+    + [ ($ne | keys[]) | select($ce[.] != null and $ce[.] != $ne[.])     | "ENV    ~ \(.): \($ce[.]) -> \($ne[.])" ]
+    + [ ($ce | keys[]) | select($ne[.] == null)                          | "ENV    - \(.)" ]
+    + [ ($ns | keys[]) | select($cs[.] == null)                          | "SECRET + \(.) -> \($ns[.])" ]
+    + [ ($ns | keys[]) | select($cs[.] != null and $cs[.] != $ns[.])     | "SECRET ~ \(.): \($cs[.]) -> \($ns[.])" ]
+    + [ ($cs | keys[]) | select($ns[.] == null)                          | "SECRET - \(.)" ]
+    ) | .[]
+'
+
+# --- confirm before the (mutating) register -----------------------------------
+if ! ((YES)); then
+  printf 'Register new revision for %s? [y/N] ' "$FAMILY" > /dev/tty
+  read -r reply < /dev/tty
+  case "$reply" in
+    y|Y) ;;
+    *) echo "aborted — nothing registered"; exit 1 ;;
+  esac
+fi
+
+# --- register -----------------------------------------------------------------
+NEW_ARN=$(aws ecs register-task-definition \
+  --cli-input-json "file://$WORKDIR/new.json" \
+  --query 'taskDefinition.taskDefinitionArn' --output text)
+echo "registered: $NEW_ARN"
+
+# --- rollout ------------------------------------------------------------------
+if ((DEPLOY)); then
+  aws ecs update-service --cluster "$CLUSTER" --service "$FAMILY" \
+    --task-definition "$NEW_ARN" > /dev/null
+  echo "deployed $NEW_ARN to service $FAMILY"
+elif [[ "$FAMILY" == "hwh-api" ]]; then
+  cat <<EOF
+
+Not deployed. Roll the service when ready:
+  aws ecs update-service --cluster $CLUSTER --service $FAMILY --task-definition $NEW_ARN --region $AWS_DEFAULT_REGION
+EOF
+else
+  echo "note: $FAMILY is scheduled (:LATEST) — the new revision runs on its next firing; no update-service needed."
+fi
