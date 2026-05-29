@@ -25,7 +25,7 @@ resolve_secret_ref() {
   fi
 }
 
-SET_ENV=() ; SET_SECRET=() ; DRY_RUN=0
+SET_ENV=() ; SET_SECRET=() ; UNSET=() ; DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -33,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     --set-env)     SET_ENV+=("$2"); shift 2 ;;
     --set-secret)  SET_SECRET+=("$2"); shift 2 ;;
     --dry-run)     DRY_RUN=1; shift ;;
+    --unset) UNSET+=("$2"); shift 2 ;;
     *) echo "error: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -56,22 +57,30 @@ if ((${#SET_SECRET[@]})); then
   done
 fi
 
+# Build a JSON array of names to remove from both environment and secrets.
+UNSET_JSON='[]'
+if ((${#UNSET[@]})); then
+  UNSET_JSON=$(printf '%s\n' "${UNSET[@]}" | jq -R . | jq -cs .)
+fi
+
 WORKDIR=$(mktemp -d); trap 'rm -rf "$WORKDIR"' EXIT
 
 # Current revision. AWS fetch is added in a later task; for now require a file.
 : "${TASKDEF_INPUT:?TASKDEF_INPUT must point to a task-def JSON (AWS fetch added later)}"
 cp "$TASKDEF_INPUT" "$WORKDIR/current.json"
 
-# Upsert env vars and secret refs (replace same-name, else append); strip metadata.
-jq --argjson envUp "$ENV_JSON" --argjson secUp "$SEC_JSON" '
+# Upsert env/secrets and drop --unset names from both; strip metadata.
+jq --argjson envUp "$ENV_JSON" --argjson secUp "$SEC_JSON" --argjson unset "$UNSET_JSON" '
   ($envUp | map(.name)) as $en
   | ($secUp | map(.name)) as $sn
+  | ($en + $unset) as $edrop
+  | ($sn + $unset) as $sdrop
   | .containerDefinitions[0].environment =
       (((.containerDefinitions[0].environment // [])
-        | map(select(.name as $x | ($en | index($x)) == null))) + $envUp)
+        | map(select(.name as $x | ($edrop | index($x)) == null))) + $envUp)
   | .containerDefinitions[0].secrets =
       (((.containerDefinitions[0].secrets // [])
-        | map(select(.name as $x | ($sn | index($x)) == null))) + $secUp)
+        | map(select(.name as $x | ($sdrop | index($x)) == null))) + $secUp)
   | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
         .compatibilities, .registeredAt, .registeredBy)
 ' "$WORKDIR/current.json" > "$WORKDIR/new.json"

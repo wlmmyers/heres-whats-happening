@@ -58,5 +58,17 @@ check "set-secret replaces same-name (no duplicate)" \
   "$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-secret JWT_SIGNING_KEY="$STRIPE_ARN" \
      | jq '[.containerDefinitions[0].secrets[]|select(.name=="JWT_SIGNING_KEY")]|length')"
 
+# --- unset: remove a name from both environment and secrets -------------------
+out=$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --unset LOG_LEVEL --unset DB_USER)
+check "unset removes an env var" \
+  "0" \
+  "$(jq '[.containerDefinitions[0].environment[]|select(.name=="LOG_LEVEL")]|length' <<<"$out")"
+check "unset removes a secret" \
+  "0" \
+  "$(jq '[.containerDefinitions[0].secrets[]|select(.name=="DB_USER")]|length' <<<"$out")"
+check "unset leaves untouched env vars" \
+  "2" \
+  "$(jq '[.containerDefinitions[0].environment[]|select(.name=="HTTP_ADDR" or .name=="DB_HOST")]|length' <<<"$out")"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 ((fail == 0))
