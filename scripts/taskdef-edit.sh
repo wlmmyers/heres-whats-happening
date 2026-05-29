@@ -7,6 +7,18 @@
 #   AWS_PROFILE=servant AWS_DEFAULT_REGION=us-east-1 CLUSTER=hwh-cluster FAMILY=hwh-api
 set -euo pipefail
 
+usage() {
+  cat >&2 <<'EOF'
+usage: taskdef-edit.sh [--family hwh-api] (--set-env KEY=VALUE | --set-secret NAME=REF | --unset NAME)... [--deploy] [--yes] [--dry-run]
+  --set-env KEY=VALUE    upsert a plain env var
+  --set-secret NAME=REF  upsert a secret ref (arn:... verbatim, else a Secrets Manager name)
+  --unset NAME           remove NAME from env and secrets
+  --deploy               roll hwh-api via update-service after registering (api only)
+  --yes                  skip the confirmation prompt
+  --dry-run              render the new task def to stdout; do not register
+EOF
+}
+
 : "${AWS_PROFILE:=servant}"
 : "${AWS_DEFAULT_REGION:=us-east-1}"
 : "${CLUSTER:=hwh-cluster}"
@@ -25,23 +37,36 @@ resolve_secret_ref() {
   fi
 }
 
-SET_ENV=() ; SET_SECRET=() ; UNSET=() ; DRY_RUN=0
+SET_ENV=() ; SET_SECRET=() ; UNSET=() ; DEPLOY=0 ; YES=0 ; DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --family)   FAMILY="$2"; shift 2 ;;
-    --set-env)     SET_ENV+=("$2"); shift 2 ;;
-    --set-secret)  SET_SECRET+=("$2"); shift 2 ;;
-    --dry-run)     DRY_RUN=1; shift ;;
-    --unset) UNSET+=("$2"); shift 2 ;;
-    *) echo "error: unknown argument: $1" >&2; exit 2 ;;
+    --family)     [[ $# -ge 2 ]] || { echo "error: $1 requires a value" >&2; exit 2; }; FAMILY="$2"; shift 2 ;;
+    --set-env)    [[ $# -ge 2 ]] || { echo "error: $1 requires a value" >&2; exit 2; }; SET_ENV+=("$2"); shift 2 ;;
+    --set-secret) [[ $# -ge 2 ]] || { echo "error: $1 requires a value" >&2; exit 2; }; SET_SECRET+=("$2"); shift 2 ;;
+    --unset)      [[ $# -ge 2 ]] || { echo "error: $1 requires a value" >&2; exit 2; }; UNSET+=("$2"); shift 2 ;;
+    --deploy)     DEPLOY=1; shift ;;
+    --yes|-y)     YES=1; shift ;;
+    --dry-run)    DRY_RUN=1; shift ;;
+    -h|--help)    usage; exit 0 ;;
+    *) echo "error: unknown argument: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+if ((${#SET_ENV[@]} + ${#SET_SECRET[@]} + ${#UNSET[@]} == 0)); then
+  echo "error: at least one of --set-env / --set-secret / --unset is required" >&2
+  usage; exit 2
+fi
+if ((DEPLOY)) && [[ "$FAMILY" != "hwh-api" ]]; then
+  echo "error: --deploy only applies to hwh-api (the only ECS service); '$FAMILY' is scheduled and picks up :LATEST on next firing" >&2
+  exit 2
+fi
 
 # Build a JSON array of {name,value} from the --set-env pairs.
 ENV_JSON='[]'
 if ((${#SET_ENV[@]})); then
   for kv in "${SET_ENV[@]}"; do
+    [[ "$kv" == *=* ]] || { echo "error: --set-env expects KEY=VALUE, got '$kv'" >&2; exit 2; }
     name=${kv%%=*}; value=${kv#*=}
     ENV_JSON=$(jq -c --arg n "$name" --arg v "$value" '. + [{name:$n, value:$v}]' <<<"$ENV_JSON")
   done
@@ -51,6 +76,7 @@ fi
 SEC_JSON='[]'
 if ((${#SET_SECRET[@]})); then
   for nv in "${SET_SECRET[@]}"; do
+    [[ "$nv" == *=* ]] || { echo "error: --set-secret expects NAME=REF, got '$nv'" >&2; exit 2; }
     name=${nv%%=*}; ref=${nv#*=}
     valueFrom=$(resolve_secret_ref "$ref")
     SEC_JSON=$(jq -c --arg n "$name" --arg vf "$valueFrom" '. + [{name:$n, valueFrom:$vf}]' <<<"$SEC_JSON")

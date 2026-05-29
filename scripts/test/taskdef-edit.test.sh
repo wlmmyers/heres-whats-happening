@@ -82,5 +82,23 @@ check "real change bypasses no-op guard" \
   "debug" \
   "$(jq -r '.containerDefinitions[0].environment[]|select(.name=="LOG_LEVEL").value' <<<"$out")"
 
+# --- validation: fail fast (exit 2) before any AWS call -----------------------
+TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run >/dev/null 2>&1; rc=$?
+check "no mutation flag exits 2" "2" "$rc"
+
+TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-env NOEQUALS >/dev/null 2>&1; rc=$?
+check "malformed --set-env exits 2" "2" "$rc"
+
+TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-secret NOEQUALS >/dev/null 2>&1; rc=$?
+check "malformed --set-secret exits 2" "2" "$rc"
+
+# Must fail at validation BEFORE reading current/AWS, so no TASKDEF_INPUT here.
+"$SCRIPT" --deploy --family hwh-match --set-env X=1 >/dev/null 2>&1; rc=$?
+check "--deploy on a scheduled family exits 2" "2" "$rc"
+
+# Flag that takes a value given as the last arg must not crash on set -u.
+"$SCRIPT" --set-env >/dev/null 2>&1; rc=$?
+check "flag with missing value exits 2" "2" "$rc"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 ((fail == 0))
