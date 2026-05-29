@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape tei-up tei-down tei-seed match
+.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape tei-up tei-down tei-seed match test-scripts
 
 ifneq (,$(wildcard .env))
     include .env
@@ -90,6 +90,10 @@ migrate-prod-status:
 
 test:
 	go test -p 1 ./... -count=1
+
+# AWS-free shell tests for scripts/ (no DB, no AWS creds needed).
+test-scripts:
+	bash scripts/test/taskdef-edit.test.sh
 
 run:
 	go run ./cmd/app serve
