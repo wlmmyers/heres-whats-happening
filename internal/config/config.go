@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wmyers/heres-whats-happening/internal/dsn"
 )
 
 type Config struct {
@@ -44,10 +46,11 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		return nil, errors.New("DATABASE_URL is required")
+	dbComponents, err := dsn.FromEnv("DB_")
+	if err != nil {
+		return nil, err
 	}
+	dbURL := dbComponents.DSN()
 	signingKey := os.Getenv("JWT_SIGNING_KEY")
 	if signingKey == "" {
 		return nil, errors.New("JWT_SIGNING_KEY is required")
@@ -100,18 +103,18 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		DatabaseURL:        dbURL,
-		HTTPAddr:           addr,
-		JWTSigningKey:      signingKey,
-		JWTAccessTTL:       accessTTL,
-		RefreshTTL:         refreshTTL,
-		LogLevel:           logLevel,
-		AWSRegion:          os.Getenv("AWS_REGION"),
-		SQSEndpoint:        os.Getenv("SQS_ENDPOINT"),
-		EventsQueueURL:     os.Getenv("EVENTS_QUEUE_URL"),
-		IngestWorkers:      workers,
-		TicketmasterAPIKey: os.Getenv("TICKETMASTER_API_KEY"),
-		TicketmasterCity:   os.Getenv("TICKETMASTER_CITY"),
+		DatabaseURL:         dbURL,
+		HTTPAddr:            addr,
+		JWTSigningKey:       signingKey,
+		JWTAccessTTL:        accessTTL,
+		RefreshTTL:          refreshTTL,
+		LogLevel:            logLevel,
+		AWSRegion:           os.Getenv("AWS_REGION"),
+		SQSEndpoint:         os.Getenv("SQS_ENDPOINT"),
+		EventsQueueURL:      os.Getenv("EVENTS_QUEUE_URL"),
+		IngestWorkers:       workers,
+		TicketmasterAPIKey:  os.Getenv("TICKETMASTER_API_KEY"),
+		TicketmasterCity:    os.Getenv("TICKETMASTER_CITY"),
 		SpotifyClientID:     os.Getenv("SPOTIFY_CLIENT_ID"),
 		SpotifyClientSecret: os.Getenv("SPOTIFY_CLIENT_SECRET"),
 		SpotifyRedirectURI:  os.Getenv("SPOTIFY_REDIRECT_URI"),

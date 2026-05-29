@@ -8,7 +8,7 @@ import (
 )
 
 func TestLoad_AllFieldsParsed(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://x")
+	setRequiredDB(t)
 	t.Setenv("HTTP_ADDR", ":9999")
 	t.Setenv("JWT_SIGNING_KEY", "k")
 	t.Setenv("JWT_ACCESS_TTL", "10m")
@@ -17,7 +17,7 @@ func TestLoad_AllFieldsParsed(t *testing.T) {
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	require.Equal(t, "postgres://x", cfg.DatabaseURL)
+	require.Equal(t, "postgres://app:pw@localhost:5432/appdb?sslmode=disable", cfg.DatabaseURL)
 	require.Equal(t, ":9999", cfg.HTTPAddr)
 	require.Equal(t, "k", cfg.JWTSigningKey)
 	require.Equal(t, 10*time.Minute, cfg.JWTAccessTTL)
@@ -26,14 +26,17 @@ func TestLoad_AllFieldsParsed(t *testing.T) {
 }
 
 func TestLoad_MissingRequired(t *testing.T) {
-	t.Setenv("DATABASE_URL", "")
+	t.Setenv("DB_USER", "")
+	t.Setenv("DB_PASSWORD", "")
+	t.Setenv("DB_HOST", "")
+	t.Setenv("DB_NAME", "")
 	t.Setenv("JWT_SIGNING_KEY", "k")
 	_, err := Load()
 	require.Error(t, err)
 }
 
 func TestLoad_QueueAndScraperFields(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://x")
+	setRequiredDB(t)
 	t.Setenv("JWT_SIGNING_KEY", "k")
 	t.Setenv("AWS_REGION", "us-east-1")
 	t.Setenv("SQS_ENDPOINT", "http://localhost:9324")
@@ -53,7 +56,7 @@ func TestLoad_QueueAndScraperFields(t *testing.T) {
 }
 
 func TestLoad_IngestWorkersDefault(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://x")
+	setRequiredDB(t)
 	t.Setenv("JWT_SIGNING_KEY", "k")
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -61,7 +64,7 @@ func TestLoad_IngestWorkersDefault(t *testing.T) {
 }
 
 func TestLoad_SpotifyAndCryptoFields(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://x")
+	setRequiredDB(t)
 	t.Setenv("JWT_SIGNING_KEY", "k")
 	t.Setenv("SPOTIFY_CLIENT_ID", "cid")
 	t.Setenv("SPOTIFY_CLIENT_SECRET", "secret")
@@ -79,7 +82,7 @@ func TestLoad_SpotifyAndCryptoFields(t *testing.T) {
 }
 
 func TestLoad_BadEncKey(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://x")
+	setRequiredDB(t)
 	t.Setenv("JWT_SIGNING_KEY", "k")
 	t.Setenv("SPOTIFY_TOKEN_ENC_KEY", "not-valid-base64!@#")
 	_, err := Load()
@@ -87,7 +90,7 @@ func TestLoad_BadEncKey(t *testing.T) {
 }
 
 func TestLoad_TEIEndpoint(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://x")
+	setRequiredDB(t)
 	t.Setenv("JWT_SIGNING_KEY", "k")
 	t.Setenv("TEI_ENDPOINT", "http://localhost:8081")
 	cfg, err := Load()
@@ -96,7 +99,7 @@ func TestLoad_TEIEndpoint(t *testing.T) {
 }
 
 func TestLoad_IcalBaseURL(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://x")
+	setRequiredDB(t)
 	t.Setenv("JWT_SIGNING_KEY", "k")
 	t.Setenv("ICAL_BASE_URL", "http://localhost:8080")
 	cfg, err := Load()
@@ -105,10 +108,21 @@ func TestLoad_IcalBaseURL(t *testing.T) {
 }
 
 func TestLoad_CORSAllowedOrigins(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://x")
+	setRequiredDB(t)
 	t.Setenv("JWT_SIGNING_KEY", "k")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://example.com, https://staging.example.com")
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, []string{"https://example.com", "https://staging.example.com"}, cfg.CORSAllowedOrigins)
+}
+
+// setRequiredDB sets the DB_* component vars every Load() call now needs.
+func setRequiredDB(t *testing.T) {
+	t.Helper()
+	t.Setenv("DB_USER", "app")
+	t.Setenv("DB_PASSWORD", "pw")
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_NAME", "appdb")
+	t.Setenv("DB_SSLMODE", "disable")
 }
