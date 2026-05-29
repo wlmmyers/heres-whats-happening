@@ -58,6 +58,11 @@ check "set-secret replaces same-name (no duplicate)" \
   "$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-secret JWT_SIGNING_KEY="$STRIPE_ARN" \
      | jq '[.containerDefinitions[0].secrets[]|select(.name=="JWT_SIGNING_KEY")]|length')"
 
+out=$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-secret DB_PASSWORD='arn:aws:secretsmanager:us-east-1:111111111111:secret:rds!db-aaaa:password::')
+check "set-secret accepts JSON-key arn ref verbatim" \
+  "arn:aws:secretsmanager:us-east-1:111111111111:secret:rds!db-aaaa:password::" \
+  "$(jq -r '.containerDefinitions[0].secrets[]|select(.name=="DB_PASSWORD").valueFrom' <<<"$out")"
+
 # --- unset: remove a name from both environment and secrets -------------------
 out=$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --unset LOG_LEVEL --unset DB_USER)
 check "unset removes an env var" \

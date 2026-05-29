@@ -28,7 +28,7 @@ export AWS_PROFILE AWS_DEFAULT_REGION
 
 # Resolve a --set-secret REF to an ECS valueFrom string. arn: refs (incl.
 # JSON-key refs like <arn>:password::) are used verbatim; a bare name is
-# resolved to its secret ARN (AWS branch implemented in a later task).
+# resolved to its secret ARN via describe-secret.
 resolve_secret_ref() {
   local ref=$1
   if [[ "$ref" == arn:* ]]; then
@@ -63,6 +63,14 @@ if ((DEPLOY)) && [[ "$FAMILY" != "hwh-api" ]]; then
   exit 2
 fi
 
+# jq is always needed; aws only when we'll actually call it (live fetch or any
+# register/deploy). This keeps `--dry-run` + TASKDEF_INPUT (the test path)
+# runnable without the aws CLI installed.
+command -v jq >/dev/null 2>&1 || { echo "error: 'jq' not found on PATH" >&2; exit 1; }
+if ((! DRY_RUN)) || [[ -z "${TASKDEF_INPUT:-}" ]]; then
+  command -v aws >/dev/null 2>&1 || { echo "error: 'aws' not found on PATH" >&2; exit 1; }
+fi
+
 # Build a JSON array of {name,value} from the --set-env pairs.
 ENV_JSON='[]'
 if ((${#SET_ENV[@]})); then
@@ -90,14 +98,6 @@ if ((${#UNSET[@]})); then
   UNSET_JSON=$(printf '%s\n' "${UNSET[@]}" | jq -R . | jq -cs .)
 fi
 
-# jq is always needed; aws only when we'll actually call it (live fetch or any
-# register/deploy). This keeps `--dry-run` + TASKDEF_INPUT (the test path)
-# runnable without the aws CLI installed.
-command -v jq >/dev/null 2>&1 || { echo "error: 'jq' not found on PATH" >&2; exit 1; }
-if ((! DRY_RUN)) || [[ -z "${TASKDEF_INPUT:-}" ]]; then
-  command -v aws >/dev/null 2>&1 || { echo "error: 'aws' not found on PATH" >&2; exit 1; }
-fi
-
 WORKDIR=$(mktemp -d); trap 'rm -rf "$WORKDIR"' EXIT
 
 # Current revision: from TASKDEF_INPUT (tests) or live from AWS.
@@ -108,6 +108,9 @@ else
     --query 'taskDefinition' > "$WORKDIR/current.json"
 fi
 
+# If register-task-definition later rejects an unexpected field (e.g.
+# enableFaultInjection on a newer AWS CLI), add it to the del(...) list below —
+# same caveat as ci/buildspec-app.yml and cutover-register-taskdef.sh.
 # Upsert env/secrets and drop --unset names from both; strip metadata.
 jq --argjson envUp "$ENV_JSON" --argjson secUp "$SEC_JSON" --argjson unset "$UNSET_JSON" '
   ($envUp | map(.name)) as $en
