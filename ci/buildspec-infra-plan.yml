@@ -8,7 +8,7 @@ phases:
   install:
     commands:
       - curl -sSL https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip -o tf.zip
-      - unzip -q tf.zip && mv terraform /usr/local/bin/terraform
+      - unzip -q -o tf.zip -d /tmp/tfbin && mv /tmp/tfbin/terraform /usr/local/bin/terraform
       - terraform version
 
   pre_build:
