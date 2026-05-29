@@ -33,11 +33,6 @@ output "db_master_user_secret_arn" {
   value       = aws_db_instance.main.master_user_secret[0].secret_arn
 }
 
-output "database_url_secret_arn" {
-  description = "ARN of the secret holding the full DATABASE_URL DSN."
-  value       = aws_secretsmanager_secret.database_url.arn
-}
-
 output "events_queue_url" {
   value = aws_sqs_queue.events.url
 }

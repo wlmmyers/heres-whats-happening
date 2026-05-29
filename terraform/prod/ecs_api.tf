@@ -8,6 +8,10 @@ locals {
     { name = "REFRESH_TTL", value = "720h" },
     { name = "LOG_LEVEL", value = "info" },
     { name = "AWS_REGION", value = var.aws_region },
+    { name = "DB_HOST", value = aws_db_instance.main.address },
+    { name = "DB_PORT", value = tostring(aws_db_instance.main.port) },
+    { name = "DB_NAME", value = aws_db_instance.main.db_name },
+    { name = "DB_SSLMODE", value = "require" },
     { name = "EVENTS_QUEUE_URL", value = aws_sqs_queue.events.url },
     { name = "INTERESTS_QUEUE_URL", value = aws_sqs_queue.interests.url },
     { name = "INGEST_WORKERS", value = tostring(var.ingest_workers) },
@@ -20,7 +24,12 @@ locals {
 
   # Secret env vars — pulled from Secrets Manager.
   api_secrets = [
-    { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.database_url.arn },
+    # DB_USER/DB_PASSWORD use ECS JSON-key secret refs against the RDS-managed
+    # master secret: "<secret-arn>:<json-key>:<version-stage>:<version-id>".
+    # Empty version-stage/version-id => latest AWSCURRENT, so a password rotation
+    # is picked up on the next task start.
+    { name = "DB_USER", valueFrom = "${aws_db_instance.main.master_user_secret[0].secret_arn}:username::" },
+    { name = "DB_PASSWORD", valueFrom = "${aws_db_instance.main.master_user_secret[0].secret_arn}:password::" },
     { name = "JWT_SIGNING_KEY", valueFrom = aws_secretsmanager_secret.app["jwt-signing-key"].arn },
     { name = "SPOTIFY_CLIENT_ID", valueFrom = aws_secretsmanager_secret.app["spotify-client-id"].arn },
     { name = "SPOTIFY_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.app["spotify-client-secret"].arn },

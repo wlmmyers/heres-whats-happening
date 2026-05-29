@@ -28,7 +28,6 @@ data "aws_iam_policy_document" "task_execution_secrets" {
   statement {
     actions = ["secretsmanager:GetSecretValue"]
     resources = concat(
-      [aws_secretsmanager_secret.database_url.arn],
       [for s in aws_secretsmanager_secret.app : s.arn],
       [aws_db_instance.main.master_user_secret[0].secret_arn],
     )
