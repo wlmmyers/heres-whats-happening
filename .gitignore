@@ -19,6 +19,8 @@ coverage.out
 # Terraform secrets
 *.tfvars
 !*.tfvars.example
+# Non-secret prod domain — committed so the CodePipeline checkout has it (auto-loaded by Terraform).
+!terraform/prod/prod.auto.tfvars
 
 # Terraform plans
 tfplan
