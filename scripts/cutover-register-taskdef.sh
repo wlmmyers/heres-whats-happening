@@ -13,6 +13,11 @@
 # It does NOT migrate, roll the service, or run terraform — those are deliberate,
 # gated follow-up steps printed at the end.
 #
+# For ONGOING env/secret changes (not this one-time migration), use
+# scripts/taskdef-edit.sh instead — it does the same describe->jq->register
+# flip generically, with a diff + confirm gate. See
+# docs/superpowers/specs/2026-05-29-taskdef-edit-helper-design.md
+#
 # Prerequisites:
 #   - Step 1 done: master pushed, app pipeline built + registered the NEW image
 #     onto a hwh-api revision (this script GATES on that and stops otherwise).
