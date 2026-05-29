@@ -20,7 +20,10 @@ coverage.out
 *.tfvars
 !*.tfvars.example
 
-# Frontend (Plan 6)
+# Terraform plans
+tfplan
+
+# Frontend
 web/node_modules/
 web/dist/
 web/.vite/
