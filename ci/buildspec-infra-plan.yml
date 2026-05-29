@@ -13,7 +13,7 @@ phases:
 
   pre_build:
     commands:
-      - echo "Plan target: ${TF_STACK_DIR}"
+      - 'echo "Plan target: ${TF_STACK_DIR}"'
       - cd ${TF_STACK_DIR}
       - terraform init -input=false
       - terraform fmt -check -recursive
