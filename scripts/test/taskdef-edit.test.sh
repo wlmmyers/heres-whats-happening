@@ -70,5 +70,11 @@ check "unset leaves untouched env vars" \
   "2" \
   "$(jq '[.containerDefinitions[0].environment[]|select(.name=="HTTP_ADDR" or .name=="DB_HOST")]|length' <<<"$out")"
 
+# --- no-op: setting a var to its current value registers nothing --------------
+out=$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-env LOG_LEVEL=info)
+check "no-op change is detected" \
+  "no changes — nothing to register" \
+  "$out"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 ((fail == 0))

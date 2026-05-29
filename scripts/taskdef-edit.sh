@@ -85,4 +85,18 @@ jq --argjson envUp "$ENV_JSON" --argjson secUp "$SEC_JSON" --argjson unset "$UNS
         .compatibilities, .registeredAt, .registeredBy)
 ' "$WORKDIR/current.json" > "$WORKDIR/new.json"
 
+# No-op guard: compare env+secrets as order-insensitive name->value maps.
+# The upsert reorders entries, so a naive byte-compare would misread that as a
+# change; -S sorts keys for a stable comparison.
+maps() {
+  jq -S '{
+    env: ((.containerDefinitions[0].environment // []) | map({(.name): .value})    | add // {}),
+    sec: ((.containerDefinitions[0].secrets     // []) | map({(.name): .valueFrom}) | add // {})
+  }' "$1"
+}
+if [[ "$(maps "$WORKDIR/current.json")" == "$(maps "$WORKDIR/new.json")" ]]; then
+  echo "no changes — nothing to register"
+  exit 0
+fi
+
 if ((DRY_RUN)); then cat "$WORKDIR/new.json"; exit 0; fi
