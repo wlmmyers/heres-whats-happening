@@ -10,11 +10,12 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 usage: taskdef-edit.sh [--family hwh-api] (--set-env KEY=VALUE | --set-secret NAME=REF | --unset NAME)... [--deploy] [--yes] [--dry-run]
+  --family FAMILY        task-def family to edit (default: hwh-api)
   --set-env KEY=VALUE    upsert a plain env var
   --set-secret NAME=REF  upsert a secret ref (arn:... verbatim, else a Secrets Manager name)
   --unset NAME           remove NAME from env and secrets
   --deploy               roll hwh-api via update-service after registering (api only)
-  --yes                  skip the confirmation prompt
+  --yes, -y              skip the confirmation prompt
   --dry-run              render the new task def to stdout; do not register
 EOF
 }

@@ -69,6 +69,9 @@ check "unset removes a secret" \
 check "unset leaves untouched env vars" \
   "2" \
   "$(jq '[.containerDefinitions[0].environment[]|select(.name=="HTTP_ADDR" or .name=="DB_HOST")]|length' <<<"$out")"
+check "unset leaves untouched secrets" \
+  "1" \
+  "$(jq '[.containerDefinitions[0].secrets[]|select(.name=="JWT_SIGNING_KEY")]|length' <<<"$out")"
 
 # --- no-op: setting a var to its current value registers nothing --------------
 out=$(TASKDEF_INPUT="$FIXTURE" "$SCRIPT" --dry-run --set-env LOG_LEVEL=info)
