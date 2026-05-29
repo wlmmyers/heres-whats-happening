@@ -29,15 +29,17 @@ db-reset:
 	docker compose down -v
 	docker compose up -d postgres
 
+# Dev DB: the app binary assembles the DSN from DB_* (internal/dsn) and applies
+# the embedded migrations — the same code path as prod.
 migrate:
-	go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate \
-	  -path sql/migrations \
-	  -database "$$DATABASE_URL" up
+	go run ./cmd/app migrate
 
+# Test DB: same server, separate db. Map TEST_DB_* onto the DB_* the binary reads.
+# godotenv.Load() does not override already-set vars, so these win over .env.
 migrate-test:
-	go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate \
-	  -path sql/migrations \
-	  -database "$$TEST_DATABASE_URL" up
+	DB_USER="$$TEST_DB_USER" DB_PASSWORD="$$TEST_DB_PASSWORD" DB_HOST="$$TEST_DB_HOST" \
+	DB_PORT="$$TEST_DB_PORT" DB_NAME="$$TEST_DB_NAME" DB_SSLMODE="$$TEST_DB_SSLMODE" \
+	go run ./cmd/app migrate
 
 # Apply prod migrations via a one-off ECS task. The app binary embeds the SQL and
 # applies it via its `migrate` subcommand; idempotent and tracked in schema_migrations.
