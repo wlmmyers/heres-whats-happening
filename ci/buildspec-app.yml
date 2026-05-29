@@ -42,7 +42,10 @@ phases:
           echo "=== Running tests ==="
           # Capture rc via || so a non-zero exit is "handled" (won't trip set -e
           # before teardown), then fail explicitly after stopping the containers.
-          go test ./... -count=1 && TEST_RC=0 || TEST_RC=$?
+          # -p 1: integration tests share one appdb_test DB and truncate all
+          # tables between tests (see internal/testdb), so package test binaries
+          # MUST run serially — matches the Makefile `test` target.
+          go test -p 1 ./... -count=1 && TEST_RC=0 || TEST_RC=$?
 
           echo "=== Stopping test dependencies ==="
           docker compose down -v
