@@ -19,6 +19,7 @@ import (
 	hs "github.com/wmyers/heres-whats-happening/internal/http"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
 	"github.com/wmyers/heres-whats-happening/internal/matcher"
+	"github.com/wmyers/heres-whats-happening/internal/migrate"
 	"github.com/wmyers/heres-whats-happening/internal/queue"
 	"github.com/wmyers/heres-whats-happening/internal/scraper"
 	spotifyscrape "github.com/wmyers/heres-whats-happening/internal/scraper/spotify"
@@ -50,6 +51,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "match: %v\n", err)
 			os.Exit(1)
 		}
+	case "migrate":
+		if err := runMigrate(); err != nil {
+			fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", os.Args[1])
 		usage()
@@ -65,6 +71,7 @@ subcommands:
   scrape events --source=NAME run a one-shot event scraper
   scrape spotify              scrape all connected users' Spotify data
   match                       run the match-job (embed events+users, score, archive)
+  migrate                     apply embedded SQL migrations to DATABASE_URL, then exit
 `)
 }
 
@@ -236,6 +243,22 @@ func runTicketmasterScrape(ctx context.Context, cfg *config.Config, q *queue.Cli
 	r := scraper.NewRunner(a, q, cfg.EventsQueueURL)
 	fmt.Printf("scraping %s for city=%s ...\n", a.Name(), cfg.TicketmasterCity)
 	return r.Run(ctx)
+}
+
+// runMigrate applies the embedded SQL migrations and exits. It reads only
+// DATABASE_URL (not the full config) so a one-off migration task needs nothing
+// beyond the database secret.
+func runMigrate() error {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		return fmt.Errorf("DATABASE_URL is required")
+	}
+	fmt.Println("applying migrations ...")
+	if err := migrate.Up(dsn); err != nil {
+		return err
+	}
+	fmt.Println("migrations applied")
+	return nil
 }
 
 func runMatch() error {

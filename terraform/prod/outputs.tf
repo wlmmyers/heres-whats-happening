@@ -67,9 +67,20 @@ output "post_apply_steps" {
     3. Trigger the app pipeline (push to master, or manually start it in the AWS console).
        This builds the real Go image and rolls the api service + scheduled task defs.
 
-    4. Run database migrations (one-time bootstrap from your laptop or a one-off ECS task):
-       psql "${aws_secretsmanager_secret.database_url.name}" -f sql/migrations/*.up.sql
-       (See README; production migrations should be a separate plan if frequent.)
+    4. Run database migrations (one-off ECS task — RDS is private, so this must run
+       inside the VPC; the app binary applies the embedded SQL via `app migrate`):
+       SUBNETS=$(aws ec2 describe-subnets --region ${var.aws_region} \
+         --filters "Name=tag:Name,Values=${var.app_name_prefix}-public-*" \
+         --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+       SG=$(aws ec2 describe-security-groups --region ${var.aws_region} \
+         --filters "Name=group-name,Values=${var.app_name_prefix}-task-runner" \
+         --query 'SecurityGroups[0].GroupId' --output text)
+       aws ecs run-task --region ${var.aws_region} --cluster ${var.app_name_prefix}-cluster \
+         --launch-type FARGATE --task-definition ${var.app_name_prefix}-api \
+         --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=ENABLED}" \
+         --overrides '{"containerOverrides":[{"name":"api","command":["migrate"]}]}'
+       (Migrations are embedded in the image and tracked in schema_migrations; safe to re-run.
+        Check the task's exitCode (0) and the api CloudWatch log group for output.)
 
     5. Configure the frontend deploy script with the outputs above:
        cat > web/.env.deploy <<EOF

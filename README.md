@@ -327,9 +327,13 @@ The outputs print a `post_apply_steps` heredoc — follow it:
 3. **Trigger the app pipeline** — push a commit to master, or manually start
    the `hwh-app-pipeline` in the AWS console. This builds the real Go image
    and rolls the api service.
-4. **Run database migrations** — connect to RDS using the master credentials
-   from Secrets Manager, run all migrations under `sql/migrations/`. A future
-   plan should automate this; for v1 it's a one-time setup.
+4. **Run database migrations** — RDS is private (no public access, no NAT), so
+   you can't reach it from a laptop. Run a one-off ECS task on the `hwh-api`
+   task definition with its command overridden to `migrate`: the app binary
+   embeds `sql/migrations/` and applies them via the golang-migrate `iofs`
+   source, tracked in `schema_migrations` and safe to re-run. The
+   `post_apply_steps` output prints the exact `aws ecs run-task` command. (Run
+   the same task again after any future migration is merged and deployed.)
 5. **Deploy the frontend** — fill in `web/.env.deploy` with the bucket name +
    distribution ID from the outputs, then `cd web && pnpm deploy`.
 
