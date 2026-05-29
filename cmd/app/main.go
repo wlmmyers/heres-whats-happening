@@ -16,6 +16,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/config"
 	"github.com/wmyers/heres-whats-happening/internal/crypto"
 	"github.com/wmyers/heres-whats-happening/internal/db"
+	"github.com/wmyers/heres-whats-happening/internal/dsn"
 	hs "github.com/wmyers/heres-whats-happening/internal/http"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
 	"github.com/wmyers/heres-whats-happening/internal/matcher"
@@ -71,7 +72,7 @@ subcommands:
   scrape events --source=NAME run a one-shot event scraper
   scrape spotify              scrape all connected users' Spotify data
   match                       run the match-job (embed events+users, score, archive)
-  migrate                     apply embedded SQL migrations to DATABASE_URL, then exit
+  migrate                     apply embedded SQL migrations using DB_* credentials, then exit
 `)
 }
 
@@ -128,18 +129,18 @@ func serve() error {
 	}
 
 	s := &hs.Server{
-		Addr:              cfg.HTTPAddr,
-		DB:                pool,
-		Queries:           q,
-		JWTSigner:         auth.NewJWTSigner(cfg.JWTSigningKey, cfg.JWTAccessTTL),
-		RefreshTTL:        cfg.RefreshTTL,
-		DefaultCityID:     cityIDString(city.ID),
-		IngestConsumer:    consumer,
-		InterestConsumer:  interestConsumer,
-		SpotifyClient:     spClient,
-		SpotifyCipher:     cipher,
-		OAuthHMACKey:      []byte(cfg.JWTSigningKey),
-		InterestsQueueURL: cfg.InterestsQueueURL,
+		Addr:               cfg.HTTPAddr,
+		DB:                 pool,
+		Queries:            q,
+		JWTSigner:          auth.NewJWTSigner(cfg.JWTSigningKey, cfg.JWTAccessTTL),
+		RefreshTTL:         cfg.RefreshTTL,
+		DefaultCityID:      cityIDString(city.ID),
+		IngestConsumer:     consumer,
+		InterestConsumer:   interestConsumer,
+		SpotifyClient:      spClient,
+		SpotifyCipher:      cipher,
+		OAuthHMACKey:       []byte(cfg.JWTSigningKey),
+		InterestsQueueURL:  cfg.InterestsQueueURL,
 		QueuePublisher:     qClient,
 		IcalBaseURL:        cfg.IcalBaseURL,
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
@@ -245,16 +246,16 @@ func runTicketmasterScrape(ctx context.Context, cfg *config.Config, q *queue.Cli
 	return r.Run(ctx)
 }
 
-// runMigrate applies the embedded SQL migrations and exits. It reads only
-// DATABASE_URL (not the full config) so a one-off migration task needs nothing
-// beyond the database secret.
+// runMigrate applies the embedded SQL migrations and exits. It reads only the
+// DB_* connection components (not the full config) so a one-off migration task
+// needs nothing beyond the database credentials.
 func runMigrate() error {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		return fmt.Errorf("DATABASE_URL is required")
+	c, err := dsn.FromEnv("DB_")
+	if err != nil {
+		return err
 	}
 	fmt.Println("applying migrations ...")
-	if err := migrate.Up(dsn); err != nil {
+	if err := migrate.Up(c.DSN()); err != nil {
 		return err
 	}
 	fmt.Println("migrations applied")
