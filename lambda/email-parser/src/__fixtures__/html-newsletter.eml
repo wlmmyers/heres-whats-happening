@@ -1,0 +1,14 @@
+From: promoter@venue.example
+To: shows@inbound.example.com
+Subject: HTML newsletter
+Date: Mon, 29 Dec 2025 09:00:00 -0500
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt1"
+
+--alt1
+Content-Type: text/html; charset=utf-8
+
+<html><body><h1>This Friday at The Bowl</h1><p>Phoebe Bridgers with MUNA. Doors 8pm.</p><p><a href="https://example.com/tix">Buy tickets</a></p></body></html>
+--alt1--

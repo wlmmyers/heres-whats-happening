@@ -47,11 +47,12 @@ type EventPerformer struct {
 }
 
 type EventSource struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	AdapterKind string             `json:"adapter_kind"`
-	Config      []byte             `json:"config"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID                     pgtype.UUID        `json:"id"`
+	Name                   string             `json:"name"`
+	AdapterKind            string             `json:"adapter_kind"`
+	Config                 []byte             `json:"config"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	ExemptFromStaleArchive bool               `json:"exempt_from_stale_archive"`
 }
 
 type Genre struct {

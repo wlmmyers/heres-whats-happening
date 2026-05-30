@@ -61,4 +61,7 @@ WHERE event_id = ANY($1::uuid[]);
 UPDATE events
 SET archived_at = NOW(), updated_at = NOW()
 WHERE archived_at IS NULL
-  AND last_seen_at < NOW() - INTERVAL '7 days';
+  AND last_seen_at < NOW() - INTERVAL '7 days'
+  AND source_id NOT IN (
+      SELECT id FROM event_sources WHERE exempt_from_stale_archive
+  );

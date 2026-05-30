@@ -1,0 +1,34 @@
+{
+  "name": "email-parser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "invoke-local": "tsx scripts/invoke-local.ts",
+    "dev": "mastra dev"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^1.0.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-secrets-manager": "^3.1057.0",
+    "@aws-sdk/client-sqs": "^3.600.0",
+    "@mastra/core": "^1.37.1",
+    "html-to-text": "^10.0.0",
+    "mailparser": "^3.7.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.140",
+    "@types/html-to-text": "^9.0.4",
+    "@types/mailparser": "^3.4.4",
+    "@types/node": "^20.14.0",
+    "mastra": "^1.10.2",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
