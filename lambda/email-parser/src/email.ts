@@ -1,4 +1,5 @@
 import { simpleParser } from "mailparser";
+import { convert as htmlToText } from "html-to-text";
 
 export const TEXT_MIN_CHARS = 40;
 
@@ -28,11 +29,22 @@ export async function parseEmail(raw: Buffer): Promise<ParsedEmail> {
     .filter((a) => a.contentType?.startsWith("image/"))
     .map((a) => ({ contentType: a.contentType, data: a.content }));
 
+  // Most promoter newsletters arrive as HTML-only (multipart/alternative with no
+  // text/plain part). Fall back to converting the HTML body so that ticket URLs
+  // and show details are preserved and can reach the `url` / text-analysis fields.
+  const plain = (parsed.text ?? "").trim();
+  const text =
+    plain.length > 0
+      ? plain
+      : parsed.html
+        ? htmlToText(parsed.html, { wordwrap: false }).trim()
+        : "";
+
   return {
     spamFail: verdictFails(spam),
     virusFail: verdictFails(virus),
     date: parsed.date ? parsed.date.toUTCString() : undefined,
-    text: (parsed.text ?? "").trim(),
+    text,
     images,
   };
 }

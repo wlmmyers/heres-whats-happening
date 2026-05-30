@@ -29,4 +29,12 @@ describe("parseEmail + gate", () => {
     expect(p.spamFail).toBe(true);
     expect(gate(p)).toBe("skip");
   });
+
+  it("html-only newsletter -> 'text' with HTML converted to text, links preserved", async () => {
+    const p = await parseEmail(load("html-newsletter.eml"));
+    expect(p.spamFail).toBe(false);
+    expect(p.text).toMatch(/Phoebe Bridgers/);
+    expect(p.text).toMatch(/example\.com\/tix/); // link URL preserved for the `url` field
+    expect(gate(p)).toBe("text");
+  });
 });
