@@ -339,3 +339,76 @@ The outputs print a `post_apply_steps` heredoc — follow it:
 
 After all five: hit `https://api.your-domain.com/healthz` (should return
 `{"status":"ok"}`) and load `https://your-domain.com` in a browser.
+
+## Email-newsletter ingest quickstart
+
+SES receives promoter newsletters at `shows@inbound.<domain>` → S3 → a
+Node/Mastra Lambda (`lambda/email-parser`) that parses plain text and flyer
+images into `EventMessage` records on the events-queue. The existing consumer
+(started by `make run`) drains the queue and upserts events into Postgres
+exactly as it does for Ticketmaster or Spotify events; the `source` column is
+`email_newsletter`.
+
+### Local dev
+
+```bash
+cd lambda/email-parser
+pnpm install
+
+# Run the CI-safe unit + contract tests (no external services needed)
+pnpm test
+# Note: sqs.test.ts and handler.e2e.test.ts need ElasticMQ — run
+# `make queue-up` from the repo root first, then `pnpm test` to include them.
+```
+
+#### Run Mastra Studio to test the extractor agent interactively
+
+The `emailExtractor` Mastra agent is the core of the Lambda. You can drive it
+from the Studio UI without sending a real email:
+
+```bash
+# Set your Anthropic key
+cp lambda/email-parser/.env.example lambda/email-parser/.env  # if needed
+echo "ANTHROPIC_API_KEY=<your-key>" >> lambda/email-parser/.env
+
+cd lambda/email-parser
+pnpm dev   # starts Mastra Studio
+# Open http://localhost:4111 — the emailExtractor agent appears in the sidebar.
+```
+
+#### Full end-to-end locally
+
+```bash
+# Start ElasticMQ (local SQS) from the repo root
+make queue-up
+
+# Create the local events queue (one-time)
+aws --endpoint-url http://localhost:9324 sqs create-queue \
+  --queue-name events-queue \
+  --region us-east-1
+
+# Configure the Lambda env
+export ANTHROPIC_API_KEY=<your-key>
+export EVENTS_QUEUE_URL=http://localhost:9324/000000000000/events-queue
+export SQS_ENDPOINT=http://localhost:9324
+
+# Run a real .eml through the agent → ElasticMQ
+cd lambda/email-parser
+pnpm invoke-local src/__fixtures__/text-newsletter.eml
+
+# In another terminal: start the consumer so it drains the queue into Postgres
+make run   # from repo root
+
+# Verify
+docker exec hwh_postgres psql -U app -d appdb \
+  -c "SELECT title, source FROM events WHERE source = 'email_newsletter' LIMIT 5;"
+```
+
+### Prod infra
+
+SES receipt rule, S3 bucket, Lambda function, ECR repo, IAM, and CloudWatch
+alarm are all in `terraform/prod/`. Apply them with the
+**Terraform prod infrastructure quickstart** above, then follow the
+`email_post_apply_steps` output for the email-specific operator checklist
+(seed the Anthropic API key secret, confirm DNS/DKIM, push the bootstrap
+image, send a test email, watch the DLQ alarm).

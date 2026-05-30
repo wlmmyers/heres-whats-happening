@@ -86,3 +86,44 @@ output "post_apply_steps" {
        cd web && pnpm deploy
   EOT
 }
+
+output "email_ingest_recipient" {
+  description = "Subscribe promoter newsletters to this address."
+  value       = local.ingest_recipient
+}
+
+output "email_parser_ecr_repo" {
+  description = "ECR repo URL for the email-parser Lambda image."
+  value       = aws_ecr_repository.email_parser.repository_url
+}
+
+output "email_inbound_bucket" {
+  value = aws_s3_bucket.inbound_email.bucket
+}
+
+output "email_post_apply_steps" {
+  value = <<-EOT
+    Email-newsletter ingestion — operator steps after apply:
+
+    1. Seed the model key (Mastra reads ANTHROPIC_API_KEY):
+       aws secretsmanager put-secret-value \
+         --secret-id ${var.app_name_prefix}/email-llm-api-key \
+         --secret-string "<your-anthropic-api-key>"
+
+    2. Confirm DNS: inbound.${var.domain_name} MX + 3 DKIM CNAMEs resolve, and
+       the SES domain identity shows "verified" in the SES console.
+
+    3. Build + push the Lambda image via the CodeBuild project running
+       ci/buildspec-lambda.yml (it then runs aws lambda update-function-code).
+       For the FIRST apply, a bootstrap image must already exist at
+       ${aws_ecr_repository.email_parser.repository_url}:bootstrap (or pass
+       -var email_parser_image_tag=<sha> on the real deploy).
+
+    4. Send a test newsletter to ${local.ingest_recipient}; check the
+       ${var.app_name_prefix}-email-parser CloudWatch logs, then confirm a new
+       row with source = email_newsletter in the events table.
+
+    5. Watch the ${var.app_name_prefix}-email-parser-dlq-depth alarm — depth >= 1
+       means emails are failing to parse.
+  EOT
+}
