@@ -1,0 +1,8 @@
+{
+  "source_id": "email_newsletter",
+  "source_event_id": "2222222222222222222222222222222222222222222222222222222222222222",
+  "title": "DIY Punk Night",
+  "starts_at": "2026-07-04T19:30:00Z",
+  "venue": { "name": "Garage 51", "address": "51 Side Alley" },
+  "genres": ["punk"]
+}

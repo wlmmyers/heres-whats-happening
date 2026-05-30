@@ -1,0 +1,7 @@
+{
+  "source_id": "email_newsletter",
+  "source_event_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "title": "Some Show",
+  "starts_at": "2026-06-15T20:00:00Z",
+  "venue": { "name": "The Bowl" }
+}
