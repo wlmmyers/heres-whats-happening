@@ -2,7 +2,7 @@ import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { SQSClient } from "@aws-sdk/client-sqs";
 import type { S3Event } from "aws-lambda";
 import { gate, parseEmail } from "./email.js";
-import { MastraExtractor, type EventExtractor } from "./extractor.js";
+import { AwsSecretReader, MastraExtractor, loadModelKey, type EventExtractor } from "./extractor.js";
 import { toMessage } from "./map.js";
 import type { EventMessage } from "./schema.js";
 import { sendBatch } from "./sqs.js";
@@ -65,6 +65,8 @@ async function getObject(s3: S3Client, bucket: string, key: string): Promise<Buf
 
 /** AWS Lambda entrypoint: S3 ObjectCreated -> fetch raw email -> process. */
 export async function handler(event: S3Event): Promise<void> {
+  const secretArn = process.env.LLM_API_KEY_SECRET;
+  if (secretArn) await loadModelKey(new AwsSecretReader(process.env.AWS_REGION), secretArn);
   const deps = prodDeps();
   const s3 = new S3Client({ region: process.env.AWS_REGION });
   // S3 ObjectCreated events contain one record each in practice; if a multi-record
