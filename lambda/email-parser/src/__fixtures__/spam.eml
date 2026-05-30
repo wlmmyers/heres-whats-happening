@@ -1,0 +1,9 @@
+From: spammer@bad.example
+To: shows@inbound.example.com
+Subject: cheap meds
+Date: Mon, 29 Dec 2025 09:00:00 -0500
+X-SES-Spam-Verdict: FAIL
+X-SES-Virus-Verdict: PASS
+Content-Type: text/plain; charset=utf-8
+
+buy now
