@@ -2,6 +2,8 @@ locals {
   api_image = "${data.aws_ecr_repository.app.repository_url}:bootstrap"
 
   # Plain env vars — non-secret config.
+  # Bootstrap defaults — Terraform sets these once. Ongoing value changes go through
+  # taskdef-edit.sh; this file will drift from live values and that's expected
   api_env_vars = [
     { name = "HTTP_ADDR", value = ":8080" },
     { name = "JWT_ACCESS_TTL", value = "15m" },
@@ -23,6 +25,8 @@ locals {
   ]
 
   # Secret env vars — pulled from Secrets Manager.
+  # Bootstrap defaults — Terraform sets these once. Ongoing value changes go through
+  # taskdef-edit.sh; this file will drift from live values and that's OK
   api_secrets = [
     # DB_USER/DB_PASSWORD use ECS JSON-key secret refs against the RDS-managed
     # master secret: "<secret-arn>:<json-key>:<version-stage>:<version-id>".

@@ -54,13 +54,13 @@ variable "ingest_workers" {
 variable "api_cpu" {
   description = "ECS Fargate CPU units for the api task. 512 = 0.5 vCPU."
   type        = number
-  default     = 512
+  default     = 256
 }
 
 variable "api_memory" {
   description = "ECS Fargate memory in MiB for the api task."
   type        = number
-  default     = 1024
+  default     = 512
 }
 
 variable "tei_cpu" {
