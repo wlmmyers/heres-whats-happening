@@ -98,11 +98,13 @@ output "email_parser_ecr_repo" {
 }
 
 output "email_inbound_bucket" {
-  value = aws_s3_bucket.inbound_email.bucket
+  description = "S3 bucket holding raw inbound emails (audit trail)."
+  value       = aws_s3_bucket.inbound_email.bucket
 }
 
 output "email_post_apply_steps" {
-  value = <<-EOT
+  description = "Operator steps to finish wiring email ingestion after apply."
+  value       = <<-EOT
     Email-newsletter ingestion — operator steps after apply:
 
     1. Seed the model key (Mastra reads ANTHROPIC_API_KEY):

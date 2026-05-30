@@ -13,6 +13,9 @@ phases:
 
   build:
     commands:
+      # LAMBDA_ECR_REPO must be the repo NAME only (e.g. hwh-email-parser), not the full
+      # registry URL. The terraform output `email_parser_ecr_repo` emits the full URL;
+      # the CodeBuild project should pass just the repository name here.
       - SHORT_SHA=$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION}" | cut -c1-7)
       - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${LAMBDA_ECR_REPO}:${SHORT_SHA}"
       - echo "IMAGE_URI=${IMAGE_URI}"

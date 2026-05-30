@@ -78,6 +78,8 @@ resource "aws_lambda_function" "email_parser" {
 }
 
 # Async retries + DLQ for poison emails.
+# No `qualifier` -> targets $LATEST, which is what the S3 notification invokes.
+# If you ever route S3 to a published version/alias, set qualifier here too.
 resource "aws_lambda_function_event_invocation_config" "email_parser" {
   function_name                = aws_lambda_function.email_parser.function_name
   maximum_retry_attempts       = 2
