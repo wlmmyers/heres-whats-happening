@@ -401,7 +401,7 @@ make run   # from repo root
 
 # Verify
 docker exec hwh_postgres psql -U app -d appdb \
-  -c "SELECT title, source FROM events WHERE source = 'email_newsletter' LIMIT 5;"
+  -c "SELECT e.title FROM events e JOIN event_sources s ON s.id = e.source_id WHERE s.name = 'email_newsletter' LIMIT 5;"
 ```
 
 ### Prod infra

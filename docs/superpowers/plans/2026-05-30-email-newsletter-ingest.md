@@ -923,9 +923,21 @@ git commit -m "feat(lambda): MIME parse + verdict/text/image gate"
 
 ## Task 9: EventExtractor interface + Stub + Mastra implementation
 
+> **As-built note (diverges from this draft):** the user asked to run **Mastra Studio**
+> locally, so the agent was restructured as a real Mastra project: the agent lives in
+> `src/mastra/agents/email-extractor.agent.ts` and is registered in a `Mastra` instance at
+> `src/mastra/index.ts` (Studio auto-discovers it), with `mastra` added as a devDependency and
+> a `"dev": "mastra dev"` script (`pnpm dev` → http://localhost:4111). The installed
+> `@mastra/core` is **1.37.x** (not the 0.10.x this draft assumed): the model is a router
+> string `"anthropic/claude-sonnet-4-5"` (no `@ai-sdk/anthropic` import), and structured
+> output uses `agent.generate(messages, { structuredOutput: { schema } })` → `res.object`.
+> `MastraExtractor` takes no constructor args (it wraps the registered agent). Verified
+> against the embedded docs in `node_modules/@mastra/core/dist/docs/` via the `mastra` skill.
+
 **Files:**
 - Create: `lambda/email-parser/src/extractor.ts`
 - Create: `lambda/email-parser/src/extractor.test.ts`
+- Create: `lambda/email-parser/src/mastra/agents/email-extractor.agent.ts`, `src/mastra/index.ts` (Studio)
 
 The extractor is the LLM boundary. Everything else depends on the **interface**, so tests inject `StubExtractor` and never call a real model (mirrors the Go matcher's `fakeEmbedder`). `MastraExtractor` is the real impl; it is exercised only via the manual `invoke-local` harness or a skipped integration test (needs `ANTHROPIC_API_KEY`).
 
