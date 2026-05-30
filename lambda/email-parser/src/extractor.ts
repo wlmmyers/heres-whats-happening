@@ -30,16 +30,19 @@ export class MastraExtractor implements EventExtractor {
     const dateLine = input.receivedAt
       ? `This email was received on ${input.receivedAt}. Use it to resolve the correct year for relative dates such as "this Friday".`
       : "";
-    const content =
+    const content: Array<
+      | { type: "text"; text: string }
+      | { type: "image"; image: Buffer; mimeType: string }
+    > =
       input.mode === "image"
         ? [
-            { type: "text", text: `${dateLine}\nExtract the events shown in the attached flyer image(s).` },
-            ...input.images.map((img) => ({ type: "image", image: img.data, mimeType: img.contentType })),
+            { type: "text" as const, text: `${dateLine}\nExtract the events shown in the attached flyer image(s).` },
+            ...input.images.map((img) => ({ type: "image" as const, image: img.data, mimeType: img.contentType })),
           ]
-        : [{ type: "text", text: `${dateLine}\n\n${input.text}` }];
+        : [{ type: "text" as const, text: `${dateLine}\n\n${input.text}` }];
 
     const res = await emailExtractorAgent.generate(
-      [{ role: "user", content: content as never }],
+      [{ role: "user", content }],
       { structuredOutput: { schema: EventDraftsSchema } },
     );
     return (res.object?.events ?? []) as EventDraft[];
