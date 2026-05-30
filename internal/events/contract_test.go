@@ -18,10 +18,12 @@ func TestContractFixtures_UnmarshalIntoMessage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, entries)
 
+	ran := 0
 	for _, e := range entries {
 		if filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
+		ran++
 		t.Run(e.Name(), func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
 			require.NoError(t, err)
@@ -36,6 +38,10 @@ func TestContractFixtures_UnmarshalIntoMessage(t *testing.T) {
 			require.NotEmpty(t, m.Title)
 			require.False(t, m.StartsAt.IsZero(), "starts_at must parse")
 			require.NotEmpty(t, m.Venue.Name)
+			if m.EndsAt != nil {
+				require.False(t, m.EndsAt.IsZero(), "ends_at must parse when present")
+			}
 		})
 	}
+	require.Positive(t, ran, "no .json fixtures found in %s", dir)
 }
