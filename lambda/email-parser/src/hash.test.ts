@@ -13,6 +13,10 @@ describe("eventDateYMD", () => {
     expect(eventDateYMD("2026-06-15T20:00:00Z")).toBe("20260615");
     expect(eventDateYMD("2026-06-15T23:59:00Z")).toBe(eventDateYMD("2026-06-15T08:00:00Z"));
   });
+  it("honours timezone offsets by converting to the UTC calendar day", () => {
+    // 11pm US-Central on Jun 15 is Jun 16 04:00 UTC -> UTC day is used.
+    expect(eventDateYMD("2026-06-15T23:00:00-05:00")).toBe("20260616");
+  });
 });
 
 describe("contentHash", () => {
