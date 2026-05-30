@@ -19,7 +19,7 @@ locals {
     { name = "TEI_ENDPOINT", value = "http://tei.${var.app_name_prefix}.local" },
     { name = "ICAL_BASE_URL", value = "https://api.${var.domain_name}" },
     { name = "CORS_ALLOWED_ORIGINS", value = "https://${var.domain_name},https://www.${var.domain_name}" },
-    { name = "SPOTIFY_REDIRECT_URI", value = "https://api.${var.domain_name}/integrations/spotify/callback" },
+    { name = "SPOTIFY_REDIRECT_URI", value = "https://${var.domain_name}/integrations/spotify/callback" },
   ]
 
   # Secret env vars — pulled from Secrets Manager.
