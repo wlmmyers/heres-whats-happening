@@ -12,6 +12,9 @@ resource "aws_ecs_task_definition" "tei" {
     image     = var.tei_image
     essential = true
     command   = ["--model-id", var.tei_model_id]
+    environment = [
+      { name = "HF_ENDPOINT", value = "https://huggingface.co" },
+    ]
     portMappings = [{
       containerPort = 80
       protocol      = "tcp"

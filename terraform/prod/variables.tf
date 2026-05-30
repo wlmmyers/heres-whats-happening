@@ -78,7 +78,7 @@ variable "tei_memory" {
 variable "tei_image" {
   description = "TEI Docker image. Pinned to a specific digest in production."
   type        = string
-  default     = "ghcr.io/huggingface/text-embeddings-inference:cpu-1.5"
+  default     = "ghcr.io/huggingface/text-embeddings-inference:cpu-1.6"
 }
 
 variable "tei_model_id" {
