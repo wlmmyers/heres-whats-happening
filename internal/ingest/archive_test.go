@@ -50,13 +50,15 @@ func TestArchiveStaleEvents_ExemptsEmailSource(t *testing.T) {
 
 	require.NoError(t, q.ArchiveStaleEvents(ctx))
 
-	tmSrc, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	tmSrc, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
 	tmEv, err := q.GetEventBySourceKey(ctx, store.GetEventBySourceKeyParams{
 		SourceID: tmSrc.ID, SourceEventID: "tm-stale"})
 	require.NoError(t, err)
 	require.True(t, tmEv.ArchivedAt.Valid, "ticketmaster event should be archived")
 
-	emSrc, _ := q.GetEventSourceByName(ctx, "email_newsletter")
+	emSrc, err := q.GetEventSourceByName(ctx, "email_newsletter")
+	require.NoError(t, err)
 	emEv, err := q.GetEventBySourceKey(ctx, store.GetEventBySourceKeyParams{
 		SourceID: emSrc.ID, SourceEventID: "email-stale"})
 	require.NoError(t, err)
