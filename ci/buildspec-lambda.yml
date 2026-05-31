@@ -35,8 +35,15 @@ phases:
       - pnpm vitest run src/schema.test.ts src/hash.test.ts src/map.test.ts src/email.test.ts src/extractor.test.ts src/handler.test.ts
       - cd ../..
 
-      - docker build -t "${IMAGE_URI}" lambda/email-parser
-      - docker push "${IMAGE_URI}"
+      # Skip build+push if this SHA was already pushed (immutable tags mean a
+      # retry would fail; the image is already good if it exists).
+      - |
+        if aws ecr describe-images --repository-name "${LAMBDA_ECR_REPO}" --image-ids imageTag="${SHORT_SHA}" --region "${AWS_REGION}" > /dev/null 2>&1; then
+          echo "Image ${IMAGE_URI} already exists in ECR, skipping build+push"
+        else
+          docker build -t "${IMAGE_URI}" lambda/email-parser
+          docker push "${IMAGE_URI}"
+        fi
       - aws lambda update-function-code --function-name "${FUNCTION_NAME}" --image-uri "${IMAGE_URI}" --region "${AWS_REGION}"
       - echo "${IMAGE_URI}" > lambda_image_uri.txt
 
