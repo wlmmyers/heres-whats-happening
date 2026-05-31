@@ -30,7 +30,7 @@ phases:
       # Lambda unit + contract tests (the two ElasticMQ-dependent specs — sqs.test.ts
       # and handler.e2e.test.ts — are excluded here; they run in local dev).
       - cd lambda/email-parser
-      - pnpm install --frozen-lockfile
+      - pnpm install --frozen-lockfile --ignore-scripts
       - pnpm typecheck
       - pnpm vitest run src/schema.test.ts src/hash.test.ts src/map.test.ts src/email.test.ts src/extractor.test.ts src/handler.test.ts
       - cd ../..
