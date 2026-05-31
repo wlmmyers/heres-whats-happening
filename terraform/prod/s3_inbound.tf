@@ -53,8 +53,7 @@ resource "aws_s3_bucket_policy" "inbound_email" {
 
 # S3 -> Lambda on new object under raw/.
 resource "aws_s3_bucket_notification" "inbound_email" {
-  bucket                = aws_s3_bucket.inbound_email.id
-  expected_bucket_owner = data.aws_caller_identity.current.account_id
+  bucket = aws_s3_bucket.inbound_email.id
   lambda_function {
     lambda_function_arn = aws_lambda_function.email_parser.arn
     events              = ["s3:ObjectCreated:*"]
