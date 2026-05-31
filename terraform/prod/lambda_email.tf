@@ -64,7 +64,7 @@ resource "aws_lambda_function" "email_parser" {
   function_name = "${var.app_name_prefix}-email-parser"
   role          = aws_iam_role.email_parser.arn
   package_type  = "Image"
-  image_uri     = "${aws_ecr_repository.email_parser.repository_url}:${var.email_parser_image_tag}"
+  image_uri     = "${data.aws_ecr_repository.email_parser.repository_url}:${var.email_parser_image_tag}"
   timeout       = 120
   memory_size   = 1024
 
@@ -74,6 +74,14 @@ resource "aws_lambda_function" "email_parser" {
       LLM_API_KEY_SECRET = aws_secretsmanager_secret.email_llm_key.arn
       LLM_MODEL          = "anthropic/claude-sonnet-4-5"
     }
+  }
+
+  # The lambda CI lane (terraform/bootstrap) deploys new images out-of-band via
+  # `aws lambda update-function-code`, so don't let a later apply of this stack
+  # revert image_uri back to the bootstrap tag. `email_parser_image_tag` only
+  # seeds the very first create.
+  lifecycle {
+    ignore_changes = [image_uri]
   }
 }
 

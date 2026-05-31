@@ -227,3 +227,58 @@ resource "aws_iam_role_policy" "codebuild_app" {
   role   = aws_iam_role.codebuild_app.id
   policy = data.aws_iam_policy_document.codebuild_app.json
 }
+
+# ---------------------------------------------------------------------------
+# CodeBuild role for the email-parser Lambda build+deploy project
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_role" "codebuild_lambda" {
+  name               = "${var.app_name_prefix}-codebuild-lambda"
+  assume_role_policy = data.aws_iam_policy_document.codebuild_assume.json
+}
+
+data "aws_iam_policy_document" "codebuild_lambda" {
+  # ECR auth token (account-wide) + push to the email-parser repo only.
+  statement {
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+  statement {
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage",
+      "ecr:PutImage",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+    ]
+    resources = [aws_ecr_repository.email_parser.arn]
+  }
+  # Deploy: point the function at the freshly pushed image (function created in the prod stack).
+  statement {
+    actions   = ["lambda:UpdateFunctionCode"]
+    resources = ["arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${var.app_name_prefix}-email-parser"]
+  }
+  # Artifact bucket + logs.
+  statement {
+    actions = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]
+    resources = [
+      aws_s3_bucket.pipeline_artifacts.arn,
+      "${aws_s3_bucket.pipeline_artifacts.arn}/*",
+    ]
+  }
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "codebuild_lambda" {
+  role   = aws_iam_role.codebuild_lambda.id
+  policy = data.aws_iam_policy_document.codebuild_lambda.json
+}

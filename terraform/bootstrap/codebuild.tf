@@ -203,3 +203,55 @@ resource "aws_codebuild_project" "app_deploy" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# Lambda (email-parser): test + Docker build + push to ECR + update function code
+# (the buildspec self-deploys via `aws lambda update-function-code`, so there is
+# no separate deploy stage). Base image is ECR Public + npm, so no Docker Hub auth.
+# ---------------------------------------------------------------------------
+
+resource "aws_codebuild_project" "lambda_build" {
+  name          = "${var.app_name_prefix}-lambda-build"
+  service_role  = aws_iam_role.codebuild_lambda.arn
+  build_timeout = 30
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type    = local.cb_compute_type
+    image           = local.cb_image
+    type            = "LINUX_CONTAINER"
+    privileged_mode = true # required for docker build
+
+    environment_variable {
+      name  = "AWS_REGION"
+      value = var.aws_region
+    }
+    environment_variable {
+      name  = "AWS_ACCOUNT_ID"
+      value = data.aws_caller_identity.current.account_id
+    }
+    # Repo NAME only (not the full registry URL) — the buildspec composes the URI.
+    environment_variable {
+      name  = "LAMBDA_ECR_REPO"
+      value = aws_ecr_repository.email_parser.name
+    }
+    environment_variable {
+      name  = "FUNCTION_NAME"
+      value = "${var.app_name_prefix}-email-parser"
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "ci/buildspec-lambda.yml"
+  }
+
+  logs_config {
+    cloudwatch_logs {
+      group_name = "/aws/codebuild/${var.app_name_prefix}-lambda-build"
+    }
+  }
+}

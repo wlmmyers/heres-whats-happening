@@ -93,8 +93,8 @@ output "email_ingest_recipient" {
 }
 
 output "email_parser_ecr_repo" {
-  description = "ECR repo URL for the email-parser Lambda image."
-  value       = aws_ecr_repository.email_parser.repository_url
+  description = "ECR repo URL for the email-parser Lambda image (owned by the bootstrap stack)."
+  value       = data.aws_ecr_repository.email_parser.repository_url
 }
 
 output "email_inbound_bucket" {
@@ -115,11 +115,12 @@ output "email_post_apply_steps" {
     2. Confirm DNS: inbound.${var.domain_name} MX + 3 DKIM CNAMEs resolve, and
        the SES domain identity shows "verified" in the SES console.
 
-    3. Build + push the Lambda image via the CodeBuild project running
-       ci/buildspec-lambda.yml (it then runs aws lambda update-function-code).
-       For the FIRST apply, a bootstrap image must already exist at
-       ${aws_ecr_repository.email_parser.repository_url}:bootstrap (or pass
-       -var email_parser_image_tag=<sha> on the real deploy).
+    3. The ECR repo + lambda CodeBuild pipeline live in the bootstrap stack.
+       BEFORE applying this stack, apply bootstrap and push a bootstrap image to
+       ${data.aws_ecr_repository.email_parser.repository_url}:bootstrap (the
+       aws_lambda_function references that tag on first create). After this stack
+       applies, the ${var.app_name_prefix}-lambda-pipeline rebuilds + deploys the
+       image on each push via aws lambda update-function-code.
 
     4. Send a test newsletter to ${local.ingest_recipient}; check the
        ${var.app_name_prefix}-email-parser CloudWatch logs, then confirm a new
