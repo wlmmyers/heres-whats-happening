@@ -68,6 +68,14 @@ resource "aws_security_group" "tei_task" {
     security_groups = [aws_security_group.api_task.id]
   }
 
+  ingress {
+    description     = "HTTP from scheduled task runners"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.task_runner.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -95,17 +103,6 @@ resource "aws_security_group" "task_runner" {
   }
 
   tags = { Name = "${var.app_name_prefix}-task-runner" }
-}
-
-# Open TEI ingress to the task_runner SG (match-job calls TEI).
-resource "aws_security_group_rule" "tei_from_task_runner" {
-  type                     = "ingress"
-  from_port                = 80
-  to_port                  = 80
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.tei_task.id
-  source_security_group_id = aws_security_group.task_runner.id
-  description              = "HTTP from scheduled task runners"
 }
 
 # RDS: accepts 5432 from api_task + task_runner.
