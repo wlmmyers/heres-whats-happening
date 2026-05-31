@@ -3,7 +3,7 @@ FROM public.ecr.aws/lambda/nodejs:24 AS build
 WORKDIR /build
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY tsconfig.json ./
 COPY src ./src
 RUN pnpm build
