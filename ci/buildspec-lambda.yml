@@ -1,13 +1,19 @@
 version: 0.2
 
 # Builds the email-parser Lambda container image and pushes it to its ECR repo,
-# then points the function at the new image. Wire to a CodeBuild project with env:
-# AWS_ACCOUNT_ID, AWS_REGION, LAMBDA_ECR_REPO, FUNCTION_NAME, DOCKERHUB_USER, DOCKERHUB_TOKEN.
+# then points the function at the new image. Run by the hwh-lambda-build CodeBuild
+# project (terraform/bootstrap) with env: AWS_ACCOUNT_ID, AWS_REGION, LAMBDA_ECR_REPO,
+# FUNCTION_NAME. No Docker Hub auth needed — the image's base is ECR Public
+# (public.ecr.aws/lambda/nodejs:24) and deps come from the npm registry.
 
 phases:
   install:
     runtime-versions:
-      nodejs: 20
+      # Host runtime for typecheck + vitest only; the Lambda itself runs on the
+      # nodejs:24 base image above. CodeBuild's standard image doesn't expose 24
+      # in runtime-versions yet (aws/aws-codebuild-docker-images#803), so pin the
+      # latest supported LTS (22) here — bump to 24 once CodeBuild adds it.
+      nodejs: 22
     commands:
       - corepack enable
 
@@ -19,7 +25,6 @@ phases:
       - SHORT_SHA=$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION}" | cut -c1-7)
       - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${LAMBDA_ECR_REPO}:${SHORT_SHA}"
       - echo "IMAGE_URI=${IMAGE_URI}"
-      - echo "${DOCKERHUB_TOKEN}" | docker login --username "${DOCKERHUB_USER}" --password-stdin
       - aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
       # Lambda unit + contract tests (the two ElasticMQ-dependent specs — sqs.test.ts

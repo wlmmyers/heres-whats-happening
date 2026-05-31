@@ -149,3 +149,54 @@ resource "aws_codepipeline" "app" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# Lambda pipeline: Source → BuildAndDeploy
+# (the lambda buildspec builds+pushes the image AND runs update-function-code,
+# so a single Build stage covers both; no separate deploy stage or approval.)
+# ---------------------------------------------------------------------------
+
+resource "aws_codepipeline" "lambda" {
+  name     = "${var.app_name_prefix}-lambda-pipeline"
+  role_arn = aws_iam_role.codepipeline_service.arn
+
+  artifact_store {
+    type     = "S3"
+    location = aws_s3_bucket.pipeline_artifacts.bucket
+  }
+
+  stage {
+    name = "Source"
+    action {
+      name             = "Source"
+      category         = "Source"
+      owner            = "AWS"
+      provider         = "CodeStarSourceConnection"
+      version          = "1"
+      output_artifacts = ["source_output"]
+
+      configuration = {
+        ConnectionArn    = aws_codestarconnections_connection.github.arn
+        FullRepositoryId = "${var.github_owner}/${var.github_repo}"
+        BranchName       = var.github_branch
+        DetectChanges    = "true"
+      }
+    }
+  }
+
+  stage {
+    name = "BuildAndDeploy"
+    action {
+      name            = "BuildPushDeploy"
+      category        = "Build"
+      owner           = "AWS"
+      provider        = "CodeBuild"
+      version         = "1"
+      input_artifacts = ["source_output"]
+
+      configuration = {
+        ProjectName = aws_codebuild_project.lambda_build.name
+      }
+    }
+  }
+}
