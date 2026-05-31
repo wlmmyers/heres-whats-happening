@@ -29,3 +29,6 @@ tfplan
 web/node_modules/
 web/dist/
 web/.vite/
+
+# Claude & agents
+.claude/settings.local.json
