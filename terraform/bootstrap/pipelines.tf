@@ -132,8 +132,6 @@ resource "aws_codepipeline" "app" {
             "docker-compose.yml",
             "web/**",
             "sql/**",
-            "sqlc.yaml",
-            "ci/buildspec-app.yml",
           ]
         }
       }
