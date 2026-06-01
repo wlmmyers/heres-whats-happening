@@ -142,3 +142,9 @@ tei-down:
 
 match:
 	go run ./cmd/app match
+
+bootstrap-terraform-plan:
+	cd terraform && terraform plan -out=tfplan
+
+bootstrap-terraform-apply:
+	cd terraform && terraform apply tfplan

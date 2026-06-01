@@ -3,12 +3,32 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_codepipeline" "infra" {
-  name     = "${var.app_name_prefix}-infra-pipeline"
-  role_arn = aws_iam_role.codepipeline_service.arn
+  name          = "${var.app_name_prefix}-infra-pipeline"
+  role_arn      = aws_iam_role.codepipeline_service.arn
+  pipeline_type = "V2"
 
   artifact_store {
     type     = "S3"
     location = aws_s3_bucket.pipeline_artifacts.bucket
+  }
+
+  trigger {
+    provider_type = "CodeStarSourceConnection"
+    git_configuration {
+      source_action_name = "Source"
+      push {
+        branches {
+          includes = [var.github_branch]
+        }
+        file_paths {
+          includes = [
+            "terraform/**",
+            "ci/buildspec-infra-plan.yml",
+            "ci/buildspec-infra-apply.yml",
+          ]
+        }
+      }
+    }
   }
 
   stage {
@@ -25,7 +45,7 @@ resource "aws_codepipeline" "infra" {
         ConnectionArn    = aws_codestarconnections_connection.github.arn
         FullRepositoryId = "${var.github_owner}/${var.github_repo}"
         BranchName       = var.github_branch
-        DetectChanges    = "true"
+        DetectChanges    = "false"
       }
     }
   }
@@ -85,12 +105,39 @@ resource "aws_codepipeline" "infra" {
 # ---------------------------------------------------------------------------
 
 resource "aws_codepipeline" "app" {
-  name     = "${var.app_name_prefix}-app-pipeline"
-  role_arn = aws_iam_role.codepipeline_service.arn
+  name          = "${var.app_name_prefix}-app-pipeline"
+  role_arn      = aws_iam_role.codepipeline_service.arn
+  pipeline_type = "V2"
 
   artifact_store {
     type     = "S3"
     location = aws_s3_bucket.pipeline_artifacts.bucket
+  }
+
+  trigger {
+    provider_type = "CodeStarSourceConnection"
+    git_configuration {
+      source_action_name = "Source"
+      push {
+        branches {
+          includes = [var.github_branch]
+        }
+        file_paths {
+          includes = [
+            "cmd/**",
+            "internal/**",
+            "go.mod",
+            "go.sum",
+            "Dockerfile",
+            "docker-compose.yml",
+            "web/**",
+            "sql/**",
+            "sqlc.yaml",
+            "ci/buildspec-app.yml",
+          ]
+        }
+      }
+    }
   }
 
   stage {
@@ -107,7 +154,7 @@ resource "aws_codepipeline" "app" {
         ConnectionArn    = aws_codestarconnections_connection.github.arn
         FullRepositoryId = "${var.github_owner}/${var.github_repo}"
         BranchName       = var.github_branch
-        DetectChanges    = "true"
+        DetectChanges    = "false"
       }
     }
   }
@@ -157,12 +204,31 @@ resource "aws_codepipeline" "app" {
 # ---------------------------------------------------------------------------
 
 resource "aws_codepipeline" "lambda" {
-  name     = "${var.app_name_prefix}-lambda-pipeline"
-  role_arn = aws_iam_role.codepipeline_service.arn
+  name          = "${var.app_name_prefix}-lambda-pipeline"
+  role_arn      = aws_iam_role.codepipeline_service.arn
+  pipeline_type = "V2"
 
   artifact_store {
     type     = "S3"
     location = aws_s3_bucket.pipeline_artifacts.bucket
+  }
+
+  trigger {
+    provider_type = "CodeStarSourceConnection"
+    git_configuration {
+      source_action_name = "Source"
+      push {
+        branches {
+          includes = [var.github_branch]
+        }
+        file_paths {
+          includes = [
+            "lambda/**",
+            "ci/buildspec-lambda.yml",
+          ]
+        }
+      }
+    }
   }
 
   stage {
@@ -179,7 +245,7 @@ resource "aws_codepipeline" "lambda" {
         ConnectionArn    = aws_codestarconnections_connection.github.arn
         FullRepositoryId = "${var.github_owner}/${var.github_repo}"
         BranchName       = var.github_branch
-        DetectChanges    = "true"
+        DetectChanges    = "false"
       }
     }
   }
