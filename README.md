@@ -4,9 +4,11 @@ A custom event calendar based on your interests.
 
 See [docs/superpowers/specs/2026-05-19-event-calendar-design.md](docs/superpowers/specs/2026-05-19-event-calendar-design.md) for the v1 design.
 
-## Local dev quickstart — backend foundation
+## Prerequisites
 
-Prerequisites: Go 1.24+, Docker, `sqlc` (`go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0`).
+Go 1.24+, Docker, pnpm 9+.
+
+## Backend quickstart
 
 ```bash
 cp .env.example .env
@@ -47,12 +49,8 @@ curl http://localhost:8080/me/interests -H "Authorization: Bearer $ACCESS"
 ## Event ingest quickstart
 
 ```bash
-# Start ElasticMQ (local SQS) alongside Postgres
-make queue-up
-
 # Set your Ticketmaster API key (free, https://developer.ticketmaster.com)
-export TICKETMASTER_API_KEY=<your-key>
-export TICKETMASTER_CITY="New York"
+# Edit .env: TICKETMASTER_API_KEY and TICKETMASTER_CITY
 
 # Run a one-shot scrape (publishes EventMessage records to events-queue).
 # `make scrape` is a shortcut for this exact command.
@@ -72,17 +70,12 @@ sits idle, long-polling).
 
 ## Spotify integration quickstart
 
+Register a Spotify app at https://developer.spotify.com/dashboard with the
+redirect URI `http://localhost:5173/integrations/spotify/callback`. Then set
+`SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in `.env` — everything else
+already has dev-safe defaults in `.env.example`.
+
 ```bash
-# Prereqs: register a Spotify app at https://developer.spotify.com/dashboard
-# Redirect URI: http://localhost:8080/integrations/spotify/callback
-# Copy Client ID + Secret into .env
-export SPOTIFY_CLIENT_ID=<your-id>
-export SPOTIFY_CLIENT_SECRET=<your-secret>
-export SPOTIFY_REDIRECT_URI=http://[::1]:8000/integrations/spotify/callback
-
-# Generate an at-rest encryption key for Spotify tokens
-openssl rand -base64 32   # paste into .env as SPOTIFY_TOKEN_ENC_KEY
-
 make db-up && make queue-up
 make migrate && make migrate-test
 make run    # starts api + events consumer + interests consumer
@@ -90,13 +83,13 @@ make run    # starts api + events consumer + interests consumer
 
 ### Connect a user
 
-1. Sign up + log in via the auth flow (Local dev quickstart).
-2. Visit `http://localhost:8080/integrations/spotify/connect` in a browser
-   with your access token in the `Authorization` header (use a REST client
-   like Postman, or wrap in a small HTML form).
-3. Spotify will redirect back to `/integrations/spotify/callback` — the
-   server stores the encrypted tokens and immediately publishes one
-   InterestMessage to the interests-queue. The consumer drains it.
+1. Sign up + log in via the auth flow (see Backend quickstart above).
+2. In another shell, start the frontend: `cd web && pnpm dev`
+3. Open `http://localhost:5173`, log in, navigate to Settings, and click
+   **Connect Spotify**. The SPA calls the API to start the OAuth flow,
+   Spotify redirects back to the SPA callback, and the server stores the
+   encrypted tokens and publishes an InterestMessage to the interests-queue.
+   The consumer drains it.
 4. Verify:
 
 ```bash
@@ -192,53 +185,7 @@ curl -s -X DELETE -H "Authorization: Bearer $ACCESS" \
 
 The old URL stops working immediately. Generate a new one via POST.
 
-## Terraform bootstrap + CI/CD pipelines quickstart
-
-Bootstrap creates the AWS-side scaffolding: state backend (S3 + DynamoDB),
-GitHub CodeStar connection, ECR repo, SNS approval topic, IAM roles, and
-two CodePipelines (infra + app). Run this **once** from a developer laptop
-with AWS admin credentials.
-
-```bash
-cd terraform/bootstrap
-
-# Configure your inputs
-cp terraform.tfvars.example terraform.tfvars
-# Open terraform.tfvars and set approval_email at minimum.
-
-# Apply
-terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
-```
-
-After apply, the outputs print three required follow-ups:
-
-1. **Authorize the GitHub CodeStar Connection.** Terraform creates it in
-   `PENDING` state. Go to AWS Console → Developer Tools → Settings →
-   Connections → `hwh-github` → Update pending connection → authorize the
-   `AWS Connector for GitHub` app on the `wmyers/heres-whats-happening` repo.
-   Until you do this, the pipelines fail at their Source stage.
-
-2. **Confirm the SNS email subscription.** AWS emails the address you set
-   in `approval_email`. Click the link to confirm. Without confirmation,
-   manual-approval notifications won't arrive.
-
-3. **Store the local Terraform state file safely.**
-   `terraform/bootstrap/terraform.tfstate` is gitignored. Copy it to a
-   password manager / encrypted volume — without it you can't update
-   bootstrap resources later.
-
-The pipelines exist and will run on every push to `master`, but they're
-no-op until:
-- `terraform/prod/` is populated (see the Terraform prod infrastructure
-  quickstart) — the infra pipeline will then start producing meaningful
-  plans for the manual-approval gate.
-- An ECS service exists (same quickstart) — the app pipeline's Deploy stage will
-  then actually update the running task definition. Until then, it just
-  pushes the image to ECR.
-
-## React + Vite frontend quickstart
+## Frontend quickstart
 
 The SPA lives in `web/`. In dev it runs on Vite (port 5173) and proxies API
 calls to the Go backend on port 8080.
@@ -250,7 +197,7 @@ pnpm install
 
 # Daily dev (alongside `make run` for the API)
 pnpm dev
-# Open http://127.0.0.1:5173
+# Open http://localhost:5173
 ```
 
 ### Tests
@@ -261,85 +208,6 @@ pnpm test          # one-shot
 pnpm test:watch    # watch mode
 ```
 
-### Production build + deploy
-
-The deploy script builds, syncs to S3, and invalidates CloudFront. Bucket name +
-distribution ID come from the prod Terraform outputs (Terraform prod
-infrastructure quickstart).
-
-```bash
-# Configure once (gitignored)
-cat > web/.env.deploy <<EOF
-S3_BUCKET=heres-whats-happening-frontend
-CLOUDFRONT_DISTRIBUTION_ID=E2XXXXXXXXX
-VITE_API_BASE_URL=https://api.example.com
-EOF
-
-# Deploy
-cd web && pnpm deploy
-```
-
-### Production CORS
-
-The Go API needs `CORS_ALLOWED_ORIGINS=https://example.com` set so the SPA
-can call cross-origin from CloudFront → ALB. In dev this is unnecessary
-(Vite's proxy makes everything same-origin).
-
-## Terraform prod infrastructure quickstart
-
-This is the big one — the actual production runtime. Requires the Terraform
-bootstrap + CI/CD pipelines quickstart to have been completed, and the
-prerequisites listed in `docs/superpowers/plans/2026-05-26-plan-08-terraform-prod.md`.
-
-### Prereqs (one-time)
-
-1. The Terraform bootstrap is applied (you already did this — the bootstrap
-   outputs printed the state bucket name).
-2. Register a domain. Create a Route53 public hosted zone for it. Update your
-   registrar's nameservers to the four NS records in the zone. Wait for DNS
-   propagation (`dig +short NS your-domain.com` returns the AWS nameservers).
-3. Replace `REPLACE_WITH_ACCOUNT_ID` in `terraform/prod/backend.tf` with your
-   AWS account ID (visible in any IAM resource ARN from the bootstrap outputs, or via
-   `aws sts get-caller-identity --query Account --output text`).
-
-### Apply
-
-```bash
-cd terraform/prod
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars and set domain_name to your real domain.
-terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
-```
-
-First apply takes ~15 minutes (RDS, CloudFront, ACM cert validation).
-
-### Post-apply checklist
-
-The outputs print a `post_apply_steps` heredoc — follow it:
-
-1. **Seed Secrets Manager values** — Terraform creates the secret shells with
-   placeholder values; you write the real secrets via `aws secretsmanager
-   put-secret-value` for `jwt-signing-key`, `spotify-client-id`, etc.
-2. **Push a bootstrap image to ECR** — needed before the first ECS service
-   deploy. The output prints the exact docker commands.
-3. **Trigger the app pipeline** — push a commit to master, or manually start
-   the `hwh-app-pipeline` in the AWS console. This builds the real Go image
-   and rolls the api service.
-4. **Run database migrations** — RDS is private (no public access, no NAT), so
-   you can't reach it from a laptop. Run a one-off ECS task on the `hwh-api`
-   task definition with its command overridden to `migrate`: the app binary
-   embeds `sql/migrations/` and applies them via the golang-migrate `iofs`
-   source, tracked in `schema_migrations` and safe to re-run. The
-   `post_apply_steps` output prints the exact `aws ecs run-task` command. (Run
-   the same task again after any future migration is merged and deployed.)
-5. **Deploy the frontend** — fill in `web/.env.deploy` with the bucket name +
-   distribution ID from the outputs, then `cd web && pnpm deploy`.
-
-After all five: hit `https://api.your-domain.com/healthz` (should return
-`{"status":"ok"}`) and load `https://your-domain.com` in a browser.
-
 ## Email-newsletter ingest quickstart
 
 SES receives promoter newsletters at `shows@inbound.<domain>` → S3 → a
@@ -349,43 +217,31 @@ images into `EventMessage` records on the events-queue. The existing consumer
 exactly as it does for Ticketmaster or Spotify events; the `source` column is
 `email_newsletter`.
 
-### Local dev
-
 ```bash
 cd lambda/email-parser
 pnpm install
-
-# Run the CI-safe unit + contract tests (no external services needed)
 pnpm test
-# Note: sqs.test.ts and handler.e2e.test.ts need ElasticMQ — run
-# `make queue-up` from the repo root first, then `pnpm test` to include them.
 ```
 
-#### Run Mastra Studio to test the extractor agent interactively
+### Run Mastra Studio to test the extractor agent interactively
 
 The `emailExtractor` Mastra agent is the core of the Lambda. You can drive it
 from the Studio UI without sending a real email:
 
 ```bash
-# Set your Anthropic key
-cp lambda/email-parser/.env.example lambda/email-parser/.env  # if needed
-echo "ANTHROPIC_API_KEY=<your-key>" >> lambda/email-parser/.env
+cp lambda/email-parser/.env.example lambda/email-parser/.env
+# Edit lambda/email-parser/.env and set ANTHROPIC_API_KEY
 
 cd lambda/email-parser
 pnpm dev   # starts Mastra Studio
 # Open http://localhost:4111 — the emailExtractor agent appears in the sidebar.
 ```
 
-#### Full end-to-end locally
+### Full end-to-end locally
 
 ```bash
 # Start ElasticMQ (local SQS) from the repo root
 make queue-up
-
-# Create the local events queue (one-time)
-aws --endpoint-url http://localhost:9324 sqs create-queue \
-  --queue-name events-queue \
-  --region us-east-1
 
 # Configure the Lambda env
 export ANTHROPIC_API_KEY=<your-key>
@@ -403,12 +259,3 @@ make run   # from repo root
 docker exec hwh_postgres psql -U app -d appdb \
   -c "SELECT e.title FROM events e JOIN event_sources s ON s.id = e.source_id WHERE s.name = 'email_newsletter' LIMIT 5;"
 ```
-
-### Prod infra
-
-SES receipt rule, S3 bucket, Lambda function, ECR repo, IAM, and CloudWatch
-alarm are all in `terraform/prod/`. Apply them with the
-**Terraform prod infrastructure quickstart** above, then follow the
-`email_post_apply_steps` output for the email-specific operator checklist
-(seed the Anthropic API key secret, confirm DNS/DKIM, push the bootstrap
-image, send a test email, watch the DLQ alarm).
