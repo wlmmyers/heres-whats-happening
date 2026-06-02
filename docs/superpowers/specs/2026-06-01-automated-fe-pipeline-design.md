@@ -49,9 +49,9 @@ Both values are already present in `terraform/prod/outputs.tfvars`. The operator
 version: 0.2
 phases:
   install:
-    runtime-versions:
-      nodejs: 24   # current LTS; requires the standard:8.0 image
     commands:
+      # standard image lacks Node 24 in runtime-versions (issue #803), so use nvm
+      - . "${NVM_DIR}/nvm.sh" && nvm install 24 && nvm use 24
       - corepack enable && corepack prepare pnpm@latest --activate
   build:
     commands:
@@ -79,7 +79,7 @@ Scoped to only what FE deploy needs:
 
 - Buildspec: `ci/buildspec-web.yml`
 - Compute: `BUILD_GENERAL1_SMALL`
-- Image: `aws/codebuild/standard:8.0` (provides Node 24; the shared `standard:7.0` only offers Node ≤20). The Go/lambda projects keep `standard:7.0`.
+- Image: shared `aws/codebuild/standard:7.0` (no bump). Node 24 is installed via the image's preinstalled `nvm`, since the standard image doesn't expose 24 through `runtime-versions` (issue #803 — same reason `buildspec-lambda.yml` pins 22).
 - `privileged_mode = false` (no Docker needed)
 - Env vars injected:
   - `S3_BUCKET` = `"${var.app_name_prefix}-frontend-${data.aws_caller_identity.current.account_id}"`
