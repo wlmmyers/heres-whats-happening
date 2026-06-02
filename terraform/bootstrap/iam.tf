@@ -282,3 +282,57 @@ resource "aws_iam_role_policy" "codebuild_lambda" {
   role   = aws_iam_role.codebuild_lambda.id
   policy = data.aws_iam_policy_document.codebuild_lambda.json
 }
+
+# ---------------------------------------------------------------------------
+# CodeBuild role for the frontend (web) build+deploy project
+# (builds the SPA, syncs to the frontend S3 bucket, invalidates CloudFront).
+# The frontend bucket + distribution are owned by the prod stack, so they are
+# referenced by computed name/ARN, not by resource reference.
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_role" "codebuild_web" {
+  name               = "${var.app_name_prefix}-codebuild-web"
+  assume_role_policy = data.aws_iam_policy_document.codebuild_assume.json
+}
+
+data "aws_iam_policy_document" "codebuild_web" {
+  # Sync the built SPA into the frontend bucket (with --delete, so DeleteObject too).
+  statement {
+    actions = ["s3:ListBucket"]
+    resources = [
+      "arn:aws:s3:::${var.app_name_prefix}-frontend-${data.aws_caller_identity.current.account_id}",
+    ]
+  }
+  statement {
+    actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = [
+      "arn:aws:s3:::${var.app_name_prefix}-frontend-${data.aws_caller_identity.current.account_id}/*",
+    ]
+  }
+  # Invalidate the CloudFront distribution after a sync.
+  statement {
+    actions   = ["cloudfront:CreateInvalidation"]
+    resources = ["arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:distribution/${var.cloudfront_distribution_id}"]
+  }
+  # Artifact bucket + logs (same pattern as the other codebuild roles).
+  statement {
+    actions = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]
+    resources = [
+      aws_s3_bucket.pipeline_artifacts.arn,
+      "${aws_s3_bucket.pipeline_artifacts.arn}/*",
+    ]
+  }
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "codebuild_web" {
+  role   = aws_iam_role.codebuild_web.id
+  policy = data.aws_iam_policy_document.codebuild_web.json
+}

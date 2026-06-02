@@ -2,6 +2,12 @@
 # Required:
 approval_email = "you@example.com"
 
+# Required for the frontend (web) pipeline. Both come from the prod stack:
+#   domain_name                → terraform/prod/prod.auto.tfvars
+#   cloudfront_distribution_id → terraform/prod/outputs.tfvars (cloudfront_distribution_id)
+domain_name                = "example.com"
+cloudfront_distribution_id = "EXXXXXXXXXXXXX"
+
 # Optional overrides:
 # aws_region      = "us-east-1"
 # app_name_prefix = "hwh"

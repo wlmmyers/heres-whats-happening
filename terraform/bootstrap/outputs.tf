@@ -26,6 +26,10 @@ output "app_pipeline_name" {
   value = aws_codepipeline.app.name
 }
 
+output "web_pipeline_name" {
+  value = aws_codepipeline.web.name
+}
+
 output "approval_topic_arn" {
   description = "SNS topic that emits manual-approval notifications. Email subscription must be confirmed."
   value       = aws_sns_topic.infra_approval.arn
