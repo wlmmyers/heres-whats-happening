@@ -50,9 +50,9 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      nodejs: 20
+      nodejs: 24   # current LTS; requires the standard:8.0 image
     commands:
-      - npm install -g pnpm
+      - corepack enable && corepack prepare pnpm@latest --activate
   build:
     commands:
       - cd web
@@ -79,7 +79,7 @@ Scoped to only what FE deploy needs:
 
 - Buildspec: `ci/buildspec-web.yml`
 - Compute: `BUILD_GENERAL1_SMALL`
-- Image: `aws/codebuild/standard:7.0` (includes Node 20)
+- Image: `aws/codebuild/standard:8.0` (provides Node 24; the shared `standard:7.0` only offers Node ≤20). The Go/lambda projects keep `standard:7.0`.
 - `privileged_mode = false` (no Docker needed)
 - Env vars injected:
   - `S3_BUCKET` = `"${var.app_name_prefix}-frontend-${data.aws_caller_identity.current.account_id}"`

@@ -193,8 +193,12 @@ resource "aws_codebuild_project" "web_deploy" {
   }
 
   environment {
-    compute_type    = local.cb_compute_type
-    image           = local.cb_image
+    compute_type = local.cb_compute_type
+    # NOT local.cb_image (standard:7.0) — that image's managed Node runtimes top
+    # out at nodejs 20. The frontend is built with Node 24 (current LTS), so this
+    # project pins the newer standard:8.0 image. The Go/lambda projects keep
+    # local.cb_image since they don't need Node 24.
+    image           = "aws/codebuild/standard:8.0"
     type            = "LINUX_CONTAINER"
     privileged_mode = false
 
@@ -263,15 +267,25 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      nodejs: 20
+      nodejs: 24
     commands:
+      # Belt-and-suspenders: if the managed image's runtime selector didn't land
+      # on Node 24, force it via nvm (preinstalled in CodeBuild standard images).
+      - |
+        if [ "$(node -v | cut -d. -f1)" != "v24" ]; then
+          echo "node $(node -v) is not v24 — installing 24 via nvm"
+          . "${NVM_DIR}/nvm.sh"
+          nvm install 24
+          nvm use 24
+        fi
+      - node --version
       - corepack enable
       - corepack prepare pnpm@latest --activate
 
   build:
     commands:
       - cd web
-      - echo "Building with VITE_API_BASE_URL=${VITE_API_BASE_URL}"
+      - echo "Building with Node $(node --version), VITE_API_BASE_URL=${VITE_API_BASE_URL}"
       - pnpm install --frozen-lockfile
       - pnpm run build
       - echo "Syncing dist/ to s3://${S3_BUCKET}/"
@@ -280,7 +294,9 @@ phases:
       - aws cloudfront create-invalidation --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" --paths "/*"
 ```
 
-Note on pnpm install: `corepack` ships with the `standard:7.0` Node 20 runtime and reads the `packageManager` field if present; `corepack prepare pnpm@latest` guarantees pnpm is available regardless. This avoids a global `npm install -g pnpm` step.
+Notes:
+- **Node 24 (current LTS):** requested via `runtime-versions: nodejs: 24` against the `standard:8.0` image (pinned in the CodeBuild project, Task 3). The `if`-guard re-installs 24 via the preinstalled `nvm` in the rare case the managed runtime selector doesn't provide it, so the build never silently runs on the wrong major. `node --version` is echoed so the build log shows exactly what ran.
+- **pnpm:** `corepack` ships with the Node runtime and provides pnpm without a global `npm install -g pnpm` step.
 
 - [ ] **Step 2: Validate YAML syntax**
 
@@ -501,6 +517,6 @@ After the branch is merged, the operator applies the bootstrap stack manually (t
 ## Self-Review Notes
 
 - **Spec coverage:** All six spec file-changes map to tasks (variables → T1, IAM → T2, CodeBuild → T3, buildspec → T4, pipeline → T5, app trigger → T6). Added T7 (output + plan review) for parity with the existing `app_pipeline_name`/`infra_pipeline_name` outputs.
-- **Buildspec deviation from spec:** The spec sketched `npm install -g pnpm`; the plan uses `corepack` instead (cleaner, ships with Node 20). Functionally equivalent — same pnpm build.
+- **Buildspec deviation from spec:** The spec sketched `npm install -g pnpm` on Node 20; the plan uses `corepack` instead (cleaner, ships with the Node runtime) and builds on **Node 24** (current LTS) per the operator's requirement. Node 24 requires the `standard:8.0` CodeBuild image (the shared `standard:7.0` only offers Node ≤20), so the `web_deploy` project pins `standard:8.0` while leaving the shared `local.cb_image` untouched for the Go/lambda projects.
 - **Gitignore:** Task 1 explicitly separates the committed `.example` change from the local-only `terraform.tfvars` edit so real values are never committed.
 - **No resource-reference to the frontend bucket/distribution:** they're owned by the prod stack, so referenced by computed ARN strings — correct for a cross-stack boundary.
