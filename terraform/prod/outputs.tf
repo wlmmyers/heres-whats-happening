@@ -33,6 +33,11 @@ output "db_master_user_secret_arn" {
   value       = aws_db_instance.main.master_user_secret[0].secret_arn
 }
 
+output "bastion_instance_id" {
+  description = "EC2 instance ID of the SSM DB bastion (start/stop this for tunnelling)."
+  value       = aws_instance.bastion.id
+}
+
 output "events_queue_url" {
   value = aws_sqs_queue.events.url
 }

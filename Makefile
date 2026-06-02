@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape tei-up tei-down tei-seed match test-scripts
+.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape tei-up tei-down tei-seed match test-scripts bastion-start bastion-tunnel bastion-creds bastion-stop
 
 ifneq (,$(wildcard .env))
     include .env
@@ -148,3 +148,31 @@ bootstrap-terraform-plan:
 
 bootstrap-terraform-apply:
 	cd terraform/bootstrap && AWS_PROFILE=$(AWS_PROFILE) terraform apply tfplan
+
+# --- Prod DB bastion (SSM tunnel to private RDS) --------------------------------
+# Prereqs (once): brew install --cask session-manager-plugin
+# Values come from .env (gitignored): BASTION_INSTANCE_ID, PROD_DB_HOST, PROD_SECRET_ARN
+
+bastion-start:
+	@echo "Starting bastion $(BASTION_INSTANCE_ID)..."
+	aws ec2 start-instances --profile $(AWS_PROFILE) --region $(PROD_REGION) \
+	    --instance-ids $(BASTION_INSTANCE_ID)
+	aws ec2 wait instance-running --profile $(AWS_PROFILE) --region $(PROD_REGION) \
+	    --instance-ids $(BASTION_INSTANCE_ID)
+	@echo "Instance running — wait ~30s for the SSM agent to register, then run: make bastion-tunnel"
+
+bastion-tunnel:
+	@echo "Opening port-forward to $(PROD_DB_HOST):5432 on localhost:5432 (leave this running)..."
+	aws ssm start-session --profile $(AWS_PROFILE) --region $(PROD_REGION) \
+	    --target $(BASTION_INSTANCE_ID) \
+	    --document-name AWS-StartPortForwardingSessionToRemoteHost \
+	    --parameters '{"host":["$(PROD_DB_HOST)"],"portNumber":["5432"],"localPortNumber":["5432"]}'
+
+bastion-creds:
+	aws secretsmanager get-secret-value --profile $(AWS_PROFILE) --region $(PROD_REGION) \
+	    --secret-id $(PROD_SECRET_ARN) \
+	    --query SecretString --output text
+
+bastion-stop:
+	aws ec2 stop-instances --profile $(AWS_PROFILE) --region $(PROD_REGION) \
+	    --instance-ids $(BASTION_INSTANCE_ID)

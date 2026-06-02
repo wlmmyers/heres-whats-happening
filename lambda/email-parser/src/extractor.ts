@@ -1,7 +1,7 @@
 import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 import type { EmailImage } from "./email.js";
 import { emailExtractorAgent } from "./mastra/agents/email-extractor.agent.js";
-import { EventDraftsSchema, type EventDraft } from "./schema.js";
+import { type EventDraft } from "./schema.js";
 
 export interface ExtractInput {
   mode: "text" | "image";
@@ -52,23 +52,8 @@ export class AwsSecretReader implements SecretReader {
  * ANTHROPIC_API_KEY); exercised via Studio (`pnpm dev`) and the invoke-local harness. */
 export class MastraExtractor implements EventExtractor {
   async extract(input: ExtractInput): Promise<EventDraft[]> {
-    const dateLine = input.receivedAt
-      ? `This email was received on ${input.receivedAt}. Use it to resolve the correct year for relative dates such as "this Friday".`
-      : "";
-    const content: Array<
-      | { type: "text"; text: string }
-      | { type: "image"; image: Buffer; mimeType: string }
-    > =
-      input.mode === "image"
-        ? [
-            { type: "text" as const, text: `${dateLine}\nExtract the events shown in the attached flyer image(s).` },
-            ...input.images.map((img) => ({ type: "image" as const, image: img.data, mimeType: img.contentType })),
-          ]
-        : [{ type: "text" as const, text: `${dateLine}\n\n${input.text}` }];
-
     const res = await emailExtractorAgent.generate(
-      [{ role: "user", content }],
-      { structuredOutput: { schema: EventDraftsSchema } },
+      [{ role: "user", content: JSON.stringify(input) }],
     );
     return (res.object?.events ?? []) as EventDraft[];
   }
