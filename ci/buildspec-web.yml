@@ -9,20 +9,25 @@ phases:
   install:
     commands:
       # CodeBuild's standard:7.0 image doesn't expose Node 24 in runtime-versions
-      # (aws/aws-codebuild-docker-images#803 — same reason buildspec-lambda.yml
-      # pins 22). Install 24 (current LTS) via the preinstalled nvm instead.
-      - . "${NVM_DIR}/nvm.sh"
-      - nvm install 24
-      - nvm use 24
+      # (aws/aws-codebuild-docker-images#803), and without a runtime-versions
+      # nodejs entry NVM_DIR is unset — so nvm is not an option here. Install the
+      # latest Node 24 (current LTS) straight from the official tarball into
+      # /usr/local. /usr/local/bin is already on PATH and, being a filesystem
+      # location rather than a per-shell env var, persists into the build phase
+      # (CodeBuild runs each phase in its own shell). No nvm / NVM_DIR / bash
+      # dependency — works under the dash phase shell too.
+      - NODE_TARBALL=$(curl -fsSL https://nodejs.org/dist/latest-v24.x/ | grep -o 'node-v24\.[0-9.]*-linux-x64\.tar\.xz' | head -1)
+      - echo "Installing ${NODE_TARBALL}"
+      - curl -fsSL "https://nodejs.org/dist/latest-v24.x/${NODE_TARBALL}" -o /tmp/node.tar.xz
+      - tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
       - node --version    # build log shows exactly which Node ran
       - corepack enable
       - corepack prepare pnpm@latest --activate
 
   build:
     commands:
-      # nvm's PATH changes are per-shell; CodeBuild runs each command in a fresh
-      # shell, so re-source nvm and select 24 here before building.
-      - . "${NVM_DIR}/nvm.sh" && nvm use 24
+      # Node 24 is on PATH via /usr/local/bin (installed in the install phase),
+      # so no per-shell re-sourcing is needed.
       - cd web
       - echo "Building with Node $(node --version), VITE_API_BASE_URL=${VITE_API_BASE_URL}"
       - pnpm install --frozen-lockfile

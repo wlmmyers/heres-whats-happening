@@ -50,8 +50,12 @@ version: 0.2
 phases:
   install:
     commands:
-      # standard image lacks Node 24 in runtime-versions (issue #803), so use nvm
-      - . "${NVM_DIR}/nvm.sh" && nvm install 24 && nvm use 24
+      # standard image lacks Node 24 in runtime-versions (issue #803), and NVM_DIR
+      # is unset without a runtime-versions nodejs entry — so install Node 24 from
+      # the official tarball into /usr/local (on PATH, persists across phases).
+      - NODE_TARBALL=$(curl -fsSL https://nodejs.org/dist/latest-v24.x/ | grep -o 'node-v24\.[0-9.]*-linux-x64\.tar\.xz' | head -1)
+      - curl -fsSL "https://nodejs.org/dist/latest-v24.x/${NODE_TARBALL}" -o /tmp/node.tar.xz
+      - tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
       - corepack enable && corepack prepare pnpm@latest --activate
   build:
     commands:
@@ -79,7 +83,7 @@ Scoped to only what FE deploy needs:
 
 - Buildspec: `ci/buildspec-web.yml`
 - Compute: `BUILD_GENERAL1_SMALL`
-- Image: shared `aws/codebuild/standard:7.0` (no bump). Node 24 is installed via the image's preinstalled `nvm`, since the standard image doesn't expose 24 through `runtime-versions` (issue #803 — same reason `buildspec-lambda.yml` pins 22).
+- Image: shared `aws/codebuild/standard:7.0` (no bump). Node 24 is installed from the official tarball into `/usr/local`, since the standard image doesn't expose 24 through `runtime-versions` (issue #803) and `NVM_DIR` is unset without a `runtime-versions` nodejs entry (nvm was tried first and failed for exactly that reason).
 - `privileged_mode = false` (no Docker needed)
 - Env vars injected:
   - `S3_BUCKET` = `"${var.app_name_prefix}-frontend-${data.aws_caller_identity.current.account_id}"`

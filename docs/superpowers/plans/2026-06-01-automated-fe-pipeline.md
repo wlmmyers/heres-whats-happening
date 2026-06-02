@@ -268,20 +268,25 @@ phases:
   install:
     commands:
       # CodeBuild's standard:7.0 image doesn't expose Node 24 in runtime-versions
-      # (aws/aws-codebuild-docker-images#803 — same reason buildspec-lambda.yml
-      # pins 22). Install 24 (current LTS) via the preinstalled nvm instead.
-      - . "${NVM_DIR}/nvm.sh"
-      - nvm install 24
-      - nvm use 24
+      # (aws/aws-codebuild-docker-images#803), and without a runtime-versions
+      # nodejs entry NVM_DIR is unset — so nvm is not an option here. Install the
+      # latest Node 24 (current LTS) straight from the official tarball into
+      # /usr/local. /usr/local/bin is already on PATH and, being a filesystem
+      # location rather than a per-shell env var, persists into the build phase
+      # (CodeBuild runs each phase in its own shell). No nvm / NVM_DIR / bash
+      # dependency — works under the dash phase shell too.
+      - NODE_TARBALL=$(curl -fsSL https://nodejs.org/dist/latest-v24.x/ | grep -o 'node-v24\.[0-9.]*-linux-x64\.tar\.xz' | head -1)
+      - echo "Installing ${NODE_TARBALL}"
+      - curl -fsSL "https://nodejs.org/dist/latest-v24.x/${NODE_TARBALL}" -o /tmp/node.tar.xz
+      - tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
       - node --version    # build log shows exactly which Node ran
       - corepack enable
       - corepack prepare pnpm@latest --activate
 
   build:
     commands:
-      # nvm's PATH changes are per-shell; CodeBuild runs each command in a fresh
-      # shell, so re-source nvm and select 24 here before building.
-      - . "${NVM_DIR}/nvm.sh" && nvm use 24
+      # Node 24 is on PATH via /usr/local/bin (installed in the install phase),
+      # so no per-shell re-sourcing is needed.
       - cd web
       - echo "Building with Node $(node --version), VITE_API_BASE_URL=${VITE_API_BASE_URL}"
       - pnpm install --frozen-lockfile
@@ -293,9 +298,9 @@ phases:
 ```
 
 Notes:
-- **Node 24 (current LTS) via nvm:** the standard image doesn't offer 24 through `runtime-versions` (per the repo's own finding in `buildspec-lambda.yml`), so `nvm install 24` is the primary mechanism — no image bump, consistent with what the repo already knows about CodeBuild. `node --version` is echoed so the log shows what ran.
-- **Re-sourcing nvm in `build`:** CodeBuild runs each buildspec command list in a separate shell, so the `nvm use 24` from `install` does not carry into `build` (the same gotcha called out in `buildspec-app.yml`). Re-source and re-select at the top of `build`.
-- **pnpm:** `corepack` ships with the Node runtime and provides pnpm without a global `npm install -g pnpm` step.
+- **Node 24 (current LTS) via official tarball:** the standard image doesn't offer 24 through `runtime-versions` (per the repo's own finding in `buildspec-lambda.yml`), and `NVM_DIR` is unset without a `runtime-versions` nodejs entry — so an nvm-based approach fails with `cannot open /nvm.sh`. Installing the tarball into `/usr/local` is interpreter-agnostic (works under the dash phase shell) and persists across phases. `node --version` is echoed so the log shows what ran.
+- **No re-sourcing needed in `build`:** because Node lives at `/usr/local/bin` (a filesystem path on PATH, not a per-shell env var), it is available in the separate `build`-phase shell without any setup.
+- **pnpm:** `corepack` ships with Node and provides pnpm without a global `npm install -g pnpm` step.
 
 - [ ] **Step 2: Validate YAML syntax**
 
@@ -516,6 +521,6 @@ After the branch is merged, the operator applies the bootstrap stack manually (t
 ## Self-Review Notes
 
 - **Spec coverage:** All six spec file-changes map to tasks (variables → T1, IAM → T2, CodeBuild → T3, buildspec → T4, pipeline → T5, app trigger → T6). Added T7 (output + plan review) for parity with the existing `app_pipeline_name`/`infra_pipeline_name` outputs.
-- **Buildspec deviation from spec:** The spec sketched `npm install -g pnpm` on Node 20; the plan uses `corepack` instead (cleaner, ships with the Node runtime) and builds on **Node 24** (current LTS) per the operator's requirement. CodeBuild's standard image doesn't expose Node 24 via `runtime-versions` (repo finding in `buildspec-lambda.yml`, issue #803), so Node 24 is installed via the preinstalled `nvm` — no CodeBuild image bump, shared `local.cb_image` (standard:7.0) unchanged for all projects.
+- **Buildspec deviation from spec:** The spec sketched `npm install -g pnpm` on Node 20; the plan uses `corepack` instead (cleaner, ships with Node) and builds on **Node 24** (current LTS) per the operator's requirement. CodeBuild's standard image doesn't expose Node 24 via `runtime-versions` (repo finding in `buildspec-lambda.yml`, issue #803), and `NVM_DIR` is unset without a `runtime-versions` nodejs entry, so Node 24 is installed from the official tarball into `/usr/local` — no CodeBuild image bump, shared `local.cb_image` (standard:7.0) unchanged for all projects.
 - **Gitignore:** Task 1 explicitly separates the committed `.example` change from the local-only `terraform.tfvars` edit so real values are never committed.
 - **No resource-reference to the frontend bucket/distribution:** they're owned by the prod stack, so referenced by computed ARN strings — correct for a cross-stack boundary.
