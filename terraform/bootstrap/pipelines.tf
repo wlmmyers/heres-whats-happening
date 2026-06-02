@@ -130,7 +130,6 @@ resource "aws_codepipeline" "app" {
             "go.sum",
             "Dockerfile",
             "docker-compose.yml",
-            "web/**",
             "sql/**",
           ]
         }
