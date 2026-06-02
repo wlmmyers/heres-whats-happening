@@ -264,3 +264,74 @@ resource "aws_codepipeline" "lambda" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# Web pipeline: Source → BuildAndDeploy
+# (the web buildspec builds the SPA, syncs to S3, and invalidates CloudFront in
+# a single stage, so no separate deploy stage — mirrors the lambda pipeline.)
+# Triggers only on web/** changes.
+# ---------------------------------------------------------------------------
+
+resource "aws_codepipeline" "web" {
+  name          = "${var.app_name_prefix}-web-pipeline"
+  role_arn      = aws_iam_role.codepipeline_service.arn
+  pipeline_type = "V2"
+
+  artifact_store {
+    type     = "S3"
+    location = aws_s3_bucket.pipeline_artifacts.bucket
+  }
+
+  trigger {
+    provider_type = "CodeStarSourceConnection"
+    git_configuration {
+      source_action_name = "Source"
+      push {
+        branches {
+          includes = [var.github_branch]
+        }
+        file_paths {
+          includes = [
+            "web/**",
+            "ci/buildspec-web.yml",
+          ]
+        }
+      }
+    }
+  }
+
+  stage {
+    name = "Source"
+    action {
+      name             = "Source"
+      category         = "Source"
+      owner            = "AWS"
+      provider         = "CodeStarSourceConnection"
+      version          = "1"
+      output_artifacts = ["source_output"]
+
+      configuration = {
+        ConnectionArn    = aws_codestarconnections_connection.github.arn
+        FullRepositoryId = "${var.github_owner}/${var.github_repo}"
+        BranchName       = var.github_branch
+        DetectChanges    = "false"
+      }
+    }
+  }
+
+  stage {
+    name = "BuildAndDeploy"
+    action {
+      name            = "BuildSyncInvalidate"
+      category        = "Build"
+      owner           = "AWS"
+      provider        = "CodeBuild"
+      version         = "1"
+      input_artifacts = ["source_output"]
+
+      configuration = {
+        ProjectName = aws_codebuild_project.web_deploy.name
+      }
+    }
+  }
+}
