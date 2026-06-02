@@ -33,6 +33,40 @@ output "db_master_user_secret_arn" {
   value       = aws_db_instance.main.master_user_secret[0].secret_arn
 }
 
+output "bastion_instance_id" {
+  description = "EC2 instance ID of the SSM DB bastion (start/stop this for tunnelling)."
+  value       = aws_instance.bastion.id
+}
+
+output "bastion_tunnel_steps" {
+  description = "How to tunnel a local DB client to RDS through the SSM bastion."
+  value       = <<-EOT
+    Connect a local DB client (Navicat, psql, ...) to RDS via the SSM bastion.
+    Prereqs (once): brew install --cask session-manager-plugin; export AWS_PROFILE=servant
+
+    1. Start the bastion (stopped by default to save cost):
+       aws ec2 start-instances --instance-ids ${aws_instance.bastion.id}
+       aws ec2 wait instance-running --instance-ids ${aws_instance.bastion.id}
+       # then wait ~30s more for the SSM agent to register
+
+    2. Open the port-forward (leave this running in its own terminal):
+       aws ssm start-session \
+         --target ${aws_instance.bastion.id} \
+         --document-name AWS-StartPortForwardingSessionToRemoteHost \
+         --parameters '{"host":["${aws_db_instance.main.address}"],"portNumber":["5432"],"localPortNumber":["5432"]}'
+
+    3. Fetch credentials (master user is "app", database "appdb"):
+       aws secretsmanager get-secret-value \
+         --secret-id ${aws_db_instance.main.master_user_secret[0].secret_arn} \
+         --query SecretString --output text
+
+    4. In your client, connect to localhost:5432, database appdb, user app.
+
+    5. When done, stop the bastion:
+       aws ec2 stop-instances --instance-ids ${aws_instance.bastion.id}
+  EOT
+}
+
 output "events_queue_url" {
   value = aws_sqs_queue.events.url
 }

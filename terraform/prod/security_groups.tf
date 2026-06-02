@@ -125,6 +125,13 @@ resource "aws_security_group" "rds" {
     protocol        = "tcp"
     security_groups = [aws_security_group.task_runner.id]
   }
+  ingress {
+    description     = "Postgres from SSM bastion (DB tunnelling)"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
 
   egress {
     from_port   = 0
