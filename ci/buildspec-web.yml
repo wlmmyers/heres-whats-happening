@@ -1,0 +1,33 @@
+version: 0.2
+
+# Frontend (web) build+deploy. Builds the Vite SPA, syncs dist/ to the frontend
+# S3 bucket, then invalidates CloudFront. All inputs (S3_BUCKET,
+# CLOUDFRONT_DISTRIBUTION_ID, VITE_API_BASE_URL) are injected by the
+# hwh-web-deploy CodeBuild project (see terraform/bootstrap/codebuild.tf).
+
+phases:
+  install:
+    commands:
+      # CodeBuild's standard:7.0 image doesn't expose Node 24 in runtime-versions
+      # (aws/aws-codebuild-docker-images#803 — same reason buildspec-lambda.yml
+      # pins 22). Install 24 (current LTS) via the preinstalled nvm instead.
+      - . "${NVM_DIR}/nvm.sh"
+      - nvm install 24
+      - nvm use 24
+      - node --version    # build log shows exactly which Node ran
+      - corepack enable
+      - corepack prepare pnpm@latest --activate
+
+  build:
+    commands:
+      # nvm's PATH changes are per-shell; CodeBuild runs each command in a fresh
+      # shell, so re-source nvm and select 24 here before building.
+      - . "${NVM_DIR}/nvm.sh" && nvm use 24
+      - cd web
+      - echo "Building with Node $(node --version), VITE_API_BASE_URL=${VITE_API_BASE_URL}"
+      - pnpm install --frozen-lockfile
+      - pnpm run build
+      - echo "Syncing dist/ to s3://${S3_BUCKET}/"
+      - aws s3 sync dist/ "s3://${S3_BUCKET}/" --delete
+      - echo "Invalidating CloudFront ${CLOUDFRONT_DISTRIBUTION_ID}"
+      - aws cloudfront create-invalidation --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" --paths "/*"
