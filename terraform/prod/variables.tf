@@ -84,5 +84,5 @@ variable "tei_image" {
 variable "tei_model_id" {
   description = "Hugging Face model ID for TEI to serve."
   type        = string
-  default     = "sentence-transformers/all-mpnet-base-v2"
+  default     = "BAAI/bge-small-en-v1.5"
 }
