@@ -27,7 +27,7 @@ Replace the inline email + sign-out button in the nav bar with an avatar icon th
 - Content:
   1. User's email address — small, gray
   2. Thin `<hr>` divider
-  3. "Sign out" plain text button — calls `logout()` and closes the popover
+  3. "Sign out" as a `<button>` styled without border or background (text-only appearance) — calls `logout()` and closes the popover
 - Dismissed by clicking anywhere outside the component
 
 ### Dismissal
