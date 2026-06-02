@@ -144,7 +144,7 @@ match:
 	go run ./cmd/app match
 
 bootstrap-terraform-plan:
-	cd terraform && terraform plan -out=tfplan
+	cd terraform/bootstrap && AWS_PROFILE=$(AWS_PROFILE) terraform plan -out=tfplan
 
 bootstrap-terraform-apply:
-	cd terraform && terraform apply tfplan
+	cd terraform/bootstrap && AWS_PROFILE=$(AWS_PROFILE) terraform apply tfplan
