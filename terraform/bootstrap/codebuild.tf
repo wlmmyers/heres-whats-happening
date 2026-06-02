@@ -255,3 +255,58 @@ resource "aws_codebuild_project" "lambda_build" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# Web (frontend): build the Vite SPA, sync to the frontend S3 bucket, invalidate
+# CloudFront. Single-phase (no separate deploy stage) — mirrors the lambda build.
+# No Docker, so privileged_mode is false.
+# ---------------------------------------------------------------------------
+
+resource "aws_codebuild_project" "web_deploy" {
+  name          = "${var.app_name_prefix}-web-deploy"
+  service_role  = aws_iam_role.codebuild_web.arn
+  build_timeout = 20
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type = local.cb_compute_type
+    # Shared standard:7.0 image. Its managed Node runtimes don't include 24
+    # (aws/aws-codebuild-docker-images#803 — same reason buildspec-lambda.yml
+    # pins 22), so the buildspec installs Node 24 via the preinstalled nvm
+    # rather than via runtime-versions. No image bump needed.
+    image           = local.cb_image
+    type            = "LINUX_CONTAINER"
+    privileged_mode = false
+
+    environment_variable {
+      name  = "AWS_REGION"
+      value = var.aws_region
+    }
+    environment_variable {
+      name  = "S3_BUCKET"
+      value = "${var.app_name_prefix}-frontend-${data.aws_caller_identity.current.account_id}"
+    }
+    environment_variable {
+      name  = "CLOUDFRONT_DISTRIBUTION_ID"
+      value = var.cloudfront_distribution_id
+    }
+    environment_variable {
+      name  = "VITE_API_BASE_URL"
+      value = "https://api.${var.domain_name}"
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "ci/buildspec-web.yml"
+  }
+
+  logs_config {
+    cloudwatch_logs {
+      group_name = "/aws/codebuild/${var.app_name_prefix}-web-deploy"
+    }
+  }
+}
