@@ -14,7 +14,7 @@ phases:
   pre_build:
     commands:
       - cd "$CODEBUILD_SRC_DIR/${TF_STACK_DIR}"
-      - terraform init -input=false
+      - terraform init -input=false -backend-config="bucket=${TF_STATE_BUCKET}"
 
   build:
     commands:

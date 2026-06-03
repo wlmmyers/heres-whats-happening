@@ -36,6 +36,13 @@ resource "aws_codebuild_project" "infra_plan" {
       name  = "TF_STACK_DIR"
       value = "terraform/prod"
     }
+    # State bucket name is derived from the account ID here so the literal ID
+    # stays out of the (potentially public) repo. The buildspec passes it to
+    # `terraform init` via -backend-config.
+    environment_variable {
+      name  = "TF_STATE_BUCKET"
+      value = "${var.app_name_prefix}-tf-state-${data.aws_caller_identity.current.account_id}"
+    }
   }
 
   source {
@@ -76,6 +83,13 @@ resource "aws_codebuild_project" "infra_apply" {
     environment_variable {
       name  = "TF_STACK_DIR"
       value = "terraform/prod"
+    }
+    # State bucket name is derived from the account ID here so the literal ID
+    # stays out of the (potentially public) repo. The buildspec passes it to
+    # `terraform init` via -backend-config.
+    environment_variable {
+      name  = "TF_STATE_BUCKET"
+      value = "${var.app_name_prefix}-tf-state-${data.aws_caller_identity.current.account_id}"
     }
   }
 
