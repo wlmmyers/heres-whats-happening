@@ -24,20 +24,37 @@ func (q *Queries) DeleteObsoleteMatches(ctx context.Context) error {
 	return err
 }
 
+const deleteStaleMatchesForUsers = `-- name: DeleteStaleMatchesForUsers :exec
+DELETE FROM user_event_match
+WHERE user_id = ANY($1::uuid[])
+  AND computed_at < $2
+`
+
+type DeleteStaleMatchesForUsersParams struct {
+	UserIds []pgtype.UUID      `json:"user_ids"`
+	Cutoff  pgtype.Timestamptz `json:"cutoff"`
+}
+
+func (q *Queries) DeleteStaleMatchesForUsers(ctx context.Context, arg DeleteStaleMatchesForUsersParams) error {
+	_, err := q.db.Exec(ctx, deleteStaleMatchesForUsers, arg.UserIds, arg.Cutoff)
+	return err
+}
+
 const upsertUserEventMatch = `-- name: UpsertUserEventMatch :exec
 INSERT INTO user_event_match (user_id, event_id, score, score_breakdown, computed_at)
-VALUES ($1, $2, $3, $4, NOW())
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (user_id, event_id) DO UPDATE SET
     score           = EXCLUDED.score,
     score_breakdown = EXCLUDED.score_breakdown,
-    computed_at     = NOW()
+    computed_at     = EXCLUDED.computed_at
 `
 
 type UpsertUserEventMatchParams struct {
-	UserID         pgtype.UUID `json:"user_id"`
-	EventID        pgtype.UUID `json:"event_id"`
-	Score          float64     `json:"score"`
-	ScoreBreakdown []byte      `json:"score_breakdown"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	EventID        pgtype.UUID        `json:"event_id"`
+	Score          float64            `json:"score"`
+	ScoreBreakdown []byte             `json:"score_breakdown"`
+	ComputedAt     pgtype.Timestamptz `json:"computed_at"`
 }
 
 func (q *Queries) UpsertUserEventMatch(ctx context.Context, arg UpsertUserEventMatchParams) error {
@@ -46,6 +63,7 @@ func (q *Queries) UpsertUserEventMatch(ctx context.Context, arg UpsertUserEventM
 		arg.EventID,
 		arg.Score,
 		arg.ScoreBreakdown,
+		arg.ComputedAt,
 	)
 	return err
 }

@@ -47,6 +47,7 @@ func seedCalendarFixture(t *testing.T, q *store.Queries, ctx context.Context) (p
 		EventID:        eventID,
 		Score:          0.82,
 		ScoreBreakdown: []byte(`{"matched_performers":["Phoebe Bridgers"],"matched_genres":["indie"]}`),
+		ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
 	}))
 	return userRow.ID, eventID
 }

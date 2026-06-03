@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -31,6 +32,10 @@ func (m *MatchStep) Run(ctx context.Context) error {
 		return fmt.Errorf("load events: %w", err)
 	}
 
+	// One timestamp for the whole run: every upsert stamps computed_at = runAt.
+	// (The stale-prune below deletes anything not stamped this run.)
+	runAt := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+
 	for _, user := range users {
 		for _, event := range events {
 			score := Score(user, event, m.cfg)
@@ -51,6 +56,7 @@ func (m *MatchStep) Run(ctx context.Context) error {
 				EventID:        event.EventID,
 				Score:          score.TotalScore,
 				ScoreBreakdown: bd,
+				ComputedAt:     runAt,
 			}); err != nil {
 				return fmt.Errorf("upsert match: %w", err)
 			}
