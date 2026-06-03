@@ -1,10 +1,6 @@
 # Here's What's Happening
 
-A smart event calendar based on your interests.
-
-## Featuring
-
-**Stop scrolling through endless event listings. We find the shows you actually care about.**
+A smart live-event calendar based on your interests
 
 - 🎯 **A calendar built around you.** Tell us what you're into and we surface the upcoming events worth your time.
 - 🎧 **Connect Spotify in one click.** We read your top artists and genres and automatically turn them into interests that match against live events in your area.
