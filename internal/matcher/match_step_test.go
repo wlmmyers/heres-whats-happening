@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
 
@@ -131,6 +132,131 @@ func TestMatchStep_TrackArtistMatchesPerformer(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(breakdown, &bd))
 	require.Contains(t, bd.MatchedPerformers, "boygenius")
+}
+
+func matchCount(t *testing.T, pool *pgxpool.Pool, ctx context.Context, userID, eventID pgtype.UUID) int {
+	t.Helper()
+	var n int
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT count(*) FROM user_event_match WHERE user_id = $1 AND event_id = $2",
+		userID, eventID).Scan(&n))
+	return n
+}
+
+func TestMatchStep_PrunesDroppedMatch(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "prune@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+	// Two artist interests: one drives event A, the other event B.
+	require.NoError(t, q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
+		UserID: userRow.ID, Kind: "spotify_top_artist",
+		Value: "Phoebe Bridgers", NormalizedValue: "phoebe bridgers", Weight: 1.0,
+	}))
+	require.NoError(t, q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
+		UserID: userRow.ID, Kind: "spotify_top_artist",
+		Value: "Radiohead", NormalizedValue: "radiohead", Weight: 1.0,
+	}))
+	// User embedding e_u = [1,0,0,...].
+	userVec := make([]float32, 384)
+	userVec[0] = 1.0
+	uv := pgvector.NewVector(userVec)
+	require.NoError(t, q.UpdateUserInterestEmbedding(ctx, store.UpdateUserInterestEmbeddingParams{
+		ID: userRow.ID, InterestEmbedding: &uv,
+	}))
+
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, _ := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "V", NormalizedName: "v",
+	})
+	// Event embedding e_ev = [0,1,0,...] is orthogonal to the user → embedScore
+	// 0.5 → 0.4*0.5 = 0.2. With Defaults() an artist match adds 0.6*(1.0/3.0) =
+	// 0.2 → total 0.4 > 0.3 threshold; without the artist match only 0.2 < 0.3.
+	eventVec := make([]float32, 384)
+	eventVec[1] = 1.0
+	ev := pgvector.NewVector(eventVec)
+
+	eventA, _ := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID: src.ID, SourceEventID: "prune-a", Title: "PB Live",
+		StartsAt: pgtype.Timestamptz{Time: time.Now().Add(48 * time.Hour), Valid: true},
+		VenueID:  venueID,
+	})
+	require.NoError(t, q.InsertEventPerformer(ctx, store.InsertEventPerformerParams{
+		EventID: eventA, PerformerName: "Phoebe Bridgers", NormalizedName: "phoebe bridgers",
+	}))
+	require.NoError(t, q.UpdateEventEmbedding(ctx, store.UpdateEventEmbeddingParams{ID: eventA, Embedding: &ev}))
+
+	eventB, _ := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID: src.ID, SourceEventID: "prune-b", Title: "Radiohead Live",
+		StartsAt: pgtype.Timestamptz{Time: time.Now().Add(72 * time.Hour), Valid: true},
+		VenueID:  venueID,
+	})
+	require.NoError(t, q.InsertEventPerformer(ctx, store.InsertEventPerformerParams{
+		EventID: eventB, PerformerName: "Radiohead", NormalizedName: "radiohead",
+	}))
+	require.NoError(t, q.UpdateEventEmbedding(ctx, store.UpdateEventEmbeddingParams{ID: eventB, Embedding: &ev}))
+
+	step := matcher.NewMatchStep(q, matcher.Defaults())
+
+	// Run 1: both events match (artist + embedding).
+	require.NoError(t, step.Run(ctx))
+	require.Equal(t, 1, matchCount(t, pool, ctx, userRow.ID, eventA))
+	require.Equal(t, 1, matchCount(t, pool, ctx, userRow.ID, eventB))
+
+	// User drops "Phoebe Bridgers" → event A loses its artist match and falls
+	// below threshold; "Radiohead" (event B) stays above.
+	_, err := pool.Exec(ctx,
+		"DELETE FROM user_interests WHERE user_id = $1 AND normalized_value = $2",
+		userRow.ID, "phoebe bridgers")
+	require.NoError(t, err)
+
+	// Run 2: event A is pruned; event B remains.
+	require.NoError(t, step.Run(ctx))
+	require.Equal(t, 0, matchCount(t, pool, ctx, userRow.ID, eventA), "dropped match should be pruned")
+	require.Equal(t, 1, matchCount(t, pool, ctx, userRow.ID, eventB), "still-matching event should remain")
+}
+
+func TestMatchStep_NoActiveUsers_DoesNotPrune(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "noprune@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, _ := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "VN", NormalizedName: "vn",
+	})
+	eventID, _ := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID: src.ID, SourceEventID: "noprune-1", Title: "Future Show",
+		StartsAt: pgtype.Timestamptz{Time: time.Now().Add(48 * time.Hour), Valid: true},
+		VenueID:  venueID,
+	})
+	// Pre-seed a match with an old computed_at.
+	require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+		UserID: userRow.ID, EventID: eventID, Score: 0.9,
+		ScoreBreakdown: []byte(`{}`),
+		ComputedAt:     pgtype.Timestamptz{Time: time.Now().Add(-24 * time.Hour).UTC(), Valid: true},
+	}))
+	// Soft-delete the user so the run loads zero active users.
+	_, err := pool.Exec(ctx, "UPDATE users SET deleted_at = NOW() WHERE id = $1", userRow.ID)
+	require.NoError(t, err)
+
+	step := matcher.NewMatchStep(q, matcher.Defaults())
+	require.NoError(t, step.Run(ctx))
+
+	// Zero users loaded → stale-prune skipped → the seeded match survives (the
+	// event is still upcoming, so DeleteObsoleteMatches leaves it too).
+	var n int
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT count(*) FROM user_event_match WHERE user_id = $1", userRow.ID).Scan(&n))
+	require.Equal(t, 1, n)
 }
 
 func TestMatchStep_BelowThresholdSkipped(t *testing.T) {
