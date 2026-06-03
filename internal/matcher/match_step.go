@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -31,6 +32,16 @@ func (m *MatchStep) Run(ctx context.Context) error {
 		return fmt.Errorf("load events: %w", err)
 	}
 
+	// One timestamp for the whole run: every upsert stamps computed_at = runAt,
+	// and the stale-prune below deletes anything not stamped this run. Using a
+	// single value for both write and prune removes any clock-skew ambiguity.
+	runAt := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+
+	userIDs := make([]pgtype.UUID, len(users))
+	for i, u := range users {
+		userIDs[i] = u.UserID
+	}
+
 	for _, user := range users {
 		for _, event := range events {
 			score := Score(user, event, m.cfg)
@@ -51,9 +62,22 @@ func (m *MatchStep) Run(ctx context.Context) error {
 				EventID:        event.EventID,
 				Score:          score.TotalScore,
 				ScoreBreakdown: bd,
+				ComputedAt:     runAt,
 			}); err != nil {
 				return fmt.Errorf("upsert match: %w", err)
 			}
+		}
+	}
+
+	// Prune matches for the recomputed users that were not re-stamped this run
+	// (pairs that dropped to/below threshold). Scoped to processed users so a
+	// zero-user run is a no-op.
+	if len(userIDs) > 0 {
+		if err := m.q.DeleteStaleMatchesForUsers(ctx, store.DeleteStaleMatchesForUsersParams{
+			UserIds: userIDs,
+			Cutoff:  runAt,
+		}); err != nil {
+			return fmt.Errorf("delete stale matches: %w", err)
 		}
 	}
 
