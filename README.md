@@ -6,13 +6,13 @@ A smart event calendar based on your interests.
 
 **Stop scrolling through endless event listings. We find the shows you actually care about.**
 
-- **A calendar built around you.** Tell us what you're into and we surface the upcoming events worth your time.
-- **Connect Spotify in one click.** We read your top artists and genres and automatically turn them into interests that match against live events in your area.
-- **Add your own interests.** Love a band or genre we don't see in your listening history? Add your own tags and we'll watch for it.
-- **Smart matching.** Every event is scored against your taste using a blend of keyword and AI semantic matching so "indie rock" still finds the show even when the listing never says those exact words.
-- **Subscribe once, never miss out.** Generate a personal calendar feed and add it to Apple Calendar, Google Calendar, or Fantastical. Your matched events show up right alongside the rest of your life and refresh automatically.
-- **Real events from real sources.** We pull from major ticketing platforms and local promoter newsletters — even reading event details straight off flyer images — so you get the big tours and the hometown gigs in one place.
-- **A clean, fast web app.** Sign up, manage your interests, connect Spotify, and browse your personalized calendar from any browser.
+- 🎯 **A calendar built around you.** Tell us what you're into and we surface the upcoming events worth your time.
+- 🎧 **Connect Spotify in one click.** We read your top artists and genres and automatically turn them into interests that match against live events in your area.
+- ✍️ **Add your own interests.** Love a band or genre we don't see in your listening history? Add your own tags and we'll watch for it.
+- 🧠 **Smart matching.** Every event is scored against your taste using a blend of keyword and AI semantic matching so "indie rock" still finds the show even when the listing never says those exact words.
+- 📅 **Subscribe once, never miss out.** Generate a personal calendar feed and add it to Apple Calendar, Google Calendar, or Fantastical. Your matched events show up right alongside the rest of your life and refresh automatically.
+- 📬 **Real events from real sources.** We pull from major ticketing platforms and local promoter newsletters — even reading event details straight off flyer images — so you get the big tours and the hometown gigs in one place.
+- 💻 **A clean, fast web app.** Sign up, manage your interests, connect Spotify, and browse your personalized calendar from any browser.
 
 ## Coming Soon
 
@@ -20,9 +20,7 @@ A smart event calendar based on your interests.
 - **Support for more cities** — wherever you are, your calendar comes with you.
 - **Better live sports support** — never miss your team, with richer coverage of games and matchups.
 
-## Contributing
-
-### Prerequisites
+## Contributing - Prerequisites
 
 Go 1.24+, Docker, pnpm 9+, make, psql
 
