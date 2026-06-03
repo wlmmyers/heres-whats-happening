@@ -88,7 +88,7 @@ func TestGetTopArtists_Parses(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/v1/me/top/artists", r.URL.Path)
 		require.Equal(t, "Bearer AT", r.Header.Get("Authorization"))
-		require.Equal(t, "medium_term", r.URL.Query().Get("time_range"))
+		require.Equal(t, "long_term", r.URL.Query().Get("time_range"))
 		require.Equal(t, "50", r.URL.Query().Get("limit"))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -105,4 +105,33 @@ func TestGetTopArtists_Parses(t *testing.T) {
 	require.Len(t, artists, 2)
 	require.Equal(t, "Phoebe Bridgers", artists[0].Name)
 	require.ElementsMatch(t, []string{"indie pop", "indie rock"}, artists[0].Genres)
+}
+
+func TestGetTopTracks_ExtractsArtists(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/me/top/tracks", r.URL.Path)
+		require.Equal(t, "Bearer AT", r.Header.Get("Authorization"))
+		require.Equal(t, "long_term", r.URL.Query().Get("time_range"))
+		require.Equal(t, "50", r.URL.Query().Get("limit"))
+		w.Header().Set("Content-Type", "application/json")
+		// Two tracks; the second is a collab. Simplified track artists carry a
+		// name but no genres.
+		_, _ = w.Write([]byte(`{
+		  "items": [
+		    {"name": "Motion Sickness", "artists": [{"name": "Phoebe Bridgers"}]},
+		    {"name": "Silk Chiffon", "artists": [{"name": "MUNA"}, {"name": "Phoebe Bridgers"}]}
+		  ]
+		}`))
+	}))
+	defer srv.Close()
+	c := New("cid", "csec", "http://localhost/cb", srv.URL)
+	artists, err := c.GetTopTracks(context.Background(), "AT", 50)
+	require.NoError(t, err)
+	// Flattened across tracks, including the duplicate from the collab — the
+	// adapter is responsible for deduping.
+	require.Len(t, artists, 3)
+	require.Equal(t, "Phoebe Bridgers", artists[0].Name)
+	require.Empty(t, artists[0].Genres)
+	require.Equal(t, "MUNA", artists[1].Name)
+	require.Equal(t, "Phoebe Bridgers", artists[2].Name)
 }

@@ -16,8 +16,10 @@ import (
 // InterestHandler applies an InterestMessage to user_interests, replacing
 // the user's Spotify-derived rows atomically per message.
 //
-// Weight scaling: rank 1 → 1.0; rank N → max(0.1, 1.0 - (N-1)*0.02). This
-// gives top-1 full weight and ramps down gently so rank-50 still contributes.
+// Weight scaling: artists and track artists use rankWeight (rank 1 → 1.0,
+// ramping down to 0.6 at rank 50). Genres use rankGenreWeight, which decays
+// further toward a 0.1 floor — the genre list is unbounded, so deep-ranked
+// genres should stay weak signal.
 type InterestHandler struct {
 	q *store.Queries
 }
@@ -56,12 +58,30 @@ func (h *InterestHandler) Handle(ctx context.Context, body []byte) error {
 		}
 	}
 
+	// Replace track artists (the artists behind the user's top tracks — a
+	// distinct signal from their top artists).
+	if err := h.q.ReplaceSpotifyTrackArtistInterests(ctx, pgUID); err != nil {
+		return fmt.Errorf("delete track artists: %w", err)
+	}
+	for _, item := range m.SpotifyTopTrackArtists {
+		w := rankWeight(item.Rank)
+		if err := h.q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
+			UserID:          pgUID,
+			Kind:            "spotify_top_track_artist",
+			Value:           item.Name,
+			NormalizedValue: events.NormalizeString(item.Name),
+			Weight:          w,
+		}); err != nil {
+			return fmt.Errorf("insert track artist %q: %w", item.Name, err)
+		}
+	}
+
 	// Replace genres.
 	if err := h.q.ReplaceSpotifyGenreInterests(ctx, pgUID); err != nil {
 		return fmt.Errorf("delete genres: %w", err)
 	}
 	for _, item := range m.SpotifyTopGenres {
-		w := rankWeight(item.Rank)
+		w := rankGenreWeight(item.Rank)
 		if err := h.q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
 			UserID:          pgUID,
 			Kind:            "spotify_top_genre",
@@ -76,7 +96,30 @@ func (h *InterestHandler) Handle(ctx context.Context, body []byte) error {
 	return nil
 }
 
+// rankWeight maps a 1-based rank to an interest weight: rank 1 → 1.0, ramping
+// down linearly to 0.6 at rank 50 (the size of the Spotify top-artist and
+// top-track lists), then holding at 0.6 for any lower-ranked items. Used for
+// artists and track artists, whose lists are capped at 50.
 func rankWeight(rank int) float64 {
+	const (
+		maxRank   = 50
+		minWeight = 0.6
+	)
+	if rank <= 1 {
+		return 1.0
+	}
+	w := 1.0 - float64(rank-1)*(1.0-minWeight)/(maxRank-1)
+	if w < minWeight {
+		return minWeight
+	}
+	return w
+}
+
+// rankGenreWeight maps a 1-based rank to a genre weight: rank 1 → 1.0, decaying
+// 0.02 per rank down to a 0.1 floor. The genre list is unbounded (derived from
+// the frequency of every genre across the user's top artists), so deep-ranked
+// genres decay to near-negligible signal rather than holding at a high floor.
+func rankGenreWeight(rank int) float64 {
 	w := 1.0 - float64(rank-1)*0.02
 	if w < 0.1 {
 		return 0.1

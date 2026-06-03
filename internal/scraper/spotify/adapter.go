@@ -84,10 +84,16 @@ func (a *Adapter) ScrapeOne(ctx context.Context, userID pgtype.UUID) error {
 		accessToken = []byte(tok.AccessToken)
 	}
 
-	// Fetch top artists.
+	// Fetch top artists and the artists behind the user's top tracks. These
+	// are kept as separate signals: top artists carry genres, track artists
+	// don't.
 	artists, err := a.client.GetTopArtists(ctx, string(accessToken), 50)
 	if err != nil {
 		return fmt.Errorf("get top artists: %w", err)
+	}
+	trackArtists, err := a.client.GetTopTracks(ctx, string(accessToken), 50)
+	if err != nil {
+		return fmt.Errorf("get top tracks: %w", err)
 	}
 
 	msg := events.InterestMessage{
@@ -104,6 +110,24 @@ func (a *Adapter) ScrapeOne(ctx context.Context, userID pgtype.UUID) error {
 		for _, g := range ar.Genres {
 			genreCount[g]++
 		}
+	}
+
+	// Track artists become their own ranked list, deduped by normalized name —
+	// the same key ingest writes to normalized_value — so casing/diacritic
+	// variants collapse to one entry (a name's first appearance, i.e. its
+	// highest-ranked track, sets its rank).
+	seenTrackArtist := make(map[string]bool, len(trackArtists))
+	msg.SpotifyTopTrackArtists = make([]events.SpotifyTopItem, 0, len(trackArtists))
+	for _, ar := range trackArtists {
+		key := events.NormalizeString(ar.Name)
+		if key == "" || seenTrackArtist[key] {
+			continue
+		}
+		seenTrackArtist[key] = true
+		msg.SpotifyTopTrackArtists = append(msg.SpotifyTopTrackArtists, events.SpotifyTopItem{
+			Name: ar.Name,
+			Rank: len(msg.SpotifyTopTrackArtists) + 1,
+		})
 	}
 
 	type gc struct {

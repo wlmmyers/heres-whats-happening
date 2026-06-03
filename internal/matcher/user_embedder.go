@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pgvector/pgvector-go"
 
+	"github.com/wmyers/heres-whats-happening/internal/events"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
 
@@ -35,9 +36,10 @@ func (u *UserEmbedder) Run(ctx context.Context) error {
 	}
 
 	type bucket struct {
-		artists []string
-		genres  []string
-		tags    []string
+		artists      []string
+		trackArtists []string
+		genres       []string
+		tags         []string
 	}
 	byUser := make(map[pgtype.UUID]*bucket, len(userIDs))
 	for _, id := range userIDs {
@@ -48,6 +50,8 @@ func (u *UserEmbedder) Run(ctx context.Context) error {
 		switch ui.Kind {
 		case "spotify_top_artist":
 			b.artists = append(b.artists, ui.Value)
+		case "spotify_top_track_artist":
+			b.trackArtists = append(b.trackArtists, ui.Value)
 		case "spotify_top_genre":
 			b.genres = append(b.genres, ui.Value)
 		case "manual_tag":
@@ -58,8 +62,11 @@ func (u *UserEmbedder) Run(ctx context.Context) error {
 	texts := make([]string, len(userIDs))
 	for i, id := range userIDs {
 		b := byUser[id]
+		// Fold track artists into the artist list, deduped by normalized name
+		// (top artists take precedence) — matching how match_step merges them.
+		artists := foldDeduped(b.artists, b.trackArtists, events.NormalizeString)
 		texts[i] = BuildUserText(UserText{
-			TopArtists: b.artists,
+			TopArtists: artists,
 			TopGenres:  b.genres,
 			ManualTags: b.tags,
 		})

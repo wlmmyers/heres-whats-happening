@@ -17,7 +17,7 @@ locals {
     }
     "match" = {
       command   = ["match"]
-      schedule  = "cron(0 2 * * ? *)" # 02:00 UTC daily
+      schedule  = "rate(4 hours)"
       log_group = "match"
     }
   }

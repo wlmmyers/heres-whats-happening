@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape tei-up tei-down tei-seed match test-scripts bastion-start bastion-tunnel bastion-creds bastion-stop
+.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape tei-up tei-down tei-seed match test-scripts bastion-start bastion-tunnel bastion-creds bastion-stop bastion-psql
 
 ifneq (,$(wildcard .env))
     include .env
@@ -152,6 +152,8 @@ bootstrap-terraform-apply:
 # --- Prod DB bastion (SSM tunnel to private RDS) --------------------------------
 # Prereqs (once): brew install --cask session-manager-plugin
 # Values come from .env (gitignored): BASTION_INSTANCE_ID, PROD_DB_HOST, PROD_SECRET_ARN
+# NOTE: use host=127.0.0.1 (not localhost) — macOS resolves localhost to ::1 (IPv6)
+# but the SSM tunnel binds on 127.0.0.1 (IPv4). Use sslmode=require — RDS enforces SSL.
 
 bastion-start:
 	@echo "Starting bastion $(BASTION_INSTANCE_ID)..."
@@ -169,9 +171,14 @@ bastion-tunnel:
 	    --parameters '{"host":["$(PROD_DB_HOST)"],"portNumber":["5432"],"localPortNumber":["5432"]}'
 
 bastion-creds:
-	aws secretsmanager get-secret-value --profile $(AWS_PROFILE) --region $(PROD_REGION) \
+	@aws secretsmanager get-secret-value --profile $(AWS_PROFILE) --region $(PROD_REGION) \
 	    --secret-id $(PROD_SECRET_ARN) \
-	    --query SecretString --output text
+	    --query SecretString --output text | jq -r '"username: \(.username)\npassword: \(.password)"'
+
+bastion-psql:
+	@PGPASSWORD=$$(aws secretsmanager get-secret-value --profile $(AWS_PROFILE) --region $(PROD_REGION) \
+	    --secret-id $(PROD_SECRET_ARN) --query SecretString --output text | jq -r '.password') \
+	psql "host=127.0.0.1 port=5432 dbname=appdb user=app sslmode=require"
 
 bastion-stop:
 	aws ec2 stop-instances --profile $(AWS_PROFILE) --region $(PROD_REGION) \

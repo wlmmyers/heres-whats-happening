@@ -65,15 +65,29 @@ func TestScrapeOne_PublishesInterestMessage(t *testing.T) {
 	}))
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/v1/me/top/artists", r.URL.Path)
 		require.Equal(t, "Bearer AT-original", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-		  "items": [
-		    {"name": "Phoebe Bridgers", "genres": ["indie pop", "indie rock"]},
-		    {"name": "MUNA", "genres": ["indie pop"]}
-		  ]
-		}`))
+		switch r.URL.Path {
+		case "/v1/me/top/artists":
+			_, _ = w.Write([]byte(`{
+			  "items": [
+			    {"name": "Phoebe Bridgers", "genres": ["indie pop", "indie rock"]},
+			    {"name": "MUNA", "genres": ["indie pop"]}
+			  ]
+			}`))
+		case "/v1/me/top/tracks":
+			// Boygenius appears twice (one track is a collab) → deduped to one
+			// entry; MUNA also surfaces here and as a top artist (the two lists
+			// are independent, so it legitimately appears in both).
+			_, _ = w.Write([]byte(`{
+			  "items": [
+			    {"name": "Not Strong Enough", "artists": [{"name": "boygenius"}]},
+			    {"name": "$20", "artists": [{"name": "boygenius"}, {"name": "MUNA"}]}
+			  ]
+			}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
 	}))
 	defer srv.Close()
 
@@ -89,6 +103,12 @@ func TestScrapeOne_PublishesInterestMessage(t *testing.T) {
 	require.Len(t, msg.SpotifyTopArtists, 2)
 	require.Equal(t, "Phoebe Bridgers", msg.SpotifyTopArtists[0].Name)
 	require.Equal(t, 1, msg.SpotifyTopArtists[0].Rank)
+	// Track artists are their own ranked list, deduped by name (boygenius once).
+	require.Len(t, msg.SpotifyTopTrackArtists, 2)
+	require.Equal(t, "boygenius", msg.SpotifyTopTrackArtists[0].Name)
+	require.Equal(t, 1, msg.SpotifyTopTrackArtists[0].Rank)
+	require.Equal(t, "MUNA", msg.SpotifyTopTrackArtists[1].Name)
+	require.Equal(t, 2, msg.SpotifyTopTrackArtists[1].Rank)
 	// Genres ranked by frequency: indie pop appears in 2 artists → rank 1; indie rock in 1 → rank 2.
 	require.Equal(t, "indie pop", msg.SpotifyTopGenres[0].Name)
 	require.Equal(t, "indie rock", msg.SpotifyTopGenres[1].Name)
@@ -135,6 +155,11 @@ func TestScrapeOne_RefreshesExpiredToken(t *testing.T) {
 			require.Equal(t, "Bearer AT-new", r.Header.Get("Authorization"))
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"items":[{"name":"X","genres":["jazz"]}]}`))
+		case "/v1/me/top/tracks":
+			apiCalls++
+			require.Equal(t, "Bearer AT-new", r.Header.Get("Authorization"))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"items":[{"name":"T","artists":[{"name":"Y"}]}]}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -147,7 +172,7 @@ func TestScrapeOne_RefreshesExpiredToken(t *testing.T) {
 
 	require.NoError(t, adapter.ScrapeOne(ctx, userRow.ID))
 	require.Equal(t, 1, tokenCalls)
-	require.Equal(t, 1, apiCalls)
+	require.Equal(t, 2, apiCalls) // /top/artists + /top/tracks
 
 	// Refreshed AT was persisted (encrypted).
 	row, err := q.GetUserSpotifyTokens(ctx, userRow.ID)

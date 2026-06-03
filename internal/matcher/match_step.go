@@ -88,6 +88,10 @@ func (m *MatchStep) loadUsers(ctx context.Context) ([]UserProfile, error) {
 		}
 		profiles[r.ID] = p
 	}
+	// Track artists are folded into SpotifyArtists, but only after top
+	// artists are all collected, so a name in both lists keeps its top-artist
+	// (higher) weight instead of being double-counted.
+	trackArtistsByUser := make(map[pgtype.UUID][]NormalizedInterest)
 	for _, ui := range interests {
 		ni := NormalizedInterest{
 			Value:      ui.Value,
@@ -98,11 +102,18 @@ func (m *MatchStep) loadUsers(ctx context.Context) ([]UserProfile, error) {
 		switch ui.Kind {
 		case "spotify_top_artist":
 			p.SpotifyArtists = append(p.SpotifyArtists, ni)
+		case "spotify_top_track_artist":
+			trackArtistsByUser[ui.UserID] = append(trackArtistsByUser[ui.UserID], ni)
 		case "spotify_top_genre":
 			p.SpotifyGenres = append(p.SpotifyGenres, ni)
 		case "manual_tag":
 			p.ManualTags = append(p.ManualTags, ni)
 		}
+	}
+	for id, tracks := range trackArtistsByUser {
+		p := profiles[id]
+		p.SpotifyArtists = foldDeduped(p.SpotifyArtists, tracks,
+			func(ni NormalizedInterest) string { return ni.Normalized })
 	}
 
 	out := make([]UserProfile, 0, len(profiles))

@@ -127,12 +127,12 @@ type Artist struct {
 	Genres []string `json:"genres"`
 }
 
-// GetTopArtists returns the user's top artists (medium_term, max 50).
+// GetTopArtists returns the user's top artists (long_term, max 50).
 func (c *Client) GetTopArtists(ctx context.Context, accessToken string, limit int) ([]Artist, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 50
 	}
-	endpoint := fmt.Sprintf("%s/v1/me/top/artists?time_range=medium_term&limit=%s",
+	endpoint := fmt.Sprintf("%s/v1/me/top/artists?time_range=long_term&limit=%s",
 		c.apiBase(), strconv.Itoa(limit))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -155,4 +155,43 @@ func (c *Client) GetTopArtists(ctx context.Context, accessToken string, limit in
 		return nil, fmt.Errorf("decode: %w", err)
 	}
 	return payload.Items, nil
+}
+
+// GetTopTracks returns the artists drawn from the user's top tracks
+// (long_term, max 50 tracks). Spotify nests a simplified artist object on
+// each track — it carries a name but no genres — so the returned Artists
+// have empty Genres.
+func (c *Client) GetTopTracks(ctx context.Context, accessToken string, limit int) ([]Artist, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 50
+	}
+	endpoint := fmt.Sprintf("%s/v1/me/top/tracks?time_range=long_term&limit=%s",
+		c.apiBase(), strconv.Itoa(limit))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("http: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("top tracks %d: %s", resp.StatusCode, string(body))
+	}
+	var payload struct {
+		Items []struct {
+			Artists []Artist `json:"artists"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	var artists []Artist
+	for _, t := range payload.Items {
+		artists = append(artists, t.Artists...)
+	}
+	return artists, nil
 }

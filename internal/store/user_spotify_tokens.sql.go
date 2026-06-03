@@ -13,7 +13,7 @@ import (
 
 const deleteSpotifyDerivedInterests = `-- name: DeleteSpotifyDerivedInterests :exec
 DELETE FROM user_interests
-WHERE user_id = $1 AND kind IN ('spotify_top_artist', 'spotify_top_genre')
+WHERE user_id = $1 AND kind IN ('spotify_top_artist', 'spotify_top_track_artist', 'spotify_top_genre')
 `
 
 func (q *Queries) DeleteSpotifyDerivedInterests(ctx context.Context, userID pgtype.UUID) error {
@@ -146,6 +146,16 @@ WHERE user_id = $1 AND kind = 'spotify_top_genre'
 
 func (q *Queries) ReplaceSpotifyGenreInterests(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, replaceSpotifyGenreInterests, userID)
+	return err
+}
+
+const replaceSpotifyTrackArtistInterests = `-- name: ReplaceSpotifyTrackArtistInterests :exec
+DELETE FROM user_interests
+WHERE user_id = $1 AND kind = 'spotify_top_track_artist'
+`
+
+func (q *Queries) ReplaceSpotifyTrackArtistInterests(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, replaceSpotifyTrackArtistInterests, userID)
 	return err
 }
 

@@ -31,11 +31,15 @@ WHERE user_id = $1;
 
 -- name: DeleteSpotifyDerivedInterests :exec
 DELETE FROM user_interests
-WHERE user_id = $1 AND kind IN ('spotify_top_artist', 'spotify_top_genre');
+WHERE user_id = $1 AND kind IN ('spotify_top_artist', 'spotify_top_track_artist', 'spotify_top_genre');
 
 -- name: ReplaceSpotifyArtistInterests :exec
 DELETE FROM user_interests
 WHERE user_id = $1 AND kind = 'spotify_top_artist';
+
+-- name: ReplaceSpotifyTrackArtistInterests :exec
+DELETE FROM user_interests
+WHERE user_id = $1 AND kind = 'spotify_top_track_artist';
 
 -- name: ReplaceSpotifyGenreInterests :exec
 DELETE FROM user_interests

@@ -21,7 +21,8 @@
 # Prerequisites:
 #   - Step 1 done: master pushed, app pipeline built + registered the NEW image
 #     onto a hwh-api revision (this script GATES on that and stops otherwise).
-#   - Tools: aws CLI, jq, terraform. AWS creds for the prod account.
+#   - Tools: aws CLI, jq. AWS creds for the prod account.
+#   - .env populated with PROD_DB_HOST and PROD_SECRET_ARN (gitignored).
 #
 # Overridable via env (defaults match the Makefile + terraform/prod):
 #   AWS_PROFILE=servant  AWS_DEFAULT_REGION=us-east-1  CLUSTER=hwh-cluster
@@ -36,17 +37,26 @@ set -euo pipefail
 : "${DB_SSLMODE:=require}"
 export AWS_PROFILE AWS_DEFAULT_REGION
 
-for bin in aws jq terraform; do
+for bin in aws jq; do
   command -v "$bin" >/dev/null 2>&1 || { echo "error: '$bin' not found on PATH" >&2; exit 1; }
 done
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 
-# ── resolve the AWS-assigned values from terraform state (read-only) ──────────
-MASTER_ARN=$(terraform -chdir="$REPO_ROOT/terraform/prod" output -raw db_master_user_secret_arn)
-ENDPOINT=$(terraform -chdir="$REPO_ROOT/terraform/prod" output -raw db_endpoint)   # host:port
-DB_HOST=${ENDPOINT%:*}
-DB_PORT=${ENDPOINT##*:}
+# ── resolve the AWS-assigned values from .env (gitignored) ────────────────────
+# These used to come from `terraform output`, but those outputs were removed.
+# .env (the same file the Makefile + bastion targets read) carries the prod DB
+# host and the RDS-managed master-secret ARN. PROD_DB_HOST may be a bare host or
+# host:port — default the port to 5432 when absent.
+ENV_FILE="$REPO_ROOT/.env"
+[ -f "$ENV_FILE" ] || { echo "error: $ENV_FILE not found (needs PROD_DB_HOST, PROD_SECRET_ARN)" >&2; exit 1; }
+read_env() { grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- | sed -e 's/^"\(.*\)"$/\1/'; }
+MASTER_ARN=$(read_env PROD_SECRET_ARN)
+PROD_HOST=$(read_env PROD_DB_HOST)
+[ -n "$MASTER_ARN" ] || { echo "error: PROD_SECRET_ARN not set in $ENV_FILE" >&2; exit 1; }
+[ -n "$PROD_HOST" ]  || { echo "error: PROD_DB_HOST not set in $ENV_FILE" >&2; exit 1; }
+DB_HOST=${PROD_HOST%:*}
+case "$PROD_HOST" in *:*) DB_PORT=${PROD_HOST##*:} ;; *) DB_PORT=${DB_PORT:-5432} ;; esac
 echo "profile=$AWS_PROFILE region=$AWS_DEFAULT_REGION family=$FAMILY"
 echo "MASTER_ARN=$MASTER_ARN"
 echo "DB_HOST=$DB_HOST  DB_PORT=$DB_PORT  DB_NAME=$DB_NAME  DB_SSLMODE=$DB_SSLMODE"
