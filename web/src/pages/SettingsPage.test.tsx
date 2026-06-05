@@ -123,6 +123,7 @@ describe('SettingsPage', () => {
     // Slider initialises from score_threshold (0.3 -> 30%).
     const slider = await screen.findByRole('slider', { name: /match sensitivity/i });
     expect(slider).toHaveValue('30');
+    expect(screen.getByRole('button', { name: /save threshold/i })).toBeDisabled();
 
     // Move to 45% and save.
     fireEvent.change(slider, { target: { value: '45' } });

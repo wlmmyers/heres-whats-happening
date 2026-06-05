@@ -46,15 +46,21 @@ export default function SettingsPage() {
   const loadedPercent = Math.round((me?.score_threshold ?? 0.3) * 100);
   const [percent, setPercent] = useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const effectivePercent = percent ?? loadedPercent;
 
   const saveThreshold = useMutation({
-    mutationFn: () => updateMatchThreshold(effectivePercent / 100),
+    mutationFn: (threshold: number) => updateMatchThreshold(threshold),
     onSuccess: () => {
       setConfirmOpen(false);
       setPercent(null);
+      setSaveError(false);
       qc.invalidateQueries({ queryKey: ['me'] });
       qc.invalidateQueries({ queryKey: ['calendar'] });
+    },
+    onError: () => {
+      setConfirmOpen(false);
+      setSaveError(true);
     },
   });
 
@@ -101,7 +107,10 @@ export default function SettingsPage() {
             max={maxPercent}
             step={1}
             value={effectivePercent}
-            onChange={(e) => setPercent(Number(e.target.value))}
+            onChange={(e) => {
+              setPercent(Number(e.target.value));
+              setSaveError(false);
+            }}
             className="flex-1"
           />
           <span className="w-12 text-right text-sm tabular-nums">{effectivePercent}%</span>
@@ -114,6 +123,11 @@ export default function SettingsPage() {
         >
           Save threshold
         </button>
+        {saveError && (
+          <p role="alert" className="text-sm text-red-600">
+            Could not update your threshold. Please try again.
+          </p>
+        )}
       </section>
 
       {/* Spotify */}
@@ -182,7 +196,7 @@ export default function SettingsPage() {
         open={confirmOpen}
         title="Update match threshold?"
         message="Updating your match threshold will recalculate all of your recommended events. Continue?"
-        onConfirm={() => saveThreshold.mutate()}
+        onConfirm={() => saveThreshold.mutate(effectivePercent / 100)}
         onCancel={() => setConfirmOpen(false)}
       />
     </div>

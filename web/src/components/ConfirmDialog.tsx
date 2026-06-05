@@ -27,11 +27,13 @@ export default function ConfirmDialog({
       <div
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title ? 'confirm-dialog-title' : undefined}
+        aria-describedby="confirm-dialog-desc"
         className="w-[400px] max-w-[90%] rounded bg-white p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        {title && <h2 className="mb-2 text-lg font-medium">{title}</h2>}
-        <p className="text-sm text-gray-700">{message}</p>
+        {title && <h2 id="confirm-dialog-title" className="mb-2 text-lg font-medium">{title}</h2>}
+        <p id="confirm-dialog-desc" className="text-sm text-gray-700">{message}</p>
         <div className="mt-6 flex justify-center gap-3">
           <button
             type="button"
