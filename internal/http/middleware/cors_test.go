@@ -29,6 +29,21 @@ func TestCORS_PreflightForAllowedOrigin(t *testing.T) {
 	require.False(t, called, "preflight must not invoke the inner handler")
 }
 
+func TestCORS_PreflightAllowsPatch(t *testing.T) {
+	mw := CORS([]string{"https://example.com"})
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+
+	// Mirrors the browser preflight for PATCH /me/match-threshold.
+	req := httptest.NewRequest(http.MethodOptions, "/me/match-threshold", nil)
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("Access-Control-Request-Method", "PATCH")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.Contains(t, rec.Header().Get("Access-Control-Allow-Methods"), "PATCH")
+}
+
 func TestCORS_NonPreflightAllowedOrigin(t *testing.T) {
 	mw := CORS([]string{"https://example.com"})
 	called := false
