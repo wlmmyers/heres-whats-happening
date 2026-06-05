@@ -69,6 +69,10 @@ phases:
 
           if aws ecs describe-services --cluster "${CLUSTER_NAME}" --services "${SERVICE_NAME}" --region "${AWS_REGION}" 2>/dev/null | grep -q '"status": "ACTIVE"'; then
             # Register a new revision per family, image swapped to the freshly-built one.
+            # The api revision ARN is captured (not deployed yet): migrations run against
+            # it first, and only on success does the service roll forward — so new code
+            # never serves against an un-migrated schema.
+            API_NEW_ARN=""
             for FAMILY in $FAMILIES; do
               echo "--- registering new revision for $FAMILY ---"
               CURRENT_ARN=$(aws ecs describe-task-definition --task-definition "$FAMILY" --region "${AWS_REGION}" --query 'taskDefinition.taskDefinitionArn' --output text)
@@ -80,13 +84,57 @@ phases:
               NEW_ARN=$(aws ecs register-task-definition --cli-input-json file://taskdef.new.json --region "${AWS_REGION}" --query 'taskDefinition.taskDefinitionArn' --output text)
               echo "registered $NEW_ARN"
 
-              # api gets a rolling deploy via update-service. Others rely on EventBridge
-              # picking up :LATEST next firing.
+              # api gets a rolling deploy via update-service (after migrations). Others rely
+              # on EventBridge picking up :LATEST next firing.
               if [ "$FAMILY" = "${APP_NAME_PREFIX}-api" ]; then
-                aws ecs update-service --cluster "${CLUSTER_NAME}" --service "${SERVICE_NAME}" --task-definition "$NEW_ARN" --region "${AWS_REGION}" > /dev/null
-                echo "deployed $NEW_ARN to $SERVICE_NAME"
+                API_NEW_ARN="$NEW_ARN"
               fi
             done
+
+            # --- Run DB migrations on the new image, before rolling the service ----------
+            # RDS is private, so migrations run as a one-off Fargate task inside the VPC,
+            # reusing the freshly-registered api revision with its command overridden to
+            # `migrate` (the same binary/codepath as `make migrate-prod`). Idempotent and
+            # tracked in schema_migrations, so this is a no-op when nothing is pending.
+            echo "=== Running DB migrations (one-off task on $API_NEW_ARN) ==="
+            SUBNETS=$(aws ec2 describe-subnets --region "${AWS_REGION}" \
+              --filters "Name=tag:Name,Values=${APP_NAME_PREFIX}-public-*" \
+              --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+            SG=$(aws ec2 describe-security-groups --region "${AWS_REGION}" \
+              --filters "Name=group-name,Values=${APP_NAME_PREFIX}-task-runner" \
+              --query 'SecurityGroups[0].GroupId' --output text)
+            NETCFG="awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SG}],assignPublicIp=ENABLED}"
+            MIGRATE_TASK_ARN=$(aws ecs run-task --region "${AWS_REGION}" \
+              --cluster "${CLUSTER_NAME}" --launch-type FARGATE --task-definition "$API_NEW_ARN" \
+              --started-by codebuild-migrate \
+              --network-configuration "$NETCFG" \
+              --overrides '{"containerOverrides":[{"name":"api","command":["migrate"]}]}' \
+              --query 'tasks[0].taskArn' --output text)
+            if [ -z "$MIGRATE_TASK_ARN" ] || [ "$MIGRATE_TASK_ARN" = "None" ]; then
+              echo "migrate: run-task did not return a task ARN" && exit 1
+            fi
+            echo "migrate task: $MIGRATE_TASK_ARN — waiting for it to stop..."
+            aws ecs wait tasks-stopped --cluster "${CLUSTER_NAME}" --tasks "$MIGRATE_TASK_ARN" --region "${AWS_REGION}"
+            MIGRATE_EXIT=$(aws ecs describe-tasks --cluster "${CLUSTER_NAME}" --tasks "$MIGRATE_TASK_ARN" --region "${AWS_REGION}" \
+              --query 'tasks[0].containers[0].exitCode' --output text)
+            MIGRATE_REASON=$(aws ecs describe-tasks --cluster "${CLUSTER_NAME}" --tasks "$MIGRATE_TASK_ARN" --region "${AWS_REGION}" \
+              --query 'tasks[0].stoppedReason' --output text)
+            echo "migrate task stopped: exitCode=$MIGRATE_EXIT reason=$MIGRATE_REASON"
+            if [ "$MIGRATE_EXIT" != "0" ]; then
+              echo "migrations failed (exitCode=$MIGRATE_EXIT) — aborting deploy before the service rolls forward"
+              # Surface the migration error directly in the build log. The awslogs stream
+              # is <stream-prefix>/<container>/<task-id> = api/api/<task-id>.
+              MIGRATE_TASK_ID="${MIGRATE_TASK_ARN##*/}"
+              echo "---- migrate task logs (/aws/ecs/${APP_NAME_PREFIX}/api : api/api/${MIGRATE_TASK_ID}) ----"
+              aws logs tail "/aws/ecs/${APP_NAME_PREFIX}/api" --region "${AWS_REGION}" \
+                --log-stream-names "api/api/${MIGRATE_TASK_ID}" --since 1h --format short \
+                || echo "(no logs retrieved — task may have failed before the container started; see stoppedReason above)"
+              exit 1
+            fi
+
+            # --- Migrations succeeded: roll the api service onto the new revision --------
+            aws ecs update-service --cluster "${CLUSTER_NAME}" --service "${SERVICE_NAME}" --task-definition "$API_NEW_ARN" --region "${AWS_REGION}" > /dev/null
+            echo "deployed $API_NEW_ARN to $SERVICE_NAME"
           else
             echo "Service ${SERVICE_NAME} not found in cluster ${CLUSTER_NAME} (Plan 8 not yet applied). Image is in ECR; skipping deploy."
           fi
