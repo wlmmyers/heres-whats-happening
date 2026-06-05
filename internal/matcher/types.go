@@ -42,6 +42,7 @@ type NormalizedInterest struct {
 type UserProfile struct {
 	UserID         pgtype.UUID
 	Embedding      []float32 // 384-dim; may be nil if not yet embedded
+	ScoreThreshold *float64  // per-user threshold; nil = use Config.ScoreThreshold
 	SpotifyArtists []NormalizedInterest
 	SpotifyGenres  []NormalizedInterest
 	ManualTags     []NormalizedInterest

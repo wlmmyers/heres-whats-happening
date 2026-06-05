@@ -9,6 +9,7 @@ import (
 
 	"github.com/wmyers/heres-whats-happening/internal/http/httperr"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
+	"github.com/wmyers/heres-whats-happening/internal/matcher"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
 
@@ -27,9 +28,20 @@ func GetMe(q *store.Queries) http.HandlerFunc {
 			httperr.Write(w, http.StatusNotFound, "no_user", "user not found")
 			return
 		}
+		threshold := row.ScoreThreshold
+		if threshold == nil {
+			// NULL → resolve the live global default from match_config.
+			cfg, cfgErr := matcher.LoadConfig(ctx, q, matcher.Defaults())
+			def := cfg.ScoreThreshold
+			if cfgErr != nil {
+				def = matcher.Defaults().ScoreThreshold
+			}
+			threshold = &def
+		}
 		writeJSON(w, http.StatusOK, userOut{
-			ID:    uid.String(),
-			Email: row.Email,
+			ID:             uid.String(),
+			Email:          row.Email,
+			ScoreThreshold: threshold,
 		})
 	}
 }

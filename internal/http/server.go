@@ -71,6 +71,7 @@ func (s *Server) Router() http.Handler {
 		r.Use(middleware.RequireAuth(s.JWTSigner))
 		r.Get("/me", handlers.GetMe(s.Queries))
 		r.Delete("/me", handlers.DeleteMe(s.Queries))
+		r.Patch("/me/match-threshold", handlers.UpdateMatchThreshold(s.Queries))
 		r.Get("/me/interests", handlers.ListInterests(s.Queries))
 		r.Post("/me/interests", handlers.CreateInterest(s.Queries))
 		r.Delete("/me/interests/{id}", handlers.DeleteInterest(s.Queries))

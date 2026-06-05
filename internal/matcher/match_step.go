@@ -3,23 +3,39 @@ package matcher
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	pgvector "github.com/pgvector/pgvector-go"
 
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
 
-// MatchStep loads active users + upcoming events, runs Score() for each pair,
-// and upserts rows above the configured threshold into user_event_match.
+// MatchStep loads users + upcoming events, runs Score() for each pair, and
+// upserts rows above each user's threshold into user_event_match. When userID
+// is set, it processes only that one user (still scoring against all events).
 type MatchStep struct {
-	q   *store.Queries
-	cfg Config
+	q      *store.Queries
+	cfg    Config
+	userID *pgtype.UUID // nil = all active users
 }
 
 func NewMatchStep(q *store.Queries, cfg Config) *MatchStep {
 	return &MatchStep{q: q, cfg: cfg}
+}
+
+// NewMatchStepForUser scopes the step to a single user.
+func NewMatchStepForUser(q *store.Queries, cfg Config, userID pgtype.UUID) *MatchStep {
+	return &MatchStep{q: q, cfg: cfg, userID: &userID}
+}
+
+type matchUserRow struct {
+	ID                pgtype.UUID
+	InterestEmbedding *pgvector.Vector
+	ScoreThreshold    *float64
 }
 
 func (m *MatchStep) Run(ctx context.Context) error {
@@ -45,7 +61,11 @@ func (m *MatchStep) Run(ctx context.Context) error {
 	for _, user := range users {
 		for _, event := range events {
 			score := Score(user, event, m.cfg)
-			if score.TotalScore <= m.cfg.ScoreThreshold {
+			threshold := m.cfg.ScoreThreshold
+			if user.ScoreThreshold != nil {
+				threshold = *user.ScoreThreshold
+			}
+			if score.TotalScore <= threshold {
 				continue
 			}
 			bd, err := json.Marshal(map[string]any{
@@ -88,9 +108,24 @@ func (m *MatchStep) Run(ctx context.Context) error {
 }
 
 func (m *MatchStep) loadUsers(ctx context.Context) ([]UserProfile, error) {
-	rows, err := m.q.ListActiveUsersForMatching(ctx)
-	if err != nil {
-		return nil, err
+	var rows []matchUserRow
+	if m.userID != nil {
+		r, err := m.q.GetUserForMatching(ctx, *m.userID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		rows = append(rows, matchUserRow{r.ID, r.InterestEmbedding, r.ScoreThreshold})
+	} else {
+		rs, err := m.q.ListActiveUsersForMatching(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rs {
+			rows = append(rows, matchUserRow{r.ID, r.InterestEmbedding, r.ScoreThreshold})
+		}
 	}
 	if len(rows) == 0 {
 		return nil, nil
@@ -106,7 +141,7 @@ func (m *MatchStep) loadUsers(ctx context.Context) ([]UserProfile, error) {
 
 	profiles := make(map[pgtype.UUID]*UserProfile, len(rows))
 	for _, r := range rows {
-		p := &UserProfile{UserID: r.ID}
+		p := &UserProfile{UserID: r.ID, ScoreThreshold: r.ScoreThreshold}
 		if r.InterestEmbedding != nil {
 			p.Embedding = r.InterestEmbedding.Slice()
 		}

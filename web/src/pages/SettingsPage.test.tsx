@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
@@ -19,10 +19,20 @@ vi.mock('../api/ical', () => ({
   createIcalToken: vi.fn(),
   revokeIcalToken: vi.fn(),
 }));
+vi.mock('../api/auth', () => ({
+  getMe: vi.fn(),
+}));
+vi.mock('../api/match', () => ({
+  updateMatchThreshold: vi.fn(),
+  MIN_THRESHOLD: 0.2,
+  MAX_THRESHOLD: 0.6,
+}));
 
 import * as interestsApi from '../api/interests';
 import * as icalApi from '../api/ical';
 import * as spotifyApi from '../api/spotify';
+import * as authApi from '../api/auth';
+import * as matchApi from '../api/match';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -41,6 +51,9 @@ beforeEach(() => {
   vi.resetAllMocks();
   (interestsApi.listInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: false });
+  (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValue({
+    id: 'u1', email: 'a@x', score_threshold: 0.3,
+  });
 });
 
 describe('SettingsPage', () => {
@@ -101,5 +114,25 @@ describe('SettingsPage', () => {
     renderPage();
     expect(await screen.findByRole('button', { name: /connect spotify/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
+  });
+
+  it('confirms before updating the match threshold', async () => {
+    (matchApi.updateMatchThreshold as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+    renderPage();
+
+    // Slider initialises from score_threshold (0.3 -> 30%).
+    const slider = await screen.findByRole('slider', { name: /match sensitivity/i });
+    expect(slider).toHaveValue('30');
+    expect(screen.getByRole('button', { name: /save threshold/i })).toBeDisabled();
+
+    // Move to 45% and save.
+    fireEvent.change(slider, { target: { value: '45' } });
+    await userEvent.click(screen.getByRole('button', { name: /save threshold/i }));
+
+    // Confirm dialog appears; confirming calls the API with the fraction.
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() =>
+      expect(matchApi.updateMatchThreshold).toHaveBeenCalledWith(0.45),
+    );
   });
 });

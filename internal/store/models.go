@@ -91,6 +91,7 @@ type User struct {
 	InterestEmbeddingUpdatedAt pgtype.Timestamptz `json:"interest_embedding_updated_at"`
 	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
 	DeletedAt                  pgtype.Timestamptz `json:"deleted_at"`
+	ScoreThreshold             *float64           `json:"score_threshold"`
 }
 
 type UserEventMatch struct {

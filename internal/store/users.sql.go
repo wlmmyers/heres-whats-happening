@@ -89,16 +89,17 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, city_id, created_at
+SELECT id, email, city_id, created_at, score_threshold
 FROM users
 WHERE id = $1 AND deleted_at IS NULL
 `
 
 type GetUserByIDRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Email     string             `json:"email"`
-	CityID    pgtype.UUID        `json:"city_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID             pgtype.UUID        `json:"id"`
+	Email          string             `json:"email"`
+	CityID         pgtype.UUID        `json:"city_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ScoreThreshold *float64           `json:"score_threshold"`
 }
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
@@ -109,12 +110,32 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDR
 		&i.Email,
 		&i.CityID,
 		&i.CreatedAt,
+		&i.ScoreThreshold,
 	)
 	return i, err
 }
 
+const getUserForMatching = `-- name: GetUserForMatching :one
+SELECT id, interest_embedding, score_threshold
+FROM users
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type GetUserForMatchingRow struct {
+	ID                pgtype.UUID      `json:"id"`
+	InterestEmbedding *pgvector.Vector `json:"interest_embedding"`
+	ScoreThreshold    *float64         `json:"score_threshold"`
+}
+
+func (q *Queries) GetUserForMatching(ctx context.Context, id pgtype.UUID) (GetUserForMatchingRow, error) {
+	row := q.db.QueryRow(ctx, getUserForMatching, id)
+	var i GetUserForMatchingRow
+	err := row.Scan(&i.ID, &i.InterestEmbedding, &i.ScoreThreshold)
+	return i, err
+}
+
 const listActiveUsersForMatching = `-- name: ListActiveUsersForMatching :many
-SELECT id, interest_embedding
+SELECT id, interest_embedding, score_threshold
 FROM users
 WHERE deleted_at IS NULL
 `
@@ -122,6 +143,7 @@ WHERE deleted_at IS NULL
 type ListActiveUsersForMatchingRow struct {
 	ID                pgtype.UUID      `json:"id"`
 	InterestEmbedding *pgvector.Vector `json:"interest_embedding"`
+	ScoreThreshold    *float64         `json:"score_threshold"`
 }
 
 func (q *Queries) ListActiveUsersForMatching(ctx context.Context) ([]ListActiveUsersForMatchingRow, error) {
@@ -133,7 +155,7 @@ func (q *Queries) ListActiveUsersForMatching(ctx context.Context) ([]ListActiveU
 	items := []ListActiveUsersForMatchingRow{}
 	for rows.Next() {
 		var i ListActiveUsersForMatchingRow
-		if err := rows.Scan(&i.ID, &i.InterestEmbedding); err != nil {
+		if err := rows.Scan(&i.ID, &i.InterestEmbedding, &i.ScoreThreshold); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -202,5 +224,21 @@ type UpdateUserInterestEmbeddingParams struct {
 
 func (q *Queries) UpdateUserInterestEmbedding(ctx context.Context, arg UpdateUserInterestEmbeddingParams) error {
 	_, err := q.db.Exec(ctx, updateUserInterestEmbedding, arg.ID, arg.InterestEmbedding)
+	return err
+}
+
+const updateUserScoreThreshold = `-- name: UpdateUserScoreThreshold :exec
+UPDATE users
+SET score_threshold = $2
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type UpdateUserScoreThresholdParams struct {
+	ID             pgtype.UUID `json:"id"`
+	ScoreThreshold *float64    `json:"score_threshold"`
+}
+
+func (q *Queries) UpdateUserScoreThreshold(ctx context.Context, arg UpdateUserScoreThresholdParams) error {
+	_, err := q.db.Exec(ctx, updateUserScoreThreshold, arg.ID, arg.ScoreThreshold)
 	return err
 }

@@ -9,7 +9,7 @@ FROM users
 WHERE email = $1 AND deleted_at IS NULL;
 
 -- name: GetUserByID :one
-SELECT id, email, city_id, created_at
+SELECT id, email, city_id, created_at, score_threshold
 FROM users
 WHERE id = $1 AND deleted_at IS NULL;
 
@@ -42,6 +42,16 @@ SET interest_embedding = $2, interest_embedding_updated_at = NOW()
 WHERE id = $1;
 
 -- name: ListActiveUsersForMatching :many
-SELECT id, interest_embedding
+SELECT id, interest_embedding, score_threshold
 FROM users
 WHERE deleted_at IS NULL;
+
+-- name: GetUserForMatching :one
+SELECT id, interest_embedding, score_threshold
+FROM users
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: UpdateUserScoreThreshold :exec
+UPDATE users
+SET score_threshold = $2
+WHERE id = $1 AND deleted_at IS NULL;
