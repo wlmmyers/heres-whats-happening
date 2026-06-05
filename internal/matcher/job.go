@@ -2,9 +2,7 @@ package matcher
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
@@ -24,7 +22,7 @@ func NewJob(q *store.Queries, emb Embedder, cfg Config) *Job {
 }
 
 func (j *Job) Run(ctx context.Context) error {
-	cfg, err := j.loadConfig(ctx)
+	cfg, err := LoadConfig(ctx, j.q, j.cfg)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -42,39 +40,4 @@ func (j *Job) Run(ctx context.Context) error {
 		return fmt.Errorf("archiver: %w", err)
 	}
 	return nil
-}
-
-// loadConfig reads match_config rows and overlays them on j.cfg defaults.
-// Missing keys keep the default value.
-func (j *Job) loadConfig(ctx context.Context) (Config, error) {
-	cfg := j.cfg
-	rows, err := j.q.ListMatchConfig(ctx)
-	if err != nil {
-		return cfg, err
-	}
-	for _, r := range rows {
-		var raw json.Number
-		if err := json.Unmarshal(r.Value, &raw); err != nil {
-			continue
-		}
-		f, err := strconv.ParseFloat(string(raw), 64)
-		if err != nil {
-			continue
-		}
-		switch r.Key {
-		case "w_string":
-			cfg.WString = f
-		case "w_embedding":
-			cfg.WEmbedding = f
-		case "score_threshold":
-			cfg.ScoreThreshold = f
-		case "artist_factor":
-			cfg.ArtistFactor = f
-		case "genre_factor":
-			cfg.GenreFactor = f
-		case "string_max":
-			cfg.StringMax = f
-		}
-	}
-	return cfg, nil
 }

@@ -289,3 +289,112 @@ func TestMatchStep_BelowThresholdSkipped(t *testing.T) {
 		"SELECT count(*) FROM user_event_match WHERE user_id = $1", userRow.ID).Scan(&n))
 	require.Equal(t, 0, n)
 }
+
+func TestMatchStep_PerUserThresholdExcludesPair(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	userRow, eventID := seedMatchablePair(t, q, "peruser-th@example.com", "th-evt-1")
+
+	// The pair scores ~0.6 (string 0.6*0.333 + embedding 0.4*1.0). A threshold
+	// of 0.7 must exclude it; the check is `score <= threshold`.
+	th := 0.7
+	require.NoError(t, q.UpdateUserScoreThreshold(ctx, store.UpdateUserScoreThresholdParams{
+		ID: userRow.ID, ScoreThreshold: &th,
+	}))
+
+	require.NoError(t, matcher.NewMatchStep(q, matcher.Defaults()).Run(ctx))
+
+	var n int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM user_event_match WHERE user_id=$1 AND event_id=$2`,
+		userRow.ID, eventID).Scan(&n))
+	require.Equal(t, 0, n, "pair below the user's threshold must not be written")
+}
+
+func TestMatchStep_SingleUserFilterScopesToOneUser(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	userA, eventID := seedMatchablePair(t, q, "scopeA@example.com", "scope-evt-1")
+	userB := addMatchingUser(t, q, "scopeB@example.com", eventID)
+
+	require.NoError(t, matcher.NewMatchStepForUser(q, matcher.Defaults(), userA.ID).Run(ctx))
+
+	var nA, nB int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM user_event_match WHERE user_id=$1`, userA.ID).Scan(&nA))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM user_event_match WHERE user_id=$1`, userB.ID).Scan(&nB))
+	require.Equal(t, 1, nA, "scoped user A should be matched")
+	require.Equal(t, 0, nB, "user B must be untouched by a single-user run")
+}
+
+// seedMatchablePair creates a user (Spotify top-artist "Phoebe Bridgers" +
+// unit embedding) and an upcoming event with the same performer + identical
+// embedding, so Score() returns ~0.6. Returns the user row and event id.
+func seedMatchablePair(t *testing.T, q *store.Queries, email, srcEventID string) (store.CreateUserRow, pgtype.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email: email, PasswordHash: "stub", CityID: city.ID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
+		UserID: userRow.ID, Kind: "spotify_top_artist",
+		Value: "Phoebe Bridgers", NormalizedValue: "phoebe bridgers", Weight: 1.0,
+	}))
+	uvVec := make([]float32, 384)
+	uvVec[0] = 1.0
+	uv := pgvector.NewVector(uvVec)
+	require.NoError(t, q.UpdateUserInterestEmbedding(ctx, store.UpdateUserInterestEmbeddingParams{
+		ID: userRow.ID, InterestEmbedding: &uv,
+	}))
+
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, _ := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "V", NormalizedName: "v",
+	})
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:      src.ID,
+		SourceEventID: srcEventID,
+		Title:         "PB Live",
+		StartsAt:      pgtype.Timestamptz{Time: time.Now().Add(48 * time.Hour), Valid: true},
+		VenueID:       venueID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.InsertEventPerformer(ctx, store.InsertEventPerformerParams{
+		EventID: eventID, PerformerName: "Phoebe Bridgers", NormalizedName: "phoebe bridgers",
+	}))
+	evVec := make([]float32, 384)
+	evVec[0] = 1.0
+	ev := pgvector.NewVector(evVec)
+	require.NoError(t, q.UpdateEventEmbedding(ctx, store.UpdateEventEmbeddingParams{
+		ID: eventID, Embedding: &ev,
+	}))
+	return userRow, eventID
+}
+
+// addMatchingUser creates a second user that also matches the given event's
+// performer, so a global run would write a match for them.
+func addMatchingUser(t *testing.T, q *store.Queries, email string, eventID pgtype.UUID) store.CreateUserRow {
+	t.Helper()
+	ctx := context.Background()
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email: email, PasswordHash: "stub", CityID: city.ID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
+		UserID: userRow.ID, Kind: "spotify_top_artist",
+		Value: "Phoebe Bridgers", NormalizedValue: "phoebe bridgers", Weight: 1.0,
+	}))
+	uvVec := make([]float32, 384)
+	uvVec[0] = 1.0
+	uv := pgvector.NewVector(uvVec)
+	require.NoError(t, q.UpdateUserInterestEmbedding(ctx, store.UpdateUserInterestEmbeddingParams{
+		ID: userRow.ID, InterestEmbedding: &uv,
+	}))
+	return userRow
+}
