@@ -170,6 +170,8 @@ data "aws_iam_policy_document" "codebuild_app" {
   }
   # ECS deploy actions (the resources don't exist yet — Plan 8 creates them —
   # but the role permits future operations against any ECS service in this account).
+  # RunTask is for the one-off DB-migration task the deploy buildspec launches
+  # before rolling the service forward (mirrors `make migrate-prod`).
   statement {
     actions = [
       "ecs:RegisterTaskDefinition",
@@ -178,6 +180,16 @@ data "aws_iam_policy_document" "codebuild_app" {
       "ecs:DescribeServices",
       "ecs:DescribeTasks",
       "ecs:ListTasks",
+      "ecs:RunTask",
+    ]
+    resources = ["*"]
+  }
+  # Discover the VPC networking for the migration run-task (public subnets +
+  # task-runner SG), the same lookups `make migrate-prod` does.
+  statement {
+    actions = [
+      "ec2:DescribeSubnets",
+      "ec2:DescribeSecurityGroups",
     ]
     resources = ["*"]
   }
@@ -213,6 +225,17 @@ data "aws_iam_policy_document" "codebuild_app" {
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents",
+    ]
+    resources = ["*"]
+  }
+  # Read the migration task's logs (`aws logs tail`) to surface a failed
+  # migration's error directly in the deploy build output.
+  statement {
+    actions = [
+      "logs:GetLogEvents",
+      "logs:FilterLogEvents",
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
     ]
     resources = ["*"]
   }
