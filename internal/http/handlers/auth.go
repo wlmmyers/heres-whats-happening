@@ -29,8 +29,9 @@ type signupResponse struct {
 }
 
 type userOut struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
+	ID             string   `json:"id"`
+	Email          string   `json:"email"`
+	ScoreThreshold *float64 `json:"score_threshold,omitempty"`
 }
 
 // Signup creates a new user, sets the refresh cookie, and returns an access token.
