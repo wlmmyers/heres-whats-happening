@@ -3,6 +3,7 @@ import { apiFetch, setAccessToken, clearAccessToken } from './client';
 export interface User {
   id: string;
   email: string;
+  score_threshold?: number;
 }
 
 interface AuthSuccess {
