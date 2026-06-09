@@ -22,7 +22,7 @@ resource "aws_lb_target_group" "api" {
     path                = "/healthz"
     healthy_threshold   = 2
     unhealthy_threshold = 3
-    interval            = 15
+    interval            = 60
     timeout             = 5
     matcher             = "200"
   }
