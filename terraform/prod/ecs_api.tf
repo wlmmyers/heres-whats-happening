@@ -14,6 +14,11 @@ locals {
     { name = "DB_PORT", value = tostring(aws_db_instance.main.port) },
     { name = "DB_NAME", value = aws_db_instance.main.db_name },
     { name = "DB_SSLMODE", value = "require" },
+    # ARN (not the value) of the RDS-managed master secret. The app fetches the
+    # password from here on each new DB connection, so an automatic password
+    # rotation is picked up as connections recycle — no task restart needed.
+    # DB_PASSWORD (injected below) remains the startup/fallback credential.
+    { name = "DB_SECRET_ARN", value = aws_db_instance.main.master_user_secret[0].secret_arn },
     { name = "EVENTS_QUEUE_URL", value = aws_sqs_queue.events.url },
     { name = "INTERESTS_QUEUE_URL", value = aws_sqs_queue.interests.url },
     { name = "INGEST_WORKERS", value = tostring(var.ingest_workers) },

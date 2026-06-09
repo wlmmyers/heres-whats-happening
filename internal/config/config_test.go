@@ -116,6 +116,15 @@ func TestLoad_CORSAllowedOrigins(t *testing.T) {
 	require.Equal(t, []string{"https://example.com", "https://staging.example.com"}, cfg.CORSAllowedOrigins)
 }
 
+func TestLoad_DBSecretARN(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("DB_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:1:secret:rds!db-x")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "arn:aws:secretsmanager:us-east-1:1:secret:rds!db-x", cfg.DBSecretARN)
+}
+
 // setRequiredDB sets the DB_* component vars every Load() call now needs.
 func setRequiredDB(t *testing.T) {
 	t.Helper()

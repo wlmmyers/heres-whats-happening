@@ -66,6 +66,15 @@ data "aws_iam_policy_document" "task" {
       aws_sqs_queue.interests_dlq.arn,
     ]
   }
+
+  # Runtime read of the RDS-managed master secret so the app can re-fetch the
+  # password after a rotation. This is the *task* role (running container),
+  # distinct from the execution role that injects secrets at task start.
+  statement {
+    sid       = "ReadDBMasterSecret"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_db_instance.main.master_user_secret[0].secret_arn]
+  }
 }
 
 resource "aws_iam_role_policy" "task" {

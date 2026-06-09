@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
 	"github.com/google/uuid"
@@ -25,6 +26,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/scraper"
 	spotifyscrape "github.com/wmyers/heres-whats-happening/internal/scraper/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/scraper/ticketmaster"
+	"github.com/wmyers/heres-whats-happening/internal/secrets"
 	"github.com/wmyers/heres-whats-happening/internal/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 	"github.com/wmyers/heres-whats-happening/internal/tei"
@@ -76,6 +78,21 @@ subcommands:
 `)
 }
 
+// openPool builds the DB pool. When DB_SECRET_ARN is set (prod), it fetches the
+// password fresh from Secrets Manager on each new connection so an RDS password
+// rotation is picked up as connections recycle — no restart, no auth-failure
+// DLQ backlog. Without it (local dev), the DSN password is used as-is.
+func openPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
+	if cfg.DBSecretARN == "" {
+		return db.NewPool(ctx, cfg.DatabaseURL)
+	}
+	provider, err := secrets.NewDBPasswordProvider(ctx, cfg.AWSRegion, cfg.DBSecretARN)
+	if err != nil {
+		return nil, fmt.Errorf("db password provider: %w", err)
+	}
+	return db.NewPoolWithPassword(ctx, cfg.DatabaseURL, provider)
+}
+
 func serve() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -84,7 +101,7 @@ func serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
+	pool, err := openPool(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("db: %w", err)
 	}
@@ -205,7 +222,7 @@ func scrapeSpotify(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
+	pool, err := openPool(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("db: %w", err)
 	}
@@ -273,7 +290,7 @@ func runMatch() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
+	pool, err := openPool(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("db: %w", err)
 	}

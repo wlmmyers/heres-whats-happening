@@ -22,6 +22,7 @@ type Config struct {
 
 	// Plan 2 additions
 	AWSRegion          string
+	DBSecretARN        string
 	SQSEndpoint        string
 	EventsQueueURL     string
 	IngestWorkers      int
@@ -110,6 +111,7 @@ func Load() (*Config, error) {
 		RefreshTTL:          refreshTTL,
 		LogLevel:            logLevel,
 		AWSRegion:           os.Getenv("AWS_REGION"),
+		DBSecretARN:         os.Getenv("DB_SECRET_ARN"),
 		SQSEndpoint:         os.Getenv("SQS_ENDPOINT"),
 		EventsQueueURL:      os.Getenv("EVENTS_QUEUE_URL"),
 		IngestWorkers:       workers,
