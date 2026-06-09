@@ -195,3 +195,69 @@ func (c *Client) GetTopTracks(ctx context.Context, accessToken string, limit int
 	}
 	return artists, nil
 }
+
+// SavedTrackArtist is an artist drawn from one of the user's saved tracks,
+// tagged with the track's added_at so callers can rank by recency. Like the
+// simplified track artists from GetTopTracks, it carries a name but no genres.
+type SavedTrackArtist struct {
+	Name    string
+	AddedAt time.Time
+}
+
+// GetSavedTrackArtists pages through the user's saved tracks ("/me/tracks"),
+// 50 at a time, following each response's `next` URL until it is empty. It
+// accumulates the artist(s) behind every saved track tagged with that track's
+// added_at; the track details themselves are discarded. Dedup and ranking are
+// left to the caller.
+func (c *Client) GetSavedTrackArtists(ctx context.Context, accessToken string) ([]SavedTrackArtist, error) {
+	next := fmt.Sprintf("%s/v1/me/tracks?limit=50", c.apiBase())
+	var out []SavedTrackArtist
+	for next != "" {
+		page, nextURL, err := c.savedTracksPage(ctx, accessToken, next)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page...)
+		next = nextURL
+	}
+	return out, nil
+}
+
+// savedTracksPage fetches a single page of /me/tracks at the given URL,
+// returning that page's artists and the `next` URL ("" when there are no more
+// pages).
+func (c *Client) savedTracksPage(ctx context.Context, accessToken, pageURL string) ([]SavedTrackArtist, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("http: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, "", fmt.Errorf("saved tracks %d: %s", resp.StatusCode, string(body))
+	}
+	var payload struct {
+		Next  string `json:"next"`
+		Items []struct {
+			AddedAt time.Time `json:"added_at"`
+			Track   struct {
+				Artists []Artist `json:"artists"`
+			} `json:"track"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, "", fmt.Errorf("decode: %w", err)
+	}
+	var page []SavedTrackArtist
+	for _, it := range payload.Items {
+		for _, ar := range it.Track.Artists {
+			page = append(page, SavedTrackArtist{Name: ar.Name, AddedAt: it.AddedAt})
+		}
+	}
+	return page, payload.Next, nil
+}

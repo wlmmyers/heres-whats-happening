@@ -83,6 +83,9 @@ func TestSpotifyExchange_HappyPath(t *testing.T) {
 		case "/v1/me/top/tracks":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"items":[{"name":"T","artists":[{"name":"Y"}]}]}`))
+		case "/v1/me/tracks":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"next":null,"items":[{"added_at":"2024-01-01T00:00:00Z","track":{"artists":[{"name":"Z"}]}}]}`))
 		}
 	}))
 	defer srv.Close()

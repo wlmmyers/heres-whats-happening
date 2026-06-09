@@ -45,6 +45,11 @@ func TestInterestHandler_WritesSpotifyArtistsAndGenres(t *testing.T) {
 			{Name: "indie rock", Rank: 1},
 			{Name: "indie pop", Rank: 2},
 		},
+		SpotifySavedSongArtists: []events.SpotifyTopItem{
+			{Name: "Lucy Dacus", Rank: 1},
+			{Name: "Julien Baker", Rank: 2},
+			{Name: "boygenius", Rank: 3},
+		},
 		FetchedAt: time.Now(),
 	}
 	body, _ := json.Marshal(&msg)
@@ -64,6 +69,13 @@ func TestInterestHandler_WritesSpotifyArtistsAndGenres(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, genres, 2)
+
+	saved, err := q.ListInterestsByUserAndKind(ctx, store.ListInterestsByUserAndKindParams{
+		UserID: userRow.ID,
+		Kind:   "spotify_saved_song_artist",
+	})
+	require.NoError(t, err)
+	require.Len(t, saved, 3)
 }
 
 func TestInterestHandler_ReplaceSemantics(t *testing.T) {

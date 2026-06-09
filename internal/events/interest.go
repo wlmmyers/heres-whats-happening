@@ -9,7 +9,11 @@ type InterestMessage struct {
 	UserID                 string           `json:"user_id"`
 	SpotifyTopArtists      []SpotifyTopItem `json:"spotify_top_artists,omitempty"`
 	SpotifyTopTrackArtists []SpotifyTopItem `json:"spotify_top_track_artists,omitempty"`
-	SpotifyTopGenres       []SpotifyTopItem `json:"spotify_top_genres,omitempty"`
+	// SpotifySavedSongArtists are the artists behind the user's saved tracks
+	// ("/me/tracks"), ranked by how recently each was saved (added_at), deduped
+	// by name, and capped at 200.
+	SpotifySavedSongArtists []SpotifyTopItem `json:"spotify_saved_song_artists,omitempty"`
+	SpotifyTopGenres        []SpotifyTopItem `json:"spotify_top_genres,omitempty"`
 	FetchedAt              time.Time        `json:"fetched_at"`
 }
 

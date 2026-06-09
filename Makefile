@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape tei-up tei-down tei-seed match test-scripts bastion-start bastion-tunnel bastion-creds bastion-stop bastion-psql
+.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape-ticketmaster scrape-spotify tei-up tei-down tei-seed match test-scripts bastion-start bastion-tunnel bastion-creds bastion-stop bastion-psql
 
 ifneq (,$(wildcard .env))
     include .env
@@ -119,8 +119,11 @@ queue-reset:
 	docker compose down elasticmq -v
 	docker compose up -d elasticmq
 
-scrape:
+scrape-ticketmaster:
 	go run ./cmd/app scrape events --source=ticketmaster
+
+scrape-spotify:
+	go run ./cmd/app scrape spotify
 
 tei-seed:
 	pip3 install --quiet --break-system-packages huggingface_hub 2>/dev/null || pip3 install --quiet huggingface_hub

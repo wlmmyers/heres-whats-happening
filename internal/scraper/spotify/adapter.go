@@ -95,6 +95,10 @@ func (a *Adapter) ScrapeOne(ctx context.Context, userID pgtype.UUID) error {
 	if err != nil {
 		return fmt.Errorf("get top tracks: %w", err)
 	}
+	savedArtists, err := a.client.GetSavedTrackArtists(ctx, string(accessToken))
+	if err != nil {
+		return fmt.Errorf("get saved track artists: %w", err)
+	}
 
 	msg := events.InterestMessage{
 		UserID:    userIDString(userID),
@@ -128,6 +132,29 @@ func (a *Adapter) ScrapeOne(ctx context.Context, userID pgtype.UUID) error {
 			Name: ar.Name,
 			Rank: len(msg.SpotifyTopTrackArtists) + 1,
 		})
+	}
+
+	// Saved-track artists ranked by recency: sort by added_at descending, then
+	// walk the list assigning ranks, deduping by normalized name (the first —
+	// i.e. most recent — appearance of a name sets its rank). Capped at 200.
+	sort.SliceStable(savedArtists, func(i, j int) bool {
+		return savedArtists[i].AddedAt.After(savedArtists[j].AddedAt)
+	})
+	seenSavedArtist := make(map[string]bool, len(savedArtists))
+	msg.SpotifySavedSongArtists = make([]events.SpotifyTopItem, 0, len(savedArtists))
+	for _, ar := range savedArtists {
+		key := events.NormalizeString(ar.Name)
+		if key == "" || seenSavedArtist[key] {
+			continue
+		}
+		seenSavedArtist[key] = true
+		msg.SpotifySavedSongArtists = append(msg.SpotifySavedSongArtists, events.SpotifyTopItem{
+			Name: ar.Name,
+			Rank: len(msg.SpotifySavedSongArtists) + 1,
+		})
+		if len(msg.SpotifySavedSongArtists) >= 200 {
+			break
+		}
 	}
 
 	type gc struct {

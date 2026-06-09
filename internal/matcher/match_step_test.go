@@ -134,6 +134,61 @@ func TestMatchStep_TrackArtistMatchesPerformer(t *testing.T) {
 	require.Contains(t, bd.MatchedPerformers, "boygenius")
 }
 
+func TestMatchStep_SavedSongArtistMatchesPerformer(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "savedartist@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+	// Only a saved-song artist — no top-artist row for this name. It should still
+	// match an event performer (saved-song artists are folded into the artist set).
+	require.NoError(t, q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
+		UserID: userRow.ID, Kind: "spotify_saved_song_artist",
+		Value: "Lucy Dacus", NormalizedValue: "lucy dacus", Weight: 1.0,
+	}))
+
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, _ := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "V4", NormalizedName: "v4",
+	})
+	eventID, _ := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:      src.ID,
+		SourceEventID: "match-tm-saved-1",
+		Title:         "Lucy Dacus Live",
+		StartsAt:      pgtype.Timestamptz{Time: time.Now().Add(48 * time.Hour), Valid: true},
+		VenueID:       venueID,
+	})
+	require.NoError(t, q.InsertEventPerformer(ctx, store.InsertEventPerformerParams{
+		EventID: eventID, PerformerName: "Lucy Dacus", NormalizedName: "lucy dacus",
+	}))
+	vec := make([]float32, 384)
+	vec[0] = 1.0
+	pv := pgvector.NewVector(vec)
+	require.NoError(t, q.UpdateUserInterestEmbedding(ctx, store.UpdateUserInterestEmbeddingParams{
+		ID: userRow.ID, InterestEmbedding: &pv,
+	}))
+	require.NoError(t, q.UpdateEventEmbedding(ctx, store.UpdateEventEmbeddingParams{
+		ID: eventID, Embedding: &pv,
+	}))
+
+	step := matcher.NewMatchStep(q, matcher.Defaults())
+	require.NoError(t, step.Run(ctx))
+
+	row := pool.QueryRow(ctx,
+		`SELECT score_breakdown FROM user_event_match WHERE user_id = $1 AND event_id = $2`,
+		userRow.ID, eventID)
+	var breakdown []byte
+	require.NoError(t, row.Scan(&breakdown))
+	var bd struct {
+		MatchedPerformers []string `json:"matched_performers"`
+	}
+	require.NoError(t, json.Unmarshal(breakdown, &bd))
+	require.Contains(t, bd.MatchedPerformers, "Lucy Dacus")
+}
+
 func matchCount(t *testing.T, pool *pgxpool.Pool, ctx context.Context, userID, eventID pgtype.UUID) int {
 	t.Helper()
 	var n int

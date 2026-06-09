@@ -38,6 +38,7 @@ func (u *UserEmbedder) Run(ctx context.Context) error {
 	type bucket struct {
 		artists      []string
 		trackArtists []string
+		savedArtists []string
 		genres       []string
 		tags         []string
 	}
@@ -52,6 +53,8 @@ func (u *UserEmbedder) Run(ctx context.Context) error {
 			b.artists = append(b.artists, ui.Value)
 		case "spotify_top_track_artist":
 			b.trackArtists = append(b.trackArtists, ui.Value)
+		case "spotify_saved_song_artist":
+			b.savedArtists = append(b.savedArtists, ui.Value)
 		case "spotify_top_genre":
 			b.genres = append(b.genres, ui.Value)
 		case "manual_tag":
@@ -62,9 +65,11 @@ func (u *UserEmbedder) Run(ctx context.Context) error {
 	texts := make([]string, len(userIDs))
 	for i, id := range userIDs {
 		b := byUser[id]
-		// Fold track artists into the artist list, deduped by normalized name
-		// (top artists take precedence) — matching how match_step merges them.
+		// Fold track artists then saved-song artists into the artist list, deduped
+		// by normalized name (precedence: top > track > saved) — matching how
+		// match_step merges them.
 		artists := foldDeduped(b.artists, b.trackArtists, events.NormalizeString)
+		artists = foldDeduped(artists, b.savedArtists, events.NormalizeString)
 		texts[i] = BuildUserText(UserText{
 			TopArtists: artists,
 			TopGenres:  b.genres,

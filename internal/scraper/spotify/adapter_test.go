@@ -85,6 +85,15 @@ func TestScrapeOne_PublishesInterestMessage(t *testing.T) {
 			    {"name": "$20", "artists": [{"name": "boygenius"}, {"name": "MUNA"}]}
 			  ]
 			}`))
+		case "/v1/me/tracks":
+			// Two saved tracks; the newer (Lucy Dacus) ranks first.
+			_, _ = w.Write([]byte(`{
+			  "next": null,
+			  "items": [
+			    {"added_at": "2024-01-01T00:00:00Z", "track": {"artists": [{"name": "Julien Baker"}]}},
+			    {"added_at": "2024-06-01T00:00:00Z", "track": {"artists": [{"name": "Lucy Dacus"}]}}
+			  ]
+			}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -112,6 +121,12 @@ func TestScrapeOne_PublishesInterestMessage(t *testing.T) {
 	// Genres ranked by frequency: indie pop appears in 2 artists → rank 1; indie rock in 1 → rank 2.
 	require.Equal(t, "indie pop", msg.SpotifyTopGenres[0].Name)
 	require.Equal(t, "indie rock", msg.SpotifyTopGenres[1].Name)
+	// Saved-song artists ranked by recency (most recently saved first).
+	require.Len(t, msg.SpotifySavedSongArtists, 2)
+	require.Equal(t, "Lucy Dacus", msg.SpotifySavedSongArtists[0].Name)
+	require.Equal(t, 1, msg.SpotifySavedSongArtists[0].Rank)
+	require.Equal(t, "Julien Baker", msg.SpotifySavedSongArtists[1].Name)
+	require.Equal(t, 2, msg.SpotifySavedSongArtists[1].Rank)
 }
 
 func TestScrapeOne_RefreshesExpiredToken(t *testing.T) {
@@ -160,6 +175,11 @@ func TestScrapeOne_RefreshesExpiredToken(t *testing.T) {
 			require.Equal(t, "Bearer AT-new", r.Header.Get("Authorization"))
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"items":[{"name":"T","artists":[{"name":"Y"}]}]}`))
+		case "/v1/me/tracks":
+			apiCalls++
+			require.Equal(t, "Bearer AT-new", r.Header.Get("Authorization"))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"next":null,"items":[{"added_at":"2024-01-01T00:00:00Z","track":{"artists":[{"name":"Z"}]}}]}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -172,7 +192,7 @@ func TestScrapeOne_RefreshesExpiredToken(t *testing.T) {
 
 	require.NoError(t, adapter.ScrapeOne(ctx, userRow.ID))
 	require.Equal(t, 1, tokenCalls)
-	require.Equal(t, 2, apiCalls) // /top/artists + /top/tracks
+	require.Equal(t, 3, apiCalls) // /top/artists + /top/tracks + /me/tracks
 
 	// Refreshed AT was persisted (encrypted).
 	row, err := q.GetUserSpotifyTokens(ctx, userRow.ID)
@@ -180,4 +200,72 @@ func TestScrapeOne_RefreshesExpiredToken(t *testing.T) {
 	decoded, err := cipher.Decrypt(row.AccessTokenEnc)
 	require.NoError(t, err)
 	require.Equal(t, "AT-new", string(decoded))
+}
+
+func TestScrapeOne_SavedSongArtistsRankedByRecency(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email:        "saved-songs@example.com",
+		PasswordHash: "stub",
+		CityID:       city.ID,
+	})
+	require.NoError(t, err)
+
+	key := makeTestKey(t)
+	cipher, err := crypto.NewCipher(key)
+	require.NoError(t, err)
+	at, _ := cipher.Encrypt([]byte("AT-original"))
+	rt, _ := cipher.Encrypt([]byte("RT-original"))
+	require.NoError(t, q.UpsertUserSpotifyTokens(ctx, store.UpsertUserSpotifyTokensParams{
+		UserID:          userRow.ID,
+		AccessTokenEnc:  at,
+		RefreshTokenEnc: rt,
+		ExpiresAt:       pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		Scope:           "user-top-read",
+	}))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/me/top/artists", "/v1/me/top/tracks":
+			_, _ = w.Write([]byte(`{"items":[]}`))
+		case "/v1/me/tracks":
+			// Saved tracks returned out of recency order, with a duplicate artist
+			// at an older timestamp. After sorting by added_at descending and
+			// deduping, the duplicate's older entry is skipped.
+			_, _ = w.Write([]byte(`{
+			  "next": null,
+			  "items": [
+			    {"added_at": "2024-01-01T00:00:00Z", "track": {"artists": [{"name": "Old Band"}]}},
+			    {"added_at": "2024-05-01T00:00:00Z", "track": {"artists": [{"name": "New Band"}]}},
+			    {"added_at": "2024-03-01T00:00:00Z", "track": {"artists": [{"name": "Mid Band"}]}},
+			    {"added_at": "2023-01-01T00:00:00Z", "track": {"artists": [{"name": "New Band"}]}}
+			  ]
+			}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	client := spotifyclient.New("cid", "csec", "http://localhost/cb", srv.URL)
+	pub := &fakePublisher{}
+	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/q")
+
+	require.NoError(t, adapter.ScrapeOne(ctx, userRow.ID))
+	require.Len(t, pub.sent, 1)
+
+	var msg events.InterestMessage
+	require.NoError(t, json.Unmarshal(pub.sent[0], &msg))
+	require.Len(t, msg.SpotifySavedSongArtists, 3)
+	require.Equal(t, "New Band", msg.SpotifySavedSongArtists[0].Name)
+	require.Equal(t, 1, msg.SpotifySavedSongArtists[0].Rank)
+	require.Equal(t, "Mid Band", msg.SpotifySavedSongArtists[1].Name)
+	require.Equal(t, 2, msg.SpotifySavedSongArtists[1].Rank)
+	require.Equal(t, "Old Band", msg.SpotifySavedSongArtists[2].Name)
+	require.Equal(t, 3, msg.SpotifySavedSongArtists[2].Rank)
 }

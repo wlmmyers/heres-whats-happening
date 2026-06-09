@@ -76,6 +76,24 @@ func (h *InterestHandler) Handle(ctx context.Context, body []byte) error {
 		}
 	}
 
+	// Replace saved-song artists (the artists behind the user's saved tracks,
+	// ranked by how recently each was saved — a distinct signal again).
+	if err := h.q.ReplaceSpotifySavedSongArtistInterests(ctx, pgUID); err != nil {
+		return fmt.Errorf("delete saved song artists: %w", err)
+	}
+	for _, item := range m.SpotifySavedSongArtists {
+		w := rankWeight(item.Rank)
+		if err := h.q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
+			UserID:          pgUID,
+			Kind:            "spotify_saved_song_artist",
+			Value:           item.Name,
+			NormalizedValue: events.NormalizeString(item.Name),
+			Weight:          w,
+		}); err != nil {
+			return fmt.Errorf("insert saved song artist %q: %w", item.Name, err)
+		}
+	}
+
 	// Replace genres.
 	if err := h.q.ReplaceSpotifyGenreInterests(ctx, pgUID); err != nil {
 		return fmt.Errorf("delete genres: %w", err)

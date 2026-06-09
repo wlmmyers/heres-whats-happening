@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -105,6 +106,52 @@ func TestGetTopArtists_Parses(t *testing.T) {
 	require.Len(t, artists, 2)
 	require.Equal(t, "Phoebe Bridgers", artists[0].Name)
 	require.ElementsMatch(t, []string{"indie pop", "indie rock"}, artists[0].Genres)
+}
+
+func TestGetSavedTrackArtists_PagesAndAccumulates(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/me/tracks", r.URL.Path)
+		require.Equal(t, "Bearer AT", r.Header.Get("Authorization"))
+		require.Equal(t, "50", r.URL.Query().Get("limit"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("offset") {
+		case "", "0":
+			// First page links to the second via an absolute `next` URL, just as
+			// Spotify returns. Each saved track carries added_at and a nested
+			// track whose simplified artists have a name but no genres.
+			_, _ = w.Write([]byte(`{
+			  "next": "` + srv.URL + `/v1/me/tracks?offset=50&limit=50",
+			  "items": [
+			    {"added_at": "2024-03-01T00:00:00Z", "track": {"artists": [{"name": "MUNA"}]}},
+			    {"added_at": "2024-02-01T00:00:00Z", "track": {"artists": [{"name": "boygenius"}, {"name": "Phoebe Bridgers"}]}}
+			  ]
+			}`))
+		case "50":
+			// Last page: no `next`, so the loop stops here.
+			_, _ = w.Write([]byte(`{
+			  "next": null,
+			  "items": [
+			    {"added_at": "2024-01-01T00:00:00Z", "track": {"artists": [{"name": "Lucy Dacus"}]}}
+			  ]
+			}`))
+		default:
+			t.Fatalf("unexpected offset %q", r.URL.Query().Get("offset"))
+		}
+	}))
+	defer srv.Close()
+	c := New("cid", "csec", "http://localhost/cb", srv.URL)
+	artists, err := c.GetSavedTrackArtists(context.Background(), "AT")
+	require.NoError(t, err)
+	// Flattened across both pages and every track's artists, in fetch order;
+	// each tagged with its track's added_at. Dedup/ranking is the adapter's job.
+	require.Len(t, artists, 4)
+	require.Equal(t, "MUNA", artists[0].Name)
+	require.Equal(t, "2024-03-01T00:00:00Z", artists[0].AddedAt.UTC().Format(time.RFC3339))
+	require.Equal(t, "boygenius", artists[1].Name)
+	require.Equal(t, "Phoebe Bridgers", artists[2].Name)
+	require.Equal(t, "Lucy Dacus", artists[3].Name)
+	require.Equal(t, "2024-01-01T00:00:00Z", artists[3].AddedAt.UTC().Format(time.RFC3339))
 }
 
 func TestGetTopTracks_ExtractsArtists(t *testing.T) {
