@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
 	"time"
 
@@ -95,9 +96,13 @@ func (a *Adapter) ScrapeOne(ctx context.Context, userID pgtype.UUID) error {
 	if err != nil {
 		return fmt.Errorf("get top tracks: %w", err)
 	}
+	// Saved tracks are a best-effort signal. A failure here (e.g. a user whose
+	// token predates the user-library-read scope → 403) must not abort the
+	// scrape and starve top-artists/tracks ingestion; log and carry on.
 	savedArtists, err := a.client.GetSavedTrackArtists(ctx, string(accessToken))
 	if err != nil {
-		return fmt.Errorf("get saved track artists: %w", err)
+		log.Printf("scrape spotify: user %s: get saved track artists (continuing): %v", userIDString(userID), err)
+		savedArtists = nil
 	}
 
 	msg := events.InterestMessage{

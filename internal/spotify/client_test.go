@@ -21,7 +21,7 @@ func TestAuthorizeURL_IncludesPKCEAndScopes(t *testing.T) {
 	require.Contains(t, u, "state=state-xyz")
 	require.Contains(t, u, "code_challenge=challenge-xyz")
 	require.Contains(t, u, "code_challenge_method=S256")
-	require.Contains(t, u, "scope=user-top-read+user-read-recently-played")
+	require.Contains(t, u, "scope=user-top-read+user-read-recently-played+user-library-read")
 }
 
 func TestExchangeCode_HappyPath(t *testing.T) {

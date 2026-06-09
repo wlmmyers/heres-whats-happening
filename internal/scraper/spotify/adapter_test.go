@@ -129,6 +129,66 @@ func TestScrapeOne_PublishesInterestMessage(t *testing.T) {
 	require.Equal(t, 2, msg.SpotifySavedSongArtists[1].Rank)
 }
 
+func TestScrapeOne_SavedTracksForbidden_NonFatal(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email:        "saved-forbidden@example.com",
+		PasswordHash: "stub",
+		CityID:       city.ID,
+	})
+	require.NoError(t, err)
+
+	key := makeTestKey(t)
+	cipher, err := crypto.NewCipher(key)
+	require.NoError(t, err)
+	at, _ := cipher.Encrypt([]byte("AT-original"))
+	rt, _ := cipher.Encrypt([]byte("RT-original"))
+	// Scope granted before user-library-read existed: /me/tracks will 403.
+	require.NoError(t, q.UpsertUserSpotifyTokens(ctx, store.UpsertUserSpotifyTokensParams{
+		UserID:          userRow.ID,
+		AccessTokenEnc:  at,
+		RefreshTokenEnc: rt,
+		ExpiresAt:       pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		Scope:           "user-top-read user-read-recently-played",
+	}))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/me/top/artists":
+			_, _ = w.Write([]byte(`{"items":[{"name":"Phoebe Bridgers","genres":["indie pop"]}]}`))
+		case "/v1/me/top/tracks":
+			_, _ = w.Write([]byte(`{"items":[{"name":"T","artists":[{"name":"boygenius"}]}]}`))
+		case "/v1/me/tracks":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":{"status":403,"message":"Insufficient client scope"}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	client := spotifyclient.New("cid", "csec", "http://localhost/cb", srv.URL)
+	pub := &fakePublisher{}
+	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/q")
+
+	// A 403 on saved tracks must not abort the scrape: top artists/tracks
+	// still publish, saved songs come through empty.
+	require.NoError(t, adapter.ScrapeOne(ctx, userRow.ID))
+	require.Len(t, pub.sent, 1)
+
+	var msg events.InterestMessage
+	require.NoError(t, json.Unmarshal(pub.sent[0], &msg))
+	require.Len(t, msg.SpotifyTopArtists, 1)
+	require.Equal(t, "Phoebe Bridgers", msg.SpotifyTopArtists[0].Name)
+	require.Len(t, msg.SpotifyTopTrackArtists, 1)
+	require.Empty(t, msg.SpotifySavedSongArtists)
+}
+
 func TestScrapeOne_RefreshesExpiredToken(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)

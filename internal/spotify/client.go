@@ -15,7 +15,7 @@ import (
 const (
 	defaultAuthBase = "https://accounts.spotify.com"
 	defaultAPIBase  = "https://api.spotify.com"
-	scopes          = "user-top-read user-read-recently-played"
+	scopes          = "user-top-read user-read-recently-played user-library-read"
 )
 
 // Client is the Spotify OAuth + Web API client. Stateless; one instance can
