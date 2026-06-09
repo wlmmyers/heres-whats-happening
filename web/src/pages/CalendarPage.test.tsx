@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import CalendarPage from './CalendarPage';
@@ -51,5 +51,32 @@ describe('CalendarPage', () => {
     (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
     renderPage();
     await waitFor(() => expect(screen.getByText(/no upcoming matches yet/i)).toBeInTheDocument());
+  });
+
+  it('defaults to a 3-month range and changes the range when toggled', async () => {
+    const getCal = calApi.getCalendar as ReturnType<typeof vi.fn>;
+    getCal.mockResolvedValue([]);
+    renderPage();
+
+    await waitFor(() => expect(getCal).toHaveBeenCalled());
+    expect(screen.getByText('Show events for next:')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '3 months' })).toHaveAttribute('aria-pressed', 'true');
+
+    const threeMonthTo = getCal.mock.calls[0][1] as string;
+
+    fireEvent.click(screen.getByRole('button', { name: '6 months' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '6 months' })).toHaveAttribute('aria-pressed', 'true'),
+    );
+    const lastCall = getCal.mock.calls[getCal.mock.calls.length - 1];
+    expect(lastCall[1] > threeMonthTo).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: '1 month' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '1 month' })).toHaveAttribute('aria-pressed', 'true'),
+    );
+    const oneMonthTo = getCal.mock.calls[getCal.mock.calls.length - 1][1] as string;
+    expect(oneMonthTo < threeMonthTo).toBe(true);
   });
 });
