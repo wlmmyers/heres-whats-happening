@@ -35,8 +35,8 @@ export default function CalendarPage() {
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="text-2xl font-semibold">Your matched calendar</h1>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">Show events for next:</span>
-          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+          <span className="text-sm text-gray-500">Show events for next</span>
+          <div className="inline-flex p-0.5">
             {RANGE_OPTIONS.map((opt) => {
               const active = opt.months === months;
               return (
@@ -46,7 +46,7 @@ export default function CalendarPage() {
                   onClick={() => setMonths(opt.months)}
                   aria-pressed={active}
                   className={
-                    'rounded-md px-3 py-1 text-sm font-medium transition ' +
+                    'rounded-md px-3 py-1 text-sm font-medium transition whitespace-nowrap ' +
                     (active
                       ? 'bg-blue-600 text-white shadow-sm'
                       : 'text-gray-600 hover:text-gray-900')
@@ -67,8 +67,10 @@ export default function CalendarPage() {
       ) : events.length === 0 ? (
         <div className="bg-white shadow rounded p-8 text-center text-gray-600">
           No upcoming matches yet. Add some interests on the{' '}
-          <a href="/onboarding" className="text-blue-600 underline">Interests</a> page
-          or wait for the next match run.
+          <a href="/onboarding" className="text-blue-600 underline">
+            Interests
+          </a>{' '}
+          page or wait for the next match run.
         </div>
       ) : (
         <ul className="space-y-3">

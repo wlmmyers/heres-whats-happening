@@ -7,12 +7,22 @@ const link = ({ isActive }: { isActive: boolean }) =>
 export default function Layout() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b px-4 py-3 flex items-center gap-2">
-        <NavLink to="/calendar" className={link}>Calendar</NavLink>
-        <NavLink to="/onboarding" className={link}>Interests</NavLink>
-        <NavLink to="/settings" className={link}>Settings</NavLink>
+      <header className="bg-white border-b px-4 py-3 flex items-center gap-2">
+        <div
+          style={{ backgroundImage: `url('/titleLogo.png')`, width: '280px', height: '40px' }}
+          className="bg-cover bg-center bg-no-repeat"
+        />
+        <NavLink to="/calendar" className={link}>
+          Calendar
+        </NavLink>
+        <NavLink to="/onboarding" className={link}>
+          Interests
+        </NavLink>
+        <NavLink to="/settings" className={link}>
+          Settings
+        </NavLink>
         <UserMenu />
-      </nav>
+      </header>
       <main className="max-w-5xl mx-auto px-4 py-6">
         <Outlet />
       </main>

@@ -103,6 +103,8 @@ run-web:
 
 run-all:
 	@trap 'kill 0' INT TERM EXIT; \
+	$(MAKE) db-up & \
+	$(MAKE) queue-up & \
 	$(MAKE) run & \
 	$(MAKE) run-web & \
 	wait
