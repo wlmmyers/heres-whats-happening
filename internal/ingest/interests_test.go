@@ -16,6 +16,28 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/testdb"
 )
 
+type fakeEmbedder struct {
+	calls [][]string
+	vec   []float32
+}
+
+func (f *fakeEmbedder) Embed(_ context.Context, inputs []string) ([][]float32, error) {
+	f.calls = append(f.calls, inputs)
+	out := make([][]float32, len(inputs))
+	for i := range out {
+		out[i] = f.vec
+	}
+	return out, nil
+}
+
+func newFakeEmbedder() *fakeEmbedder {
+	v := make([]float32, 384)
+	for i := range v {
+		v[i] = 0.1
+	}
+	return &fakeEmbedder{vec: v}
+}
+
 func pgtypeUUIDToString(t *testing.T, u pgtype.UUID) string {
 	t.Helper()
 	return uuid.UUID(u.Bytes).String()
@@ -53,7 +75,7 @@ func TestInterestHandler_WritesSpotifyArtistsAndGenres(t *testing.T) {
 		FetchedAt: time.Now(),
 	}
 	body, _ := json.Marshal(&msg)
-	h := ingest.NewInterestHandler(q)
+	h := ingest.NewInterestHandler(q, nil)
 	require.NoError(t, h.Handle(ctx, body))
 
 	rows, err := q.ListInterestsByUserAndKind(ctx, store.ListInterestsByUserAndKindParams{
@@ -92,7 +114,7 @@ func TestInterestHandler_ReplaceSemantics(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	h := ingest.NewInterestHandler(q)
+	h := ingest.NewInterestHandler(q, nil)
 	first := events.InterestMessage{
 		UserID:            pgtypeUUIDToString(t, userRow.ID),
 		SpotifyTopArtists: []events.SpotifyTopItem{{Name: "A", Rank: 1}, {Name: "B", Rank: 2}},
@@ -116,4 +138,112 @@ func TestInterestHandler_ReplaceSemantics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, "C", rows[0].Value)
+}
+
+func TestInterestHandler_OnlyEmbed_DoesNotTouchRows(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email:        "only-embed@example.com",
+		PasswordHash: "stub",
+		CityID:       city.ID,
+	})
+	require.NoError(t, err)
+	// A manual tag the handler must NOT delete.
+	_, err = q.CreateManualInterest(ctx, store.CreateManualInterestParams{
+		UserID:          userRow.ID,
+		Value:           "Indie Rock",
+		NormalizedValue: "indie rock",
+	})
+	require.NoError(t, err)
+
+	emb := newFakeEmbedder()
+	body, _ := json.Marshal(&events.InterestMessage{
+		UserID: pgtypeUUIDToString(t, userRow.ID),
+		Op:     events.OpOnlyEmbed,
+	})
+	h := ingest.NewInterestHandler(q, emb)
+	require.NoError(t, h.Handle(ctx, body))
+
+	// Embedded once.
+	require.Len(t, emb.calls, 1)
+	require.Contains(t, emb.calls[0][0], "Indie Rock")
+	// Manual tag still present.
+	tags, err := q.ListInterestsByUserAndKind(ctx, store.ListInterestsByUserAndKindParams{
+		UserID: userRow.ID,
+		Kind:   "manual_tag",
+	})
+	require.NoError(t, err)
+	require.Len(t, tags, 1)
+}
+
+func TestInterestHandler_Replace_AlsoEmbeds(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email:        "replace-embed@example.com",
+		PasswordHash: "stub",
+		CityID:       city.ID,
+	})
+	require.NoError(t, err)
+
+	emb := newFakeEmbedder()
+	body, _ := json.Marshal(&events.InterestMessage{
+		UserID: pgtypeUUIDToString(t, userRow.ID),
+		Op:     events.OpReplaceInterestsAndEmbed,
+		SpotifyTopArtists: []events.SpotifyTopItem{
+			{Name: "Phoebe Bridgers", Rank: 1},
+		},
+	})
+	h := ingest.NewInterestHandler(q, emb)
+	require.NoError(t, h.Handle(ctx, body))
+
+	rows, err := q.ListInterestsByUserAndKind(ctx, store.ListInterestsByUserAndKindParams{
+		UserID: userRow.ID,
+		Kind:   "spotify_top_artist",
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Len(t, emb.calls, 1)
+	require.Contains(t, emb.calls[0][0], "Phoebe Bridgers")
+}
+
+func TestInterestHandler_NilEmbedder_StillReplaces(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email:        "nil-emb@example.com",
+		PasswordHash: "stub",
+		CityID:       city.ID,
+	})
+	require.NoError(t, err)
+
+	body, _ := json.Marshal(&events.InterestMessage{
+		UserID: pgtypeUUIDToString(t, userRow.ID),
+		Op:     events.OpReplaceInterestsAndEmbed,
+		SpotifyTopArtists: []events.SpotifyTopItem{
+			{Name: "MUNA", Rank: 1},
+		},
+	})
+	h := ingest.NewInterestHandler(q, nil)
+	require.NoError(t, h.Handle(ctx, body))
+
+	rows, err := q.ListInterestsByUserAndKind(ctx, store.ListInterestsByUserAndKindParams{
+		UserID: userRow.ID,
+		Kind:   "spotify_top_artist",
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
 }

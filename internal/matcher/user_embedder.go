@@ -26,6 +26,18 @@ func (u *UserEmbedder) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("select users: %w", err)
 	}
+	return u.embedUsers(ctx, userIDs)
+}
+
+// EmbedUser embeds a single user immediately, regardless of staleness — the
+// caller (the interest consumer) already knows the user's interests changed. A
+// user with no interest text (no interests of any kind) is skipped, leaving any
+// existing embedding unchanged.
+func (u *UserEmbedder) EmbedUser(ctx context.Context, userID pgtype.UUID) error {
+	return u.embedUsers(ctx, []pgtype.UUID{userID})
+}
+
+func (u *UserEmbedder) embedUsers(ctx context.Context, userIDs []pgtype.UUID) error {
 	if len(userIDs) == 0 {
 		return nil
 	}
@@ -77,10 +89,10 @@ func (u *UserEmbedder) Run(ctx context.Context) error {
 		})
 	}
 
-	// Skip empty-text users — but still mark them so we don't keep selecting them.
-	// Strategy: filter, embed the non-empty texts, then update only those rows.
-	// Users with no interests get nothing written here; next run will revisit if
-	// they add interests.
+	// Skip empty-text users. Strategy: filter, embed the non-empty texts, then
+	// update only those rows. Users with no interests get nothing written here;
+	// Run revisits them once they add interests (they stay stale-selected), and
+	// EmbedUser leaves any existing embedding untouched.
 	nonEmptyIdx := make([]int, 0, len(texts))
 	nonEmptyTexts := make([]string, 0, len(texts))
 	for i, t := range texts {

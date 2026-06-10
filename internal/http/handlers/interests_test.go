@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,11 +13,21 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
+	"github.com/wmyers/heres-whats-happening/internal/events"
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 	"github.com/wmyers/heres-whats-happening/internal/testdb"
 )
+
+type fakePublisher struct {
+	bodies [][]byte
+}
+
+func (f *fakePublisher) Send(_ context.Context, _ string, body []byte) error {
+	f.bodies = append(f.bodies, body)
+	return nil
+}
 
 func signupAndAccess(t *testing.T, q *store.Queries, signer *auth.JWTSigner, cityID, email string) string {
 	t.Helper()
@@ -47,7 +58,7 @@ func TestPostInterests_CreatesManualTag(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	mw := middleware.RequireAuth(signer)
-	mw(handlers.CreateInterest(q)).ServeHTTP(rec, req)
+	mw(handlers.CreateInterest(q, nil, "")).ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusCreated, rec.Code)
 	var out struct {
@@ -75,7 +86,7 @@ func TestPostInterests_DuplicateReturns409(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		mw := middleware.RequireAuth(signer)
-		mw(handlers.CreateInterest(q)).ServeHTTP(rec, req)
+		mw(handlers.CreateInterest(q, nil, "")).ServeHTTP(rec, req)
 		return rec
 	}
 	require.Equal(t, http.StatusCreated, send().Code)
@@ -96,7 +107,7 @@ func TestGetInterests_ReturnsOnlyOwn(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		mw := middleware.RequireAuth(signer)
-		mw(handlers.CreateInterest(q)).ServeHTTP(rec, req)
+		mw(handlers.CreateInterest(q, nil, "")).ServeHTTP(rec, req)
 		require.Equal(t, http.StatusCreated, rec.Code)
 	}
 
@@ -130,7 +141,7 @@ func TestDeleteInterest_OwnershipEnforced(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mw := middleware.RequireAuth(signer)
-	mw(handlers.CreateInterest(q)).ServeHTTP(rec, req)
+	mw(handlers.CreateInterest(q, nil, "")).ServeHTTP(rec, req)
 	require.Equal(t, http.StatusCreated, rec.Code)
 	var created struct {
 		ID string `json:"id"`
@@ -139,7 +150,7 @@ func TestDeleteInterest_OwnershipEnforced(t *testing.T) {
 
 	// thief tries to delete it
 	r := chi.NewRouter()
-	r.With(mw).Delete("/me/interests/{id}", handlers.DeleteInterest(q))
+	r.With(mw).Delete("/me/interests/{id}", handlers.DeleteInterest(q, nil, ""))
 
 	req2 := httptest.NewRequest(http.MethodDelete, "/me/interests/"+created.ID, nil)
 	req2.Header.Set("Authorization", "Bearer "+accessB)
@@ -162,4 +173,48 @@ func TestDeleteInterest_OwnershipEnforced(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rec3.Body).Decode(&out))
 	require.Len(t, out.Interests, 1)
 	require.Equal(t, "Theater", out.Interests[0].Value)
+}
+
+func TestPostInterests_PublishesEmbedMessage(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	cityID := defaultCityID(t, q)
+	access := signupAndAccess(t, q, signer, cityID, "pub1@example.com")
+
+	pub := &fakePublisher{}
+	body, _ := json.Marshal(map[string]string{"value": "Indie Rock"})
+	req := httptest.NewRequest(http.MethodPost, "/me/interests", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+access)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	mw := middleware.RequireAuth(signer)
+	mw(handlers.CreateInterest(q, pub, "interests-queue-url")).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.Len(t, pub.bodies, 1)
+	var msg events.InterestMessage
+	require.NoError(t, json.Unmarshal(pub.bodies[0], &msg))
+	require.Equal(t, events.OpOnlyEmbed, msg.Op)
+	require.NotEmpty(t, msg.UserID)
+}
+
+func TestPostInterests_NilPublisher_StillSucceeds(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	cityID := defaultCityID(t, q)
+	access := signupAndAccess(t, q, signer, cityID, "pub2@example.com")
+
+	body, _ := json.Marshal(map[string]string{"value": "Jazz"})
+	req := httptest.NewRequest(http.MethodPost, "/me/interests", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+access)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	mw := middleware.RequireAuth(signer)
+	mw(handlers.CreateInterest(q, nil, "")).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
 }

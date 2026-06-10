@@ -140,8 +140,18 @@ func serve() error {
 	}
 
 	var interestConsumer *ingest.Consumer
+	// Note: this also drains only_embed messages published by the manual-interest
+	// API handlers. The cipher guard means a deployment with INTERESTS_QUEUE_URL
+	// set but no SPOTIFY_TOKEN_ENC_KEY would publish only_embed messages with no
+	// consumer to drain them (the daily match-job is still the backstop).
 	if cfg.InterestsQueueURL != "" && cipher != nil {
-		ih := ingest.NewInterestHandler(q)
+		var interestEmbedder matcher.Embedder
+		if cfg.TEIEndpoint != "" {
+			interestEmbedder = tei.New(cfg.TEIEndpoint)
+		} else {
+			fmt.Println("interests consumer: TEI_ENDPOINT not set, on-demand user embedding disabled (daily match-job is the backstop)")
+		}
+		ih := ingest.NewInterestHandler(q, interestEmbedder)
 		interestConsumer = ingest.NewConsumer(qClient, cfg.InterestsQueueURL, ih, cfg.IngestWorkers, "interests")
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/wmyers/heres-whats-happening/internal/events"
 	"github.com/wmyers/heres-whats-happening/internal/http/httperr"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/store"
@@ -62,7 +64,27 @@ type createInterestRequest struct {
 	Value string `json:"value"`
 }
 
-func CreateInterest(q *store.Queries) http.HandlerFunc {
+// publishEmbed asks the interest consumer to re-embed the user. Best-effort:
+// a nil publisher / empty queue URL (local dev without SQS) is a no-op, and a
+// send failure is logged, not returned — the daily match batch is the backstop.
+func publishEmbed(ctx context.Context, pub CallbackPublisher, queueURL string, uid uuid.UUID) {
+	if pub == nil || queueURL == "" {
+		return
+	}
+	body, err := json.Marshal(events.InterestMessage{
+		UserID: uid.String(),
+		Op:     events.OpOnlyEmbed,
+	})
+	if err != nil {
+		log.Printf("interests: marshal embed message: %v", err)
+		return
+	}
+	if err := pub.Send(ctx, queueURL, body); err != nil {
+		log.Printf("interests: publish embed message: %v", err)
+	}
+}
+
+func CreateInterest(q *store.Queries, pub CallbackPublisher, queueURL string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid, ok := middleware.UserIDFromContext(r.Context())
 		if !ok {
@@ -103,10 +125,11 @@ func CreateInterest(q *store.Queries) http.HandlerFunc {
 			Weight:          row.Weight,
 			CreatedAt:       row.CreatedAt.Time.UTC().Format(time.RFC3339),
 		})
+		publishEmbed(ctx, pub, queueURL, uid)
 	}
 }
 
-func DeleteInterest(q *store.Queries) http.HandlerFunc {
+func DeleteInterest(q *store.Queries, pub CallbackPublisher, queueURL string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid, ok := middleware.UserIDFromContext(r.Context())
 		if !ok {
@@ -129,5 +152,6 @@ func DeleteInterest(q *store.Queries) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+		publishEmbed(ctx, pub, queueURL, uid)
 	}
 }

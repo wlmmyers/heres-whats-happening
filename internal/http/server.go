@@ -73,8 +73,8 @@ func (s *Server) Router() http.Handler {
 		r.Delete("/me", handlers.DeleteMe(s.Queries))
 		r.Patch("/me/match-threshold", handlers.UpdateMatchThreshold(s.Queries))
 		r.Get("/me/interests", handlers.ListInterests(s.Queries))
-		r.Post("/me/interests", handlers.CreateInterest(s.Queries))
-		r.Delete("/me/interests/{id}", handlers.DeleteInterest(s.Queries))
+		r.Post("/me/interests", handlers.CreateInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
+		r.Delete("/me/interests/{id}", handlers.DeleteInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
 		r.Get("/integrations/spotify/connect", handlers.SpotifyConnect(s.SpotifyClient, s.OAuthHMACKey))
 		r.Get("/integrations/spotify/status", handlers.SpotifyStatus(s.Queries))
 		r.Post("/integrations/spotify/exchange", handlers.SpotifyExchange(
