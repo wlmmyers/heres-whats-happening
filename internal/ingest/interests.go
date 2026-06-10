@@ -50,7 +50,7 @@ func (h *InterestHandler) Handle(ctx context.Context, body []byte) error {
 			return err
 		}
 	}
-	return h.embedUser(ctx, pgUID)
+	return h.embedAndMatch(ctx, pgUID)
 }
 
 // replaceInterests atomically replaces the user's Spotify-derived interest rows.
@@ -128,15 +128,22 @@ func (h *InterestHandler) replaceInterests(ctx context.Context, pgUID pgtype.UUI
 	return nil
 }
 
-// embedUser re-embeds the user via the matcher's single-user path. If no
-// embedder is configured (no TEI endpoint), embedding is skipped — the daily
-// match batch is the backstop.
-func (h *InterestHandler) embedUser(ctx context.Context, pgUID pgtype.UUID) error {
+// embedAndMatch re-embeds the user, then recomputes their matches against
+// upcoming events — both scoped to this one user. If no embedder is configured
+// (no TEI endpoint), it skips both; the daily match-job is the backstop.
+//
+// Returning an error leaves the SQS message for redelivery. EmbedUser (writes
+// interest_embedding) and RescoreUser (per-user match upsert + scoped prune) are
+// both idempotent, so the whole recompute re-runs safely on retry.
+func (h *InterestHandler) embedAndMatch(ctx context.Context, pgUID pgtype.UUID) error {
 	if h.emb == nil {
 		return nil
 	}
 	if err := matcher.NewUserEmbedder(h.q, h.emb).EmbedUser(ctx, pgUID); err != nil {
 		return fmt.Errorf("embed user: %w", err)
+	}
+	if err := matcher.RescoreUser(ctx, h.q, pgUID); err != nil {
+		return fmt.Errorf("match user: %w", err)
 	}
 	return nil
 }
