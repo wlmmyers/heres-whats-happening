@@ -141,7 +141,13 @@ func serve() error {
 
 	var interestConsumer *ingest.Consumer
 	if cfg.InterestsQueueURL != "" && cipher != nil {
-		ih := ingest.NewInterestHandler(q, nil)
+		var interestEmbedder matcher.Embedder
+		if cfg.TEIEndpoint != "" {
+			interestEmbedder = tei.New(cfg.TEIEndpoint)
+		} else {
+			fmt.Println("interests consumer: TEI_ENDPOINT not set, on-demand user embedding disabled (daily match-job is the backstop)")
+		}
+		ih := ingest.NewInterestHandler(q, interestEmbedder)
 		interestConsumer = ingest.NewConsumer(qClient, cfg.InterestsQueueURL, ih, cfg.IngestWorkers, "interests")
 	}
 
