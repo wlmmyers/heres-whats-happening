@@ -141,7 +141,7 @@ func serve() error {
 
 	var interestConsumer *ingest.Consumer
 	if cfg.InterestsQueueURL != "" && cipher != nil {
-		ih := ingest.NewInterestHandler(q)
+		ih := ingest.NewInterestHandler(q, nil)
 		interestConsumer = ingest.NewConsumer(qClient, cfg.InterestsQueueURL, ih, cfg.IngestWorkers, "interests")
 	}
 

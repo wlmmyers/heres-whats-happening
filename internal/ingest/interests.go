@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/wmyers/heres-whats-happening/internal/events"
+	"github.com/wmyers/heres-whats-happening/internal/matcher"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
 
@@ -21,11 +22,12 @@ import (
 // further toward a 0.1 floor — the genre list is unbounded, so deep-ranked
 // genres should stay weak signal.
 type InterestHandler struct {
-	q *store.Queries
+	q   *store.Queries
+	emb matcher.Embedder // may be nil (no TEI configured) → embed step skipped
 }
 
-func NewInterestHandler(q *store.Queries) *InterestHandler {
-	return &InterestHandler{q: q}
+func NewInterestHandler(q *store.Queries, emb matcher.Embedder) *InterestHandler {
+	return &InterestHandler{q: q, emb: emb}
 }
 
 func (h *InterestHandler) Handle(ctx context.Context, body []byte) error {
@@ -41,6 +43,17 @@ func (h *InterestHandler) Handle(ctx context.Context, body []byte) error {
 	}
 	pgUID := pgtype.UUID{Bytes: uid, Valid: true}
 
+	// Empty Op is treated as replace-and-embed for backward compatibility.
+	if m.Op != events.OpOnlyEmbed {
+		if err := h.replaceInterests(ctx, pgUID, m); err != nil {
+			return err
+		}
+	}
+	return h.embedUser(ctx, pgUID)
+}
+
+// replaceInterests atomically replaces the user's Spotify-derived interest rows.
+func (h *InterestHandler) replaceInterests(ctx context.Context, pgUID pgtype.UUID, m events.InterestMessage) error {
 	// Replace artists.
 	if err := h.q.ReplaceSpotifyArtistInterests(ctx, pgUID); err != nil {
 		return fmt.Errorf("delete artists: %w", err)
@@ -111,6 +124,19 @@ func (h *InterestHandler) Handle(ctx context.Context, body []byte) error {
 		}
 	}
 
+	return nil
+}
+
+// embedUser re-embeds the user via the matcher's single-user path. If no
+// embedder is configured (no TEI endpoint), embedding is skipped — the daily
+// match batch is the backstop.
+func (h *InterestHandler) embedUser(ctx context.Context, pgUID pgtype.UUID) error {
+	if h.emb == nil {
+		return nil
+	}
+	if err := matcher.NewUserEmbedder(h.q, h.emb).EmbedUser(ctx, pgUID); err != nil {
+		return fmt.Errorf("embed user: %w", err)
+	}
 	return nil
 }
 
