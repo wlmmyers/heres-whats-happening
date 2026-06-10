@@ -26,6 +26,18 @@ func (u *UserEmbedder) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("select users: %w", err)
 	}
+	return u.embedUsers(ctx, userIDs)
+}
+
+// EmbedUser embeds a single user immediately, regardless of staleness — the
+// caller (the interest consumer) already knows the user's interests changed. A
+// user with no interest text (no interests of any kind) is skipped, leaving any
+// existing embedding unchanged.
+func (u *UserEmbedder) EmbedUser(ctx context.Context, userID pgtype.UUID) error {
+	return u.embedUsers(ctx, []pgtype.UUID{userID})
+}
+
+func (u *UserEmbedder) embedUsers(ctx context.Context, userIDs []pgtype.UUID) error {
 	if len(userIDs) == 0 {
 		return nil
 	}
