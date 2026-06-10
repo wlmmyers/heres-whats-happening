@@ -15,7 +15,8 @@ import (
 )
 
 // InterestHandler applies an InterestMessage to user_interests, replacing
-// the user's Spotify-derived rows atomically per message.
+// the user's Spotify-derived rows per message (per-statement, not wrapped in a
+// transaction — a mid-replace failure is retried when the SQS message redelivers).
 //
 // Weight scaling: artists and track artists use rankWeight (rank 1 → 1.0,
 // ramping down to 0.6 at rank 50). Genres use rankGenreWeight, which decays

@@ -140,6 +140,10 @@ func serve() error {
 	}
 
 	var interestConsumer *ingest.Consumer
+	// Note: this also drains only_embed messages published by the manual-interest
+	// API handlers. The cipher guard means a deployment with INTERESTS_QUEUE_URL
+	// set but no SPOTIFY_TOKEN_ENC_KEY would publish only_embed messages with no
+	// consumer to drain them (the daily match-job is still the backstop).
 	if cfg.InterestsQueueURL != "" && cipher != nil {
 		var interestEmbedder matcher.Embedder
 		if cfg.TEIEndpoint != "" {
