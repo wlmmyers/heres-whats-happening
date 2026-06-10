@@ -71,8 +71,21 @@ methods call it:
 - `Run(ctx)` — unchanged behavior: selects stale users via
   `SelectUsersNeedingEmbedding`, then delegates to the helper.
 - `EmbedUser(ctx, userID)` — embeds a single user unconditionally (the message
-  is itself the staleness signal). Like `Run`, it skips a user whose built
-  interest text is empty (no rows written, embedding left as-is).
+  is itself the staleness signal). It reads the user's rows via
+  `ListUserInterestsBatch` (no kind filter — Spotify artists/track-artists/
+  saved-song-artists/genres **and** manual tags), builds text via
+  `BuildUserText`, embeds, and writes `users.interest_embedding`.
+
+  Like `Run`, it skips only a user whose built interest text is empty — which
+  means the user has **no interests of any kind**. A user who connected Spotify
+  but entered zero manual interests is NOT skipped: their artist/genre rows make
+  the text non-empty, so they are embedded normally. This is the primary case
+  this change exists to serve.
+
+  Ordering note: in the Spotify path, `Handle` writes the interest rows before
+  calling `EmbedUser` in the same invocation. `Handle` uses no transaction (rows
+  are committed via individual pool calls), so the just-written rows are visible
+  to the `ListUserInterestsBatch` read inside `EmbedUser`.
 
 The helper reuses `ListUserInterestsBatch` (already takes a slice of IDs),
 `BuildUserText`, `foldDeduped`, and `UpdateUserInterestEmbedding` exactly as
