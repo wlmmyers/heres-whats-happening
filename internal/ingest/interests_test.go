@@ -280,6 +280,9 @@ func TestInterestHandler_ReplaceEmbedAndMatch_WritesMatchRow(t *testing.T) {
 	require.NoError(t, q.InsertEventPerformer(ctx, store.InsertEventPerformerParams{
 		EventID: eventID, PerformerName: "Phoebe Bridgers", NormalizedName: "phoebe bridgers",
 	}))
+	// newFakeEmbedder() embeds every input to a constant 0.1 vector; a parallel
+	// event vector gives cosine 1.0, so the embedding score alone (0.4) clears the
+	// default 0.3 threshold. Keep these two vectors parallel if either changes.
 	eventVec := make([]float32, 384)
 	for i := range eventVec {
 		eventVec[i] = 0.1
