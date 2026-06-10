@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/events"
@@ -246,4 +247,115 @@ func TestInterestHandler_NilEmbedder_StillReplaces(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
+}
+
+func TestInterestHandler_ReplaceEmbedAndMatch_WritesMatchRow(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email:        "embed-match@example.com",
+		PasswordHash: "stub",
+		CityID:       city.ID,
+	})
+	require.NoError(t, err)
+
+	src, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "V", NormalizedName: "v",
+	})
+	require.NoError(t, err)
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:      src.ID,
+		SourceEventID: "embed-match-1",
+		Title:         "PB Live",
+		StartsAt:      pgtype.Timestamptz{Time: time.Now().Add(48 * time.Hour), Valid: true},
+		VenueID:       venueID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.InsertEventPerformer(ctx, store.InsertEventPerformerParams{
+		EventID: eventID, PerformerName: "Phoebe Bridgers", NormalizedName: "phoebe bridgers",
+	}))
+	// newFakeEmbedder() embeds every input to a constant 0.1 vector; a parallel
+	// event vector gives cosine 1.0, so the embedding score alone (0.4) clears the
+	// default 0.3 threshold. Keep these two vectors parallel if either changes.
+	eventVec := make([]float32, 384)
+	for i := range eventVec {
+		eventVec[i] = 0.1
+	}
+	ev := pgvector.NewVector(eventVec)
+	require.NoError(t, q.UpdateEventEmbedding(ctx, store.UpdateEventEmbeddingParams{
+		ID: eventID, Embedding: &ev,
+	}))
+
+	emb := newFakeEmbedder()
+	body, _ := json.Marshal(&events.InterestMessage{
+		UserID: pgtypeUUIDToString(t, userRow.ID),
+		Op:     events.OpReplaceInterestsAndEmbed,
+		SpotifyTopArtists: []events.SpotifyTopItem{
+			{Name: "Phoebe Bridgers", Rank: 1},
+		},
+	})
+	h := ingest.NewInterestHandler(q, emb)
+	require.NoError(t, h.Handle(ctx, body))
+
+	var score float64
+	err = pool.QueryRow(ctx,
+		`SELECT score FROM user_event_match WHERE user_id = $1 AND event_id = $2`,
+		userRow.ID, eventID).Scan(&score)
+	require.NoError(t, err)
+	require.Greater(t, score, 0.3)
+}
+
+func TestInterestHandler_NilEmbedder_WritesNoMatchRows(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email:        "nil-emb-match@example.com",
+		PasswordHash: "stub",
+		CityID:       city.ID,
+	})
+	require.NoError(t, err)
+
+	src, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "V2", NormalizedName: "v2",
+	})
+	require.NoError(t, err)
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:      src.ID,
+		SourceEventID: "nil-emb-match-1",
+		Title:         "PB Live 2",
+		StartsAt:      pgtype.Timestamptz{Time: time.Now().Add(48 * time.Hour), Valid: true},
+		VenueID:       venueID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.InsertEventPerformer(ctx, store.InsertEventPerformerParams{
+		EventID: eventID, PerformerName: "Phoebe Bridgers", NormalizedName: "phoebe bridgers",
+	}))
+
+	body, _ := json.Marshal(&events.InterestMessage{
+		UserID: pgtypeUUIDToString(t, userRow.ID),
+		Op:     events.OpReplaceInterestsAndEmbed,
+		SpotifyTopArtists: []events.SpotifyTopItem{
+			{Name: "Phoebe Bridgers", Rank: 1},
+		},
+	})
+	h := ingest.NewInterestHandler(q, nil)
+	require.NoError(t, h.Handle(ctx, body))
+
+	var count int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM user_event_match WHERE user_id = $1`,
+		userRow.ID).Scan(&count))
+	require.Equal(t, 0, count)
 }
