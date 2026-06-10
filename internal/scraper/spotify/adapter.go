@@ -107,6 +107,7 @@ func (a *Adapter) ScrapeOne(ctx context.Context, userID pgtype.UUID) error {
 
 	msg := events.InterestMessage{
 		UserID:    userIDString(userID),
+		Op:        events.OpReplaceInterestsAndEmbed,
 		FetchedAt: time.Now().UTC(),
 	}
 	msg.SpotifyTopArtists = make([]events.SpotifyTopItem, 0, len(artists))
