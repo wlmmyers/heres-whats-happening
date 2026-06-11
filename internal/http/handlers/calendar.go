@@ -77,7 +77,7 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 			StartsAt_2: pgtype.Timestamptz{Time: to, Valid: true},
 		})
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not load calendar")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not load calendar", err)
 			return
 		}
 

@@ -55,13 +55,13 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 
 		hash, err := pwhash.Hash(req.Password)
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "hash_failed", "could not hash password")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "hash_failed", "could not hash password", err)
 			return
 		}
 
 		cityUUID, err := uuid.Parse(cityID)
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "bad_city_id", "city id is invalid")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "bad_city_id", "city id is invalid", err)
 			return
 		}
 
@@ -79,20 +79,20 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 				httperr.Write(w, http.StatusConflict, "email_taken", "an account with that email already exists")
 				return
 			}
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not create user")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not create user", err)
 			return
 		}
 
 		userUUID := uuid.UUID(row.ID.Bytes)
 		access, err := signer.SignAccess(userUUID)
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "sign_failed", "could not sign access token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "sign_failed", "could not sign access token", err)
 			return
 		}
 
 		refreshTok, err := auth.GenerateRefresh()
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "refresh_failed", "could not mint refresh token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "refresh_failed", "could not mint refresh token", err)
 			return
 		}
 		if _, err := q.CreateRefreshToken(ctx, store.CreateRefreshTokenParams{
@@ -100,7 +100,7 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 			TokenHash: auth.HashRefresh(refreshTok),
 			ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(refreshTTL), Valid: true},
 		}); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not persist refresh token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not persist refresh token", err)
 			return
 		}
 		setRefreshCookie(w, refreshTok, refreshTTL)
@@ -147,12 +147,12 @@ func Login(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration) h
 		userUUID := uuid.UUID(row.ID.Bytes)
 		access, err := signer.SignAccess(userUUID)
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "sign_failed", "could not sign access token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "sign_failed", "could not sign access token", err)
 			return
 		}
 		refreshTok, err := auth.GenerateRefresh()
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "refresh_failed", "could not mint refresh token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "refresh_failed", "could not mint refresh token", err)
 			return
 		}
 		if _, err := q.CreateRefreshToken(ctx, store.CreateRefreshTokenParams{
@@ -160,7 +160,7 @@ func Login(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration) h
 			TokenHash: auth.HashRefresh(refreshTok),
 			ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(refreshTTL), Valid: true},
 		}); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not persist refresh token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not persist refresh token", err)
 			return
 		}
 		setRefreshCookie(w, refreshTok, refreshTTL)
@@ -190,7 +190,7 @@ func Refresh(q *store.Queries, signer *auth.JWTSigner) http.HandlerFunc {
 		}
 		access, err := signer.SignAccess(uuid.UUID(row.UserID.Bytes))
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "sign_failed", "could not sign access token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "sign_failed", "could not sign access token", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, refreshResponse{AccessToken: access})

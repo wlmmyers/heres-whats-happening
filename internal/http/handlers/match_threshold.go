@@ -54,7 +54,7 @@ func UpdateMatchThreshold(q *store.Queries) http.HandlerFunc {
 			ID:             pgUID,
 			ScoreThreshold: &th,
 		}); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not update threshold")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not update threshold", err)
 			return
 		}
 

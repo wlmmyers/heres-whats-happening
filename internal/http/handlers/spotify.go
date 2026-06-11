@@ -35,17 +35,17 @@ func SpotifyConnect(client *spotify.Client, hmacKey []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		verifier, err := spotify.NewVerifier()
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "pkce_failed", "could not generate PKCE verifier")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "pkce_failed", "could not generate PKCE verifier", err)
 			return
 		}
 		state, err := spotify.NewVerifier() // reuse random-string helper
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "state_failed", "could not generate state")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "state_failed", "could not generate state", err)
 			return
 		}
 		cookieValue, err := spotify.SealOAuthState(hmacKey, state, verifier, oauthCookieTTL)
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "seal_failed", "could not seal oauth cookie")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "seal_failed", "could not seal oauth cookie", err)
 			return
 		}
 		http.SetCookie(w, &http.Cookie{
@@ -120,12 +120,12 @@ func SpotifyExchange(
 		}
 		atEnc, err := cipher.Encrypt([]byte(tok.AccessToken))
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "encrypt_failed", "could not encrypt access token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "encrypt_failed", "could not encrypt access token", err)
 			return
 		}
 		rtEnc, err := cipher.Encrypt([]byte(tok.RefreshToken))
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "encrypt_failed", "could not encrypt refresh token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "encrypt_failed", "could not encrypt refresh token", err)
 			return
 		}
 		pgUID := pgtype.UUID{Bytes: uid, Valid: true}
@@ -136,7 +136,7 @@ func SpotifyExchange(
 			ExpiresAt:       pgtype.Timestamptz{Time: time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second), Valid: true},
 			Scope:           tok.Scope,
 		}); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not persist tokens")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not persist tokens", err)
 			return
 		}
 
@@ -173,11 +173,11 @@ func SpotifyDisconnect(q *store.Queries) http.HandlerFunc {
 		defer cancel()
 
 		if err := q.DeleteSpotifyDerivedInterests(ctx, pgUID); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not delete interests")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not delete interests", err)
 			return
 		}
 		if err := q.DeleteUserSpotifyTokens(ctx, pgUID); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not delete tokens")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not delete tokens", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -198,7 +198,7 @@ func SpotifyStatus(q *store.Queries) http.HandlerFunc {
 
 		_, err := q.GetUserSpotifyTokens(ctx, pgtype.UUID{Bytes: uid, Valid: true})
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not load tokens")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not load tokens", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"connected": err == nil})

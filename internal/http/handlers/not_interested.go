@@ -50,7 +50,7 @@ func AddNotInterested(q *store.Queries) http.HandlerFunc {
 				httperr.Write(w, http.StatusBadRequest, "unknown_event", "event does not exist")
 				return
 			}
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not save not-interested")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not save not-interested", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -68,7 +68,7 @@ func ResetNotInterested(q *store.Queries) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		if err := q.ClearNotInterested(ctx, pgtype.UUID{Bytes: uid, Valid: true}); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not reset not-interested")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not reset not-interested", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

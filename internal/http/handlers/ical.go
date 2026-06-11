@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
@@ -34,7 +36,7 @@ func CreateIcalToken(q *store.Queries, baseURL string) http.HandlerFunc {
 		}
 		raw, err := auth.GenerateRefresh()
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "token_failed", "could not generate token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "token_failed", "could not generate token", err)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -43,7 +45,7 @@ func CreateIcalToken(q *store.Queries, baseURL string) http.HandlerFunc {
 			UserID:    pgtype.UUID{Bytes: uid, Valid: true},
 			TokenHash: auth.HashRefresh(raw),
 		}); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not persist token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not persist token", err)
 			return
 		}
 		writeJSON(w, http.StatusCreated, icalTokenResponse{
@@ -64,7 +66,7 @@ func DeleteIcalToken(q *store.Queries) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		if err := q.DeleteIcalTokenByUser(ctx, pgtype.UUID{Bytes: uid, Valid: true}); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not delete token")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not delete token", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -104,6 +106,8 @@ func GetIcalFeed(q *store.Queries) http.HandlerFunc {
 			StartsAt_2: to,
 		})
 		if err != nil {
+			log.Printf("[%s] %s %s -> 500 ical feed: %v",
+				chimw.GetReqID(r.Context()), r.Method, r.URL.Path, err)
 			http.Error(w, "could not load events", http.StatusInternalServerError)
 			return
 		}

@@ -56,7 +56,7 @@ func DeleteMe(q *store.Queries) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		if err := q.SoftDeleteUser(ctx, pgtype.UUID{Bytes: uid, Valid: true}); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not delete user")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not delete user", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
