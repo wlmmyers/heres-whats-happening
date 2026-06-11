@@ -56,6 +56,7 @@
 - Create: `sql/migrations/0016_user_event_not_interested.down.sql`
 - Create: `sql/queries/event_not_interested.sql`
 - Generated: `internal/store/event_not_interested.sql.go`
+- Modify: `internal/testdb/testdb.go` (add the new table to the truncate list)
 
 - [ ] **Step 1: Write the up migration**
 
@@ -101,18 +102,43 @@ Expected: exits 0, creates `internal/store/event_not_interested.sql.go` containi
 `type AddNotInterestedParams struct { UserID pgtype.UUID; EventID pgtype.UUID }`, and
 `func (q *Queries) ClearNotInterested(ctx context.Context, userID pgtype.UUID) error`.
 
-- [ ] **Step 5: Verify it builds**
+- [ ] **Step 5: Add the table to the test truncate list**
+
+In `internal/testdb/testdb.go`, in `truncateAll`'s `tables` slice, add the new table as the
+first entry (children before parents):
+
+```go
+	tables := []string{
+		"user_event_not_interested",
+		"user_event_match",
+		"event_genres",
+		"event_performers",
+		"events",
+		"venues",
+		"user_interests",
+		"user_spotify_tokens",
+		"ical_tokens",
+		"refresh_tokens",
+		"users",
+	}
+```
+
+(It would also be cleared via `TRUNCATE ... CASCADE` from `users`/`events`, but listing it
+explicitly matches the existing pattern and keeps cleanup obvious.)
+
+- [ ] **Step 6: Verify it builds**
 
 Run: `go build ./...`
 Expected: exits 0, no errors.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add sql/migrations/0016_user_event_not_interested.up.sql \
         sql/migrations/0016_user_event_not_interested.down.sql \
         sql/queries/event_not_interested.sql \
-        internal/store/event_not_interested.sql.go
+        internal/store/event_not_interested.sql.go \
+        internal/testdb/testdb.go
 git commit -m "Add user_event_not_interested table and queries"
 ```
 
