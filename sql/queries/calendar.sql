@@ -18,6 +18,10 @@ WHERE m.user_id = $1
   AND e.archived_at IS NULL
   AND e.starts_at >= $2
   AND e.starts_at <  $3
+  AND NOT EXISTS (
+      SELECT 1 FROM user_event_not_interested ni
+      WHERE ni.user_id = m.user_id AND ni.event_id = e.id
+  )
 ORDER BY e.starts_at ASC;
 
 -- name: GetMatchedEventForUser :one

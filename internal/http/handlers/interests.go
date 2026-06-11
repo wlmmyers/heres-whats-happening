@@ -43,7 +43,7 @@ func ListInterests(q *store.Queries) http.HandlerFunc {
 		defer cancel()
 		rows, err := q.ListManualInterestsByUser(ctx, pgtype.UUID{Bytes: uid, Valid: true})
 		if err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not list interests")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not list interests", err)
 			return
 		}
 		out := make([]interestOut, 0, len(rows))
@@ -115,7 +115,7 @@ func CreateInterest(q *store.Queries, pub CallbackPublisher, queueURL string) ht
 				httperr.Write(w, http.StatusConflict, "duplicate_interest", "this interest already exists")
 				return
 			}
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not create interest")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not create interest", err)
 			return
 		}
 		writeJSON(w, http.StatusCreated, interestOut{
@@ -148,7 +148,7 @@ func DeleteInterest(q *store.Queries, pub CallbackPublisher, queueURL string) ht
 			ID:     pgtype.UUID{Bytes: id, Valid: true},
 			UserID: pgtype.UUID{Bytes: uid, Valid: true},
 		}); err != nil {
-			httperr.Write(w, http.StatusInternalServerError, "db_error", "could not delete interest")
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not delete interest", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

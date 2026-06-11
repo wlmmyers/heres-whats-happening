@@ -5,6 +5,7 @@ import { startSpotifyConnect, disconnectSpotify, getSpotifyStatus } from '../api
 import { createIcalToken, revokeIcalToken } from '../api/ical';
 import { getMe } from '../api/auth';
 import { updateMatchThreshold, MIN_THRESHOLD, MAX_THRESHOLD } from '../api/match';
+import { resetNotInterested } from '../api/notInterested';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TagInput from '../components/TagInput';
 
@@ -76,6 +77,15 @@ export default function SettingsPage() {
   const revokeIcal = useMutation({
     mutationFn: revokeIcalToken,
     onSuccess: () => setIcalURL(null),
+  });
+
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const resetNotInterestedMut = useMutation({
+    mutationFn: resetNotInterested,
+    onSuccess: () => {
+      setResetConfirmOpen(false);
+      qc.invalidateQueries({ queryKey: ['calendar'] });
+    },
   });
 
   return (
@@ -192,12 +202,36 @@ export default function SettingsPage() {
         )}
       </section>
 
+      {/* Hidden events */}
+      <section className="bg-white shadow rounded p-4 space-y-3">
+        <h2 className="text-lg font-medium">Hidden events</h2>
+        <p className="text-gray-700 text-sm">
+          Events you marked "not interested" are hidden from your calendar. Reset to show
+          them all again.
+        </p>
+        <button
+          type="button"
+          onClick={() => setResetConfirmOpen(true)}
+          disabled={resetNotInterestedMut.isPending}
+          className="border rounded px-4 py-2 hover:bg-gray-50 disabled:opacity-60"
+        >
+          Reset not-interested list
+        </button>
+      </section>
+
       <ConfirmDialog
         open={confirmOpen}
         title="Update match threshold?"
         message="Updating your match threshold will recalculate all of your recommended events. Continue?"
         onConfirm={() => saveThreshold.mutate(effectivePercent / 100)}
         onCancel={() => setConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        title="Reset not-interested list?"
+        message="This clears every event you've marked 'not interested'. They may reappear in your calendar. Continue?"
+        onConfirm={() => resetNotInterestedMut.mutate()}
+        onCancel={() => setResetConfirmOpen(false)}
       />
     </div>
   );

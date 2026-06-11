@@ -28,7 +28,7 @@ export default function EventDetailPage() {
 
   return (
     <article className="space-y-4">
-      <Link to="/calendar" className="text-sm text-blue-600 hover:underline font-bold mb-2.5">
+      <Link to="/calendar" className="block text-sm text-blue-600 hover:underline font-bold mb-2.5">
         {`< Calendar`}
       </Link>
 
