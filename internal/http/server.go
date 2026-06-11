@@ -82,6 +82,8 @@ func (s *Server) Router() http.Handler {
 			s.QueuePublisher, s.InterestsQueueURL))
 		r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
 		r.Get("/me/calendar", handlers.GetMyCalendar(s.Queries))
+		r.Post("/me/not-interested", handlers.AddNotInterested(s.Queries))
+		r.Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))
 		r.Get("/events/{id}", handlers.GetEventByIDForUser(s.Queries))
 		r.Post("/me/ical-token", handlers.CreateIcalToken(s.Queries, s.IcalBaseURL))
 		r.Delete("/me/ical-token", handlers.DeleteIcalToken(s.Queries))
