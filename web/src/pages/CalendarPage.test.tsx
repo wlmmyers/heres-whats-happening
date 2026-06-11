@@ -9,7 +9,13 @@ vi.mock('../api/calendar', () => ({
   getEvent: vi.fn(),
 }));
 
+vi.mock('../api/notInterested', () => ({
+  markNotInterested: vi.fn(),
+  resetNotInterested: vi.fn(),
+}));
+
 import * as calApi from '../api/calendar';
+import * as niApi from '../api/notInterested';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -78,5 +84,29 @@ describe('CalendarPage', () => {
     );
     const oneMonthTo = getCal.mock.calls[getCal.mock.calls.length - 1][1] as string;
     expect(oneMonthTo < threeMonthTo).toBe(true);
+  });
+
+  it('removes a card and calls the API when Not interested is clicked', async () => {
+    (calApi.getCalendar as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([
+        {
+          id: 'e1',
+          title: 'PB Live',
+          starts_at: '2026-06-15T20:00:00Z',
+          venue: { name: 'The Bowl' },
+          score: 0.82,
+          matched_because: { performers: [], genres: [] },
+        },
+      ])
+      .mockResolvedValue([]); // refetch after dismissal returns the server-filtered list
+    (niApi.markNotInterested as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /not interested/i }));
+
+    await waitFor(() => expect(niApi.markNotInterested).toHaveBeenCalledWith('e1'));
+    await waitFor(() => expect(screen.queryByText('PB Live')).not.toBeInTheDocument());
   });
 });

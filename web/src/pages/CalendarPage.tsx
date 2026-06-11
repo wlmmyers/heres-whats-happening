@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { getCalendar, type CalendarEvent } from '../api/calendar';
+import { markNotInterested } from '../api/notInterested';
 import EventCard from '../components/EventCard';
 import Spinner from '../components/Spinner';
 
@@ -15,6 +16,7 @@ const RANGE_OPTIONS = [
 ] as const;
 
 export default function CalendarPage() {
+  const qc = useQueryClient();
   const [months, setMonths] = useState(3);
 
   const today = new Date();
@@ -29,6 +31,24 @@ export default function CalendarPage() {
   });
 
   const events = data ?? [];
+
+  const notInterested = useMutation({
+    mutationFn: (id: string) => markNotInterested(id),
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['calendar', from, to] });
+      const prev = qc.getQueryData<CalendarEvent[]>(['calendar', from, to]);
+      qc.setQueryData<CalendarEvent[]>(['calendar', from, to], (old) =>
+        (old ?? []).filter((e) => e.id !== id),
+      );
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['calendar', from, to], ctx.prev);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['calendar'] });
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -76,7 +96,7 @@ export default function CalendarPage() {
         <ul className="space-y-3">
           {events.map((e) => (
             <li key={e.id}>
-              <EventCard event={e} />
+              <EventCard event={e} onNotInterested={(id) => notInterested.mutate(id)} />
             </li>
           ))}
         </ul>
