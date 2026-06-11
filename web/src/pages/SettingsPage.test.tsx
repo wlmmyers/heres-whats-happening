@@ -27,12 +27,17 @@ vi.mock('../api/match', () => ({
   MIN_THRESHOLD: 0.2,
   MAX_THRESHOLD: 0.6,
 }));
+vi.mock('../api/notInterested', () => ({
+  markNotInterested: vi.fn(),
+  resetNotInterested: vi.fn(),
+}));
 
 import * as interestsApi from '../api/interests';
 import * as icalApi from '../api/ical';
 import * as spotifyApi from '../api/spotify';
 import * as authApi from '../api/auth';
 import * as matchApi from '../api/match';
+import * as niApi from '../api/notInterested';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -114,6 +119,18 @@ describe('SettingsPage', () => {
     renderPage();
     expect(await screen.findByRole('button', { name: /connect spotify/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
+  });
+
+  it('resets the not-interested list after confirming', async () => {
+    (niApi.resetNotInterested as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /reset not-interested list/i }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(niApi.resetNotInterested).toHaveBeenCalled());
   });
 
   it('confirms before updating the match threshold', async () => {
