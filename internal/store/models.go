@@ -102,6 +102,12 @@ type UserEventMatch struct {
 	ComputedAt     pgtype.Timestamptz `json:"computed_at"`
 }
 
+type UserEventNotInterested struct {
+	UserID    pgtype.UUID        `json:"user_id"`
+	EventID   pgtype.UUID        `json:"event_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type UserInterest struct {
 	ID              pgtype.UUID        `json:"id"`
 	UserID          pgtype.UUID        `json:"user_id"`
