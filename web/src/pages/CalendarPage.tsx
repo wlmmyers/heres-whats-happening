@@ -35,7 +35,7 @@ export default function CalendarPage() {
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="text-2xl font-semibold">Your matched calendar</h1>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">Show events for next</span>
+          <span className="text-sm text-gray-500">Show events for next:</span>
           <div className="inline-flex p-0.5">
             {RANGE_OPTIONS.map((opt) => {
               const active = opt.months === months;
