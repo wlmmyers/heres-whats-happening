@@ -9,16 +9,19 @@ locals {
       command   = ["scrape", "events", "--source=ticketmaster"]
       schedule  = "cron(0 0 * * ? *)" # 00:00 UTC daily
       log_group = "scrape-events-ticketmaster"
+      timezone = "America/Los_Angeles"
     }
     "scrape-spotify" = {
       command   = ["scrape", "spotify"]
       schedule  = "cron(0 0 * * ? *)" # 00:00 UTC daily
       log_group = "scrape-spotify"
+      timezone = "America/Los_Angeles"
     }
     "match" = {
       command   = ["match"]
-      schedule  = "rate(4 hours)"
+      schedule  = "cron(0 1 * * ? *)" # 01:00 UTC daily, after the scrapes finish
       log_group = "match"
+      timezone = "America/Los_Angeles"
     }
   }
 }
