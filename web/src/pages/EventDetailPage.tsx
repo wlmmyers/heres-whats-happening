@@ -28,7 +28,9 @@ export default function EventDetailPage() {
 
   return (
     <article className="space-y-4">
-      <Link to="/calendar" className="text-sm text-blue-600 hover:underline">← Calendar</Link>
+      <Link to="/calendar" className="text-sm text-blue-600 hover:underline font-bold mb-2.5">
+        {`< Calendar`}
+      </Link>
 
       {data.image_url && (
         <img
@@ -62,7 +64,7 @@ export default function EventDetailPage() {
           href={data.url}
           target="_blank"
           rel="noreferrer"
-          className="inline-block bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-2"
+          className="font-bold inline-block bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-2"
         >
           View event
         </a>

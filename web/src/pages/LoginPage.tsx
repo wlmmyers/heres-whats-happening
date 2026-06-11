@@ -36,8 +36,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <form onSubmit={onSubmit} className="w-full max-w-sm bg-white shadow rounded p-6 space-y-4">
+    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row items-center justify-center px-4 bg-white shadow rounded md:gap-8">
+      <img src="/titleLogo.png" alt="Logo" style={{ width: '300px' }} className="mb-8" />
+      <form onSubmit={onSubmit} className="w-full max-w-sm p-6 space-y-4">
         <h1 className="text-xl font-semibold">Sign in</h1>
 
         <label className="block text-sm">
