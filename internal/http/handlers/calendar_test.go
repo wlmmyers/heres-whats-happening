@@ -228,3 +228,62 @@ func TestGetEventByID_NotFound(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+func TestGetMyCalendar_ExcludesNotInterested(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, eventID := seedCalendarFixture(t, q, ctx)
+
+	require.NoError(t, q.AddNotInterested(ctx, store.AddNotInterestedParams{
+		UserID:  userID,
+		EventID: eventID,
+	}))
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID))
+	from := time.Now().Add(-time.Hour).UTC().Format("2006-01-02")
+	to := time.Now().Add(7 * 24 * time.Hour).UTC().Format("2006-01-02")
+	req := httptest.NewRequest(http.MethodGet, "/me/calendar?from="+from+"&to="+to, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	middleware.RequireAuth(signer)(handlers.GetMyCalendar(q)).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Events []map[string]any `json:"events"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.Empty(t, resp.Events) // dismissed event is hidden
+}
+
+// Companion regression test: clearing the list makes the event visible again.
+// Proves ClearNotInterested actually deletes the row. Passes once the filter exists.
+func TestGetMyCalendar_ResetRestoresEvents(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, eventID := seedCalendarFixture(t, q, ctx)
+
+	require.NoError(t, q.AddNotInterested(ctx, store.AddNotInterestedParams{
+		UserID:  userID,
+		EventID: eventID,
+	}))
+	require.NoError(t, q.ClearNotInterested(ctx, userID))
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID))
+	from := time.Now().Add(-time.Hour).UTC().Format("2006-01-02")
+	to := time.Now().Add(7 * 24 * time.Hour).UTC().Format("2006-01-02")
+	req := httptest.NewRequest(http.MethodGet, "/me/calendar?from="+from+"&to="+to, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	middleware.RequireAuth(signer)(handlers.GetMyCalendar(q)).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Events []map[string]any `json:"events"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.Len(t, resp.Events, 1) // event visible again after reset
+}
