@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/useAuth';
+import * as s from './UserMenu.css';
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
@@ -8,26 +9,26 @@ export default function UserMenu() {
   const initial = user?.email?.[0]?.toUpperCase() ?? '?';
 
   return (
-    <div className="relative ml-auto">
+    <div className={s.root}>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-8 h-8 rounded-full bg-blue-500 text-white text-sm font-semibold flex items-center justify-center cursor-pointer"
+        className={s.avatar}
         aria-label="Account menu"
       >
         {initial}
       </button>
       {open && (
-        <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+        <div className={s.overlay} onClick={() => setOpen(false)} />
       )}
       {open && (
-        <div className="absolute top-full right-0 mt-1 z-20 min-w-max rounded border border-gray-200 bg-white px-3 py-2 shadow-md">
-          <p className="mb-2 text-xs text-gray-500">{user?.email}</p>
-          <hr className="mb-2 border-gray-100" />
+        <div className={s.dropdown}>
+          <p className={s.email}>{user?.email}</p>
+          <hr className={s.divider} />
           <button
             type="button"
             onClick={() => { void logout(); setOpen(false); }}
-            className="cursor-pointer border-0 bg-transparent p-0 text-sm text-gray-700"
+            className={s.signOut}
           >
             Sign out
           </button>
