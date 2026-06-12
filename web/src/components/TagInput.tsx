@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent } from 'react';
+import * as s from './TagInput.css';
 
 interface Props {
   values: string[];
@@ -25,15 +26,15 @@ export default function TagInput({ values, onAdd, onRemove, placeholder }: Props
   }
 
   return (
-    <div className="border rounded p-2 flex flex-wrap gap-2 items-center">
+    <div className={s.wrapper}>
       {values.map((v) => (
-        <span key={v} className="inline-flex items-center bg-blue-100 text-blue-800 rounded-full px-3 py-1 text-sm">
+        <span key={v} className={s.tag}>
           {v}
           <button
             type="button"
             aria-label={`Remove ${v}`}
             onClick={() => onRemove(v)}
-            className="ml-2 text-blue-700 hover:text-red-600"
+            className={s.removeButton}
           >
             ×
           </button>
@@ -45,7 +46,7 @@ export default function TagInput({ values, onAdd, onRemove, placeholder }: Props
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
-        className="flex-1 min-w-[120px] border-0 outline-none p-1 text-sm"
+        className={s.input}
       />
     </div>
   );
