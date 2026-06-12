@@ -4,6 +4,9 @@ import { getCalendar, type CalendarEvent } from '../api/calendar';
 import { markNotInterested } from '../api/notInterested';
 import EventCard from '../components/EventCard';
 import Spinner from '../components/Spinner';
+import clsx from 'clsx';
+import * as s from './CalendarPage.css';
+import * as c from '../styles/common.css';
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -51,12 +54,12 @@ export default function CalendarPage() {
   });
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Your matched calendar</h1>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">Show events for next:</span>
-          <div className="inline-flex p-0.5">
+    <div>
+      <header className={s.header}>
+        <h1 className={c.pageTitle}>Your matched calendar</h1>
+        <div className={s.controls}>
+          <span className={s.controlLabel}>Show events for next:</span>
+          <div className={s.segment}>
             {RANGE_OPTIONS.map((opt) => {
               const active = opt.months === months;
               return (
@@ -65,12 +68,7 @@ export default function CalendarPage() {
                   type="button"
                   onClick={() => setMonths(opt.months)}
                   aria-pressed={active}
-                  className={
-                    'rounded-md px-3 py-1 text-sm font-medium transition whitespace-nowrap ' +
-                    (active
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900')
-                  }
+                  className={clsx(s.rangeButton, active ? s.rangeButtonActive : s.rangeButtonInactive)}
                 >
                   {opt.label}
                 </button>
@@ -83,19 +81,19 @@ export default function CalendarPage() {
       {isLoading ? (
         <Spinner />
       ) : isError ? (
-        <div className="text-red-600">Couldn't load your calendar.</div>
+        <div className={s.errorBox}>Couldn't load your calendar.</div>
       ) : events.length === 0 ? (
-        <div className="bg-white shadow rounded p-8 text-center text-gray-600">
+        <div className={s.emptyState}>
           No upcoming matches yet. Add some interests on the{' '}
-          <a href="/onboarding" className="text-blue-600 underline">
+          <a href="/onboarding" className={s.inlineLink}>
             Interests
           </a>{' '}
           page or wait for the next match run.
         </div>
       ) : (
-        <ul className="space-y-3">
-          {events.map((e) => (
-            <li key={e.id}>
+        <ul className={s.list}>
+          {events.map((e, i) => (
+            <li key={e.id} className={i > 0 ? s.listItem : undefined}>
               <EventCard event={e} onNotInterested={(id) => notInterested.mutate(id)} />
             </li>
           ))}
