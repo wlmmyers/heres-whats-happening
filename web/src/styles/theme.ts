@@ -4,7 +4,6 @@
 
 export const color = {
   white: '#ffffff',
-  black: '#000000',
   blackA40: 'rgb(0 0 0 / 0.4)',
   gray50: '#f9fafb',
   gray100: '#f3f4f6',
@@ -49,7 +48,9 @@ export const radius = {
 } as const;
 
 export const shadow = {
-  sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+  // In Tailwind v4 `shadow-sm` equals the DEFAULT `shadow` value (the v3 scale
+  // was renamed). Its only consumer is CalendarPage's active range button.
+  sm: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
   base: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
   md: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
   lg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
