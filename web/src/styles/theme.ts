@@ -1,7 +1,3 @@
-// Design tokens extracted from Tailwind's default theme. Spacing is intentionally
-// NOT tokenized — padding/margin/gap are written as literal rem values at each
-// use site. Font sizes are spreadable objects: `style({ ...fontSize.lg })`.
-
 export const color = {
   white: '#ffffff',
   blackA40: 'rgb(0 0 0 / 0.4)',
@@ -48,15 +44,12 @@ export const radius = {
 } as const;
 
 export const shadow = {
-  // In Tailwind v4 `shadow-sm` equals the DEFAULT `shadow` value (the v3 scale
-  // was renamed). Its only consumer is CalendarPage's active range button.
   sm: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
   base: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
   md: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
   lg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
 } as const;
 
-// Tailwind's `transition` utility. Spread into a style: `style({ ...transition })`.
 export const transition = {
   transitionProperty:
     'color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter',

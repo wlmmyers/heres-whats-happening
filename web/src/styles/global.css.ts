@@ -1,8 +1,5 @@
 import { globalStyle } from '@vanilla-extract/css';
 
-// --- Preflight-equivalent reset (the part of Tailwind that is not a className) ---
-// Mirrors Tailwind v4's Preflight so the app renders identically now that
-// Tailwind is gone. Verified against the v4 build output.
 globalStyle('*, ::before, ::after', {
   boxSizing: 'border-box',
   borderWidth: 0,
