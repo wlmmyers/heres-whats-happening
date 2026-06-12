@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { CalendarEvent } from '../api/calendar';
+import * as s from './EventCard.css';
 
 export default function EventCard({
   event,
@@ -19,27 +20,27 @@ export default function EventCard({
   const matchedBits = [...event.matched_because.performers, ...event.matched_because.genres];
 
   return (
-    <div className="bg-white shadow rounded p-4 hover:shadow-md transition">
-      <Link to={`/events/${event.id}`} className="block">
-        <div className="flex items-baseline justify-between gap-4">
-          <h3 className="text-lg font-semibold text-gray-900">{event.title}</h3>
-          <span className="text-sm text-gray-500 whitespace-nowrap">
+    <div className={s.card}>
+      <Link to={`/events/${event.id}`} className={s.link}>
+        <div className={s.titleRow}>
+          <h3 className={s.title}>{event.title}</h3>
+          <span className={s.score}>
             {Math.round(event.score * 100)}% match
           </span>
         </div>
-        <div className="text-sm text-gray-700 mt-1">{dateLabel} · {event.venue.name}</div>
+        <div className={s.date}>{dateLabel} · {event.venue.name}</div>
         {matchedBits.length > 0 && (
-          <div className="text-xs text-blue-700 mt-2">
+          <div className={s.matched}>
             Matched because: {matchedBits.join(', ')}
           </div>
         )}
       </Link>
       {onNotInterested && (
-        <div className="mt-3 flex justify-end">
+        <div className={s.notInterestedRow}>
           <button
             type="button"
             onClick={() => onNotInterested(event.id)}
-            className="text-sm text-gray-500 hover:text-red-600"
+            className={s.notInterestedButton}
           >
             Not interested
           </button>
