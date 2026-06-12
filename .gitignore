@@ -32,3 +32,6 @@ web/.vite/
 
 # Claude & agents
 .claude/settings.local.json
+
+# macOS
+.DS_Store
