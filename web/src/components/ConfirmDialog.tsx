@@ -1,3 +1,6 @@
+import * as s from './ConfirmDialog.css';
+import * as c from '../styles/common.css';
+
 interface Props {
   open: boolean;
   title?: string;
@@ -21,7 +24,7 @@ export default function ConfirmDialog({
   return (
     <div
       data-testid="confirm-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className={s.backdrop}
       onClick={onCancel}
     >
       <div
@@ -29,23 +32,23 @@ export default function ConfirmDialog({
         aria-modal="true"
         aria-labelledby={title ? 'confirm-dialog-title' : undefined}
         aria-describedby="confirm-dialog-desc"
-        className="w-[400px] max-w-[90%] rounded bg-white p-6 shadow-lg"
+        className={s.dialog}
         onClick={(e) => e.stopPropagation()}
       >
-        {title && <h2 id="confirm-dialog-title" className="mb-2 text-lg font-medium">{title}</h2>}
-        <p id="confirm-dialog-desc" className="text-sm text-gray-700">{message}</p>
-        <div className="mt-6 flex justify-center gap-3">
+        {title && <h2 id="confirm-dialog-title" className={s.title}>{title}</h2>}
+        <p id="confirm-dialog-desc" className={s.message}>{message}</p>
+        <div className={s.actions}>
           <button
             type="button"
             onClick={onCancel}
-            className="border rounded px-4 py-2 hover:bg-gray-50"
+            className={c.buttonSecondary}
           >
             {cancelLabel}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-2"
+            className={c.buttonPrimary}
           >
             {confirmLabel}
           </button>
