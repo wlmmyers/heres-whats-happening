@@ -1,16 +1,18 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import clsx from 'clsx';
 import UserMenu from './UserMenu';
+import * as s from './Layout.css';
 
 const link = ({ isActive }: { isActive: boolean }) =>
-  `px-3 py-2 rounded ${isActive ? 'bg-blue-100 text-blue-800' : 'text-gray-700 hover:bg-gray-100'}`;
+  clsx(s.navLink, isActive ? s.navLinkActive : s.navLinkInactive);
 
 export default function Layout() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-4 py-3 flex items-center gap-2">
+    <div className={s.page}>
+      <header className={s.header}>
         <div
           style={{ backgroundImage: `url('/titleLogo.png')`, width: '280px', height: '40px' }}
-          className="bg-cover bg-center bg-no-repeat"
+          className={s.logo}
         />
         <NavLink to="/calendar" className={link}>
           Calendar
@@ -23,7 +25,7 @@ export default function Layout() {
         </NavLink>
         <UserMenu />
       </header>
-      <main className="max-w-5xl mx-auto px-4 py-6">
+      <main className={s.main}>
         <Outlet />
       </main>
     </div>
