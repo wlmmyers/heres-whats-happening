@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
+import * as s from './SignupPage.css';
+import * as c from '../styles/common.css';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -32,24 +34,24 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <form onSubmit={onSubmit} className="w-full max-w-sm bg-white shadow rounded p-6 space-y-4">
-        <h1 className="text-xl font-semibold">Create your account</h1>
+    <div className={s.page}>
+      <form onSubmit={onSubmit} className={s.form}>
+        <h1 className={s.title}>Create your account</h1>
 
-        <label className="block text-sm">
-          <span className="text-gray-700">Email</span>
+        <label className={s.field}>
+          <span className={s.fieldLabel}>Email</span>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
             required
-            className="mt-1 w-full border rounded px-2 py-1.5"
+            className={c.textInput}
           />
         </label>
 
-        <label className="block text-sm">
-          <span className="text-gray-700">Password (min 8)</span>
+        <label className={s.field}>
+          <span className={s.fieldLabel}>Password (min 8)</span>
           <input
             type="password"
             value={password}
@@ -57,23 +59,23 @@ export default function SignupPage() {
             autoComplete="new-password"
             minLength={8}
             required
-            className="mt-1 w-full border rounded px-2 py-1.5"
+            className={c.textInput}
           />
         </label>
 
-        {error && <div className="text-red-600 text-sm">{error}</div>}
+        {error && <div className={s.error}>{error}</div>}
 
         <button
           type="submit"
           disabled={submitting}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded py-2 disabled:opacity-50"
+          className={s.submit}
         >
           {submitting ? 'Creating…' : 'Create account'}
         </button>
 
-        <p className="text-sm text-gray-600">
+        <p className={s.switchText}>
           Have an account?{' '}
-          <Link to="/login" className="text-blue-600 hover:underline">
+          <Link to="/login" className={s.switchLink}>
             Sign in
           </Link>
         </p>
