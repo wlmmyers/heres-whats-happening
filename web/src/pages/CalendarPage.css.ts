@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { surface, pageTitle } from '../styles/common.css';
+import { surface } from '../styles/common.css';
 import { color, radius, shadow, fontSize, fontWeight, transition } from '../styles/theme';
 
 // flex flex-wrap items-baseline justify-between gap-3
@@ -61,5 +61,3 @@ export const list = style({ marginTop: '1rem' });
 
 // li spacing (space-y-3) — applied to every li except the first
 export const listItem = style({ marginTop: '0.75rem' });
-
-export { pageTitle };
