@@ -8,6 +8,8 @@ import { updateMatchThreshold, MIN_THRESHOLD, MAX_THRESHOLD } from '../api/match
 import { resetNotInterested } from '../api/notInterested';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TagInput from '../components/TagInput';
+import * as s from './SettingsPage.css';
+import * as c from '../styles/common.css';
 
 export default function SettingsPage() {
   const qc = useQueryClient();
@@ -89,27 +91,29 @@ export default function SettingsPage() {
   });
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">Settings</h1>
+    <div>
+      <h1 className={c.pageTitle}>Settings</h1>
 
       {/* Interests */}
-      <section className="bg-white shadow rounded p-4 space-y-3">
-        <h2 className="text-lg font-medium">Manual interests</h2>
-        <TagInput
-          values={interests.map((i) => i.value)}
-          onAdd={(v) => addInterest.mutate(v)}
-          onRemove={(v) => removeInterest.mutate(v)}
-          placeholder="Add an interest and press Enter"
-        />
+      <section className={s.section}>
+        <h2 className={c.sectionTitle}>Manual interests</h2>
+        <div className={s.item}>
+          <TagInput
+            values={interests.map((i) => i.value)}
+            onAdd={(v) => addInterest.mutate(v)}
+            onRemove={(v) => removeInterest.mutate(v)}
+            placeholder="Add an interest and press Enter"
+          />
+        </div>
       </section>
 
       {/* Match sensitivity */}
-      <section className="bg-white shadow rounded p-4 space-y-3">
-        <h2 className="text-lg font-medium">Match sensitivity</h2>
-        <p className="text-gray-700 text-sm">
+      <section className={s.section}>
+        <h2 className={c.sectionTitle}>Match sensitivity</h2>
+        <p className={s.desc}>
           Lower = more events; higher = stricter, fewer but more relevant events.
         </p>
-        <div className="flex items-center gap-3">
+        <div className={s.sliderRow}>
           <input
             type="range"
             aria-label="Match sensitivity"
@@ -121,41 +125,41 @@ export default function SettingsPage() {
               setPercent(Number(e.target.value));
               setSaveError(false);
             }}
-            className="flex-1"
+            className={s.slider}
           />
-          <span className="w-12 text-right text-sm tabular-nums">{effectivePercent}%</span>
+          <span className={s.percent}>{effectivePercent}%</span>
         </div>
         <button
           type="button"
           onClick={() => setConfirmOpen(true)}
           disabled={!dirty || saveThreshold.isPending}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded px-4 py-2"
+          className={s.saveButton}
         >
           Save threshold
         </button>
         {saveError && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className={s.error}>
             Could not update your threshold. Please try again.
           </p>
         )}
       </section>
 
       {/* Spotify */}
-      <section className="bg-white shadow rounded p-4 space-y-3">
-        <h2 className="text-lg font-medium">Spotify</h2>
-        <p className="text-gray-700 text-sm">
+      <section className={s.section}>
+        <h2 className={c.sectionTitle}>Spotify</h2>
+        <p className={s.desc}>
           Connect Spotify to get matches based on your top artists and genres.
         </p>
         {!spotifyStatusLoading && (
-          <div className="flex gap-2 items-center">
+          <div className={s.row}>
             {spotifyStatus?.connected ? (
               <>
-                <span className="text-sm text-gray-700">Connected.</span>
+                <span className={s.connectedText}>Connected.</span>
                 <button
                   type="button"
                   onClick={() => disconnectSpotifyMut.mutate()}
                   disabled={disconnectSpotifyMut.isPending}
-                  className="border rounded px-4 py-2 hover:bg-gray-50 disabled:opacity-60"
+                  className={c.buttonSecondary}
                 >
                   Disconnect
                 </button>
@@ -165,7 +169,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => connectSpotifyMut.mutate()}
                 disabled={connectSpotifyMut.isPending}
-                className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded px-4 py-2"
+                className={s.connectButton}
               >
                 Connect Spotify
               </button>
@@ -175,37 +179,37 @@ export default function SettingsPage() {
       </section>
 
       {/* iCal */}
-      <section className="bg-white shadow rounded p-4 space-y-3">
-        <h2 className="text-lg font-medium">Calendar subscription</h2>
-        <p className="text-gray-700 text-sm">
+      <section className={s.section}>
+        <h2 className={c.sectionTitle}>Calendar subscription</h2>
+        <p className={s.desc}>
           Generate a URL you can paste into iOS Calendar, Google Calendar, or Fantastical
           to subscribe to your matched events. The URL is shown once — store it somewhere safe.
         </p>
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className={s.buttonRow}>
           <button
             type="button"
             onClick={() => generateIcal.mutate()}
-            className="bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-2"
+            className={c.buttonPrimary}
           >
             Generate calendar URL
           </button>
           <button
             type="button"
             onClick={() => revokeIcal.mutate()}
-            className="border rounded px-4 py-2 hover:bg-gray-50"
+            className={c.buttonSecondary}
           >
             Revoke
           </button>
         </div>
         {icalURL && (
-          <code className="block bg-gray-100 rounded p-3 text-sm break-all">{icalURL}</code>
+          <code className={s.codeBlock}>{icalURL}</code>
         )}
       </section>
 
       {/* Hidden events */}
-      <section className="bg-white shadow rounded p-4 space-y-3">
-        <h2 className="text-lg font-medium">Hidden events</h2>
-        <p className="text-gray-700 text-sm">
+      <section className={s.section}>
+        <h2 className={c.sectionTitle}>Hidden events</h2>
+        <p className={s.desc}>
           Events you marked "not interested" are hidden from your calendar. Reset to show
           them all again.
         </p>
@@ -213,7 +217,7 @@ export default function SettingsPage() {
           type="button"
           onClick={() => setResetConfirmOpen(true)}
           disabled={resetNotInterestedMut.isPending}
-          className="border rounded px-4 py-2 hover:bg-gray-50 disabled:opacity-60"
+          className={s.resetButton}
         >
           Reset not-interested list
         </button>
