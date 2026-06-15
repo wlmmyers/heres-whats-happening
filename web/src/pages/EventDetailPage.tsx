@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { getEvent, type CalendarEvent } from '../api/calendar';
 import Spinner from '../components/Spinner';
+import * as s from './EventDetailPage.css';
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -12,7 +13,7 @@ export default function EventDetailPage() {
   });
 
   if (isLoading) return <Spinner />;
-  if (isError) return <div className="text-gray-700">Event not found.</div>;
+  if (isError) return <div className={s.notFound}>Event not found.</div>;
   if (!data) return null;
 
   const date = new Date(data.starts_at);
@@ -27,8 +28,8 @@ export default function EventDetailPage() {
   const matchedBits = [...data.matched_because.performers, ...data.matched_because.genres];
 
   return (
-    <article className="space-y-4">
-      <Link to="/calendar" className="block text-sm text-blue-600 hover:underline font-bold mb-2.5">
+    <article>
+      <Link to="/calendar" className={s.backLink}>
         {`< Calendar`}
       </Link>
 
@@ -36,35 +37,35 @@ export default function EventDetailPage() {
         <img
           src={data.image_url}
           alt={data.title}
-          className="w-full max-h-96 object-cover rounded"
+          className={s.cover}
         />
       )}
 
-      <header className="space-y-1">
-        <h1 className="text-3xl font-semibold">{data.title}</h1>
-        <div className="text-gray-700">{dateLabel}</div>
-        <div className="text-gray-600">
+      <header className={s.header}>
+        <h1 className={s.title}>{data.title}</h1>
+        <div className={s.date}>{dateLabel}</div>
+        <div className={s.venue}>
           {data.venue.name}
           {data.venue.address && <> · {data.venue.address}</>}
         </div>
       </header>
 
-      <div className="text-sm text-gray-500">{Math.round(data.score * 100)}% match</div>
+      <div className={s.score}>{Math.round(data.score * 100)}% match</div>
 
       {matchedBits.length > 0 && (
-        <div className="bg-blue-50 text-blue-900 rounded p-3 text-sm">
+        <div className={s.matched}>
           Matched because: {matchedBits.join(', ')}
         </div>
       )}
 
-      {data.description && <p className="text-gray-800 whitespace-pre-wrap">{data.description}</p>}
+      {data.description && <p className={s.description}>{data.description}</p>}
 
       {data.url && (
         <a
           href={data.url}
           target="_blank"
           rel="noreferrer"
-          className="font-bold inline-block bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-2"
+          className={s.viewEvent}
         >
           View event
         </a>
