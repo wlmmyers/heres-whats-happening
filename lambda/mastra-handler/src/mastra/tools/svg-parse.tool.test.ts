@@ -13,7 +13,7 @@ describe("substituteAndValidateSvg", () => {
   });
 
   it("rejects malformed XML with a message", () => {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><rect></svg>`; // <rect> not closed
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><image href="__BAND_IMAGE__"/><rect></svg>`; // <rect> not closed
     const r = substituteAndValidateSvg(svg, DATA_URI);
     expect(r.ok).toBe(false);
     expect(r.error).toBeTruthy();
