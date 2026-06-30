@@ -109,6 +109,10 @@ POST /api/poster
 The body is validated with a Zod `PosterRequestSchema`. `date` is accepted as a
 free string (passed to the agent verbatim); we do not constrain its format in v1.
 
+The handler emits **only 400/422/500 — never 403/404.** This is a hard constraint:
+the shared CloudFront distribution rewrites 403/404 to `index.html` (see the §8
+coupling caveat), so those codes would be masked on the `/api/poster*` path.
+
 ### Timeout & streaming
 
 - Lambda `timeout = 300`, `memory_size = 1536`.
@@ -307,6 +311,18 @@ In `frontend.tf` (extend the existing distribution):
   managed **`CachingDisabled`** cache policy + managed **`AllViewerExceptHostHeader`**
   origin-request policy (so SigV4 signs against the Function URL host, not the
   viewer host — required for OAC to a Function URL), `viewer_protocol_policy = redirect-to-https`.
+
+> **Coupling caveat — SPA error-rewrite leaks into the API path.** The frontend
+> distribution's `custom_error_response` rules map **403 and 404 → `/index.html`
+> with `200`** (for SPA client-side routing). CloudFront custom error responses are
+> **distribution-wide and cannot be scoped per cache behavior**, so they also apply
+> to `/api/poster*`. Consequence: a `403`/`404` from the Function URL origin would
+> be silently rewritten to a `200` serving `index.html`, masking the real error.
+> Mitigations (chosen, since per-behavior scoping isn't available on a shared
+> distribution): (a) the poster handler emits **only 400/422/500** — never 403/404
+> (see §1); and (b) OAC must be configured correctly so the Function URL never
+> returns auth `403`s in normal operation. If endpoint error fidelity (truthful
+> 403/404) later becomes important, split the API onto a dedicated distribution.
 
 ## Out of scope (v1)
 
