@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { webScrapeTool } from "./web-scrape.tool.js";
+import { scrapeBandImage } from "./web-scrape.tool.js";
 
-describe("webScrapeTool (stub)", () => {
+describe("scrapeBandImage (stub)", () => {
   it("returns a decodable JPEG with positive dimensions", async () => {
-    const out = await webScrapeTool.execute({ performer: "Khruangbin" });
+    const out = await scrapeBandImage("Khruangbin");
     expect(out.contentType).toBe("image/jpeg");
     expect(out.width).toBeGreaterThan(0);
     expect(out.height).toBeGreaterThan(0);
@@ -12,7 +12,7 @@ describe("webScrapeTool (stub)", () => {
   });
 
   it("accepts an optional refinement hint without changing the contract", async () => {
-    const out = await webScrapeTool.execute({ performer: "Khruangbin", refinement: "live band photo, not album art" });
+    const out = await scrapeBandImage("Khruangbin", "live band photo, not album art");
     expect(out.imageBase64.length).toBeGreaterThan(0);
   });
 });
