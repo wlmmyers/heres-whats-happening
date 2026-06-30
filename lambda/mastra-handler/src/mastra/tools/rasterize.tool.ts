@@ -11,7 +11,12 @@ function ensureReady(): Promise<void> {
   if (!ready) {
     const require = createRequire(import.meta.url);
     const wasmPath = require.resolve("@resvg/resvg-wasm/index_bg.wasm");
-    ready = readFile(wasmPath).then((bytes) => initWasm(bytes));
+    ready = readFile(wasmPath)
+      .then((bytes) => initWasm(bytes))
+      .catch((e) => {
+        ready = undefined; // allow retry on a later call instead of caching the rejection
+        throw e;
+      });
   }
   return ready;
 }
