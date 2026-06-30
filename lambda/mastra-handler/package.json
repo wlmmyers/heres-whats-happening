@@ -17,7 +17,10 @@
     "@aws-sdk/client-s3": "^3.600.0",
     "@aws-sdk/client-secrets-manager": "^3.1057.0",
     "@aws-sdk/client-sqs": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.1076.0",
     "@mastra/core": "^1.37.1",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "fast-xml-parser": "^5.9.3",
     "html-to-text": "^10.0.0",
     "mailparser": "^3.7.0",
     "zod": "^3.23.0"
