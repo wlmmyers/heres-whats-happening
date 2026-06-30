@@ -237,11 +237,11 @@ Expected: `bytes 1221 soi ffd8 eoi ffd9` (sizes may vary slightly; SOI must be `
 Create `src/mastra/tools/web-scrape.tool.test.ts`:
 ```typescript
 import { describe, expect, it } from "vitest";
-import { webScrapeTool } from "./web-scrape.tool.js";
+import { scrapeBandImage } from "./web-scrape.tool.js";
 
-describe("webScrapeTool (stub)", () => {
+describe("scrapeBandImage (stub)", () => {
   it("returns a decodable JPEG with positive dimensions", async () => {
-    const out = await webScrapeTool.execute({ performer: "Khruangbin" });
+    const out = await scrapeBandImage("Khruangbin");
     expect(out.contentType).toBe("image/jpeg");
     expect(out.width).toBeGreaterThan(0);
     expect(out.height).toBeGreaterThan(0);
@@ -250,7 +250,7 @@ describe("webScrapeTool (stub)", () => {
   });
 
   it("accepts an optional refinement hint without changing the contract", async () => {
-    const out = await webScrapeTool.execute({ performer: "Khruangbin", refinement: "live band photo, not album art" });
+    const out = await scrapeBandImage("Khruangbin", "live band photo, not album art");
     expect(out.imageBase64.length).toBeGreaterThan(0);
   });
 });
@@ -278,9 +278,23 @@ export const BandImageSchema = z.object({
 });
 export type BandImage = z.infer<typeof BandImageSchema>;
 
-// STUB: returns a canned band photo. Replace `execute` with a real image-search /
+// STUB: returns a canned band photo. Replace the body with a real image-search /
 // scrape API call. `refinement` carries feedback from a prior rejected candidate so
 // the real implementation can issue a better query.
+//
+// The plain function is the tested + workflow-consumed entrypoint. Calling a Mastra
+// tool's `.execute()` directly does NOT typecheck (its type is optional, expects a
+// context arg, and returns a `void | ValidationError | Output` union), so the step
+// and tests call `scrapeBandImage`, and `webScrapeTool` is a thin wrapper for Studio.
+export async function scrapeBandImage(performer: string, refinement?: string): Promise<BandImage> {
+  // TODO: real image-search/scrape API keyed on `performer` (+ `refinement`).
+  void refinement;
+  return {
+    ...STUB_BAND_IMAGE,
+    sourceUrl: `stub://band-image/${encodeURIComponent(performer)}`,
+  };
+}
+
 export const webScrapeTool = createTool({
   id: "web-scrape-band-image",
   description: "Find a candidate photo of the given performer for use on a concert poster.",
@@ -289,13 +303,7 @@ export const webScrapeTool = createTool({
     refinement: z.string().optional(),
   }),
   outputSchema: BandImageSchema,
-  execute: async ({ performer }) => {
-    // TODO: real image-search/scrape API keyed on `performer` (+ `refinement`).
-    return {
-      ...STUB_BAND_IMAGE,
-      sourceUrl: `stub://band-image/${encodeURIComponent(performer)}`,
-    };
-  },
+  execute: async ({ performer, refinement }) => scrapeBandImage(performer, refinement),
 });
 ```
 
@@ -842,7 +850,7 @@ Create `src/mastra/workflows/acquire-band-image.step.ts`:
 ```typescript
 import { createStep } from "@mastra/core/workflows";
 import { imageAnalysisAgent } from "../agents/image-analysis.agent.js";
-import { webScrapeTool } from "../tools/web-scrape.tool.js";
+import { scrapeBandImage } from "../tools/web-scrape.tool.js";
 import { ImageLoopStateSchema } from "./poster.schemas.js";
 
 // One iteration: scrape a candidate, then a vision agent judges it. Output shape ==
@@ -853,10 +861,7 @@ export const acquireBandImageStep = createStep({
   outputSchema: ImageLoopStateSchema,
   execute: async ({ inputData }) => {
     const attempts = inputData.attempts + 1;
-    const image = await webScrapeTool.execute({
-      performer: inputData.performer,
-      refinement: inputData.reason,
-    });
+    const image = await scrapeBandImage(inputData.performer, inputData.reason);
 
     const res = await imageAnalysisAgent.generate([
       {
