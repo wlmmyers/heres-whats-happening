@@ -9,6 +9,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "invoke-local": "tsx scripts/invoke-local.ts",
+    "invoke-poster-local": "tsx scripts/invoke-poster-local.ts",
     "parse-email": "tsx scripts/parse-email.ts",
     "dev": "mastra dev"
   },

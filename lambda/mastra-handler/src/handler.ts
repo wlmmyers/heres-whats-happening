@@ -5,6 +5,10 @@ import { gate, parseEmail } from "./email.js";
 import { AwsSecretReader, MastraExtractor, loadModelKey, type EventExtractor } from "./extractor.js";
 import { toMessage } from "./map.js";
 import { BadRequestError, parsePosterRequest, posterHttpResponse, processPosterRequest, type PosterDeps } from "./poster.js";
+import type { PosterRequest } from "./poster-schema.js";
+import { S3PosterSink } from "./poster-sink.js";
+import type { PosterWorkflowOutput } from "./mastra/workflows/poster.schemas.js";
+import { posterWorkflow } from "./mastra/workflows/poster.workflow.js";
 import type { EventMessage } from "./schema.js";
 import { sendBatch } from "./sqs.js";
 
@@ -136,7 +140,22 @@ export const handler = awslambda.streamifyResponse(
   },
 );
 
-// TEMP — replaced with the real implementation in Task 11.
+/** Run the registered workflow to completion and return its controlled output. */
+export async function runPosterWorkflow(req: PosterRequest): Promise<PosterWorkflowOutput> {
+  const run = await posterWorkflow.createRun();
+  const result = await run.start({ inputData: req });
+  if (result.status !== "success") {
+    const detail = result.status === "failed" ? result.error?.message : result.status;
+    throw new Error(`poster workflow did not complete: ${detail}`);
+  }
+  return result.result as PosterWorkflowOutput;
+}
+
 function prodPosterDeps(): PosterDeps {
-  throw new Error("prodPosterDeps not yet wired (Task 11)");
+  const region = requireEnv("AWS_REGION");
+  const bucket = requireEnv("POSTERS_BUCKET");
+  return {
+    runWorkflow: runPosterWorkflow,
+    sink: new S3PosterSink(new S3Client({ region }), bucket),
+  };
 }
