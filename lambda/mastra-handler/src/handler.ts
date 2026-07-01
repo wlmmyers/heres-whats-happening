@@ -89,7 +89,8 @@ export async function handlePosterHttp(event: APIGatewayProxyEventV2, deps: Post
     if (e instanceof BadRequestError) {
       return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: e.message }) };
     }
-    throw e;
+    console.error(JSON.stringify({ msg: "poster-parse-error", error: e instanceof Error ? e.message : String(e) }));
+    return { statusCode: 500, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "internal error" }) };
   }
   try {
     const result = await processPosterRequest(req, deps);
@@ -104,6 +105,9 @@ export async function handlePosterHttp(event: APIGatewayProxyEventV2, deps: Post
 export async function handleS3(event: S3Event): Promise<void> {
   const deps = prodDeps();
   const s3 = new S3Client({ region: process.env.AWS_REGION });
+  // S3 ObjectCreated events carry one record each in practice; if a multi-record
+  // batch ever arrives, a failure on record N re-processes 0..N-1 on retry (safe:
+  // deterministic source_event_id + consumer upsert make re-sends idempotent).
   for (const rec of event.Records) {
     const bucket = rec.s3.bucket.name;
     const key = decodeURIComponent(rec.s3.object.key.replace(/\+/g, " "));
