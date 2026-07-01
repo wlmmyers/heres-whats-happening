@@ -50,7 +50,7 @@ describe("posterHttpResponse", () => {
   it("maps ok -> 200 json", () => {
     const r = posterHttpResponse({ ok: true, svg: "<svg/>", svgUrl: "u1", pngUrl: "u2" });
     expect(r.statusCode).toBe(200);
-    expect(JSON.parse(r.body).svg).toBe("<svg/>");
+    expect(JSON.parse(r.body)).toEqual({ svg: "<svg/>", svgUrl: "u1", pngUrl: "u2" });
   });
   it("maps failure -> 422 with stage", () => {
     const r = posterHttpResponse({ ok: false, stage: "svg", reason: "ugly" });

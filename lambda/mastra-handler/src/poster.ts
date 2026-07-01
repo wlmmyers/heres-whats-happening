@@ -7,7 +7,12 @@ export interface PosterDeps {
   sink: PosterSink;
 }
 
-export class BadRequestError extends Error {}
+export class BadRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BadRequestError";
+  }
+}
 
 /** Parse + validate a Function URL request body into a PosterRequest. */
 export function parsePosterRequest(body: string | undefined, isBase64: boolean): PosterRequest {
