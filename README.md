@@ -255,3 +255,7 @@ make run   # from repo root
 docker exec hwh_postgres psql -U app -d appdb \
   -c "SELECT e.title FROM events e JOIN event_sources s ON s.id = e.source_id WHERE s.name = 'email_newsletter' LIMIT 5;"
 ```
+
+### Poster endpoint
+
+The same Lambda also serves a **`POST /api/poster`** endpoint (via CloudFront → Lambda Function URL). It takes a JSON body with `{ performer, venue, date }` and returns `{ svg, svgUrl, pngUrl }`, where `svgUrl` and `pngUrl` are S3 URLs to artifacts written to the posters bucket. The endpoint composes poster graphics by fetching band imagery (currently stubbed) and rendering SVG to PNG via WebAssembly.
