@@ -219,7 +219,7 @@ resource "aws_codebuild_project" "app_deploy" {
 }
 
 # ---------------------------------------------------------------------------
-# Lambda (email-parser): test + Docker build + push to ECR + update function code
+# Lambda (mastra-handler): test + Docker build + push to ECR + update function code
 # (the buildspec self-deploys via `aws lambda update-function-code`, so there is
 # no separate deploy stage). Base image is ECR Public + npm, so no Docker Hub auth.
 # ---------------------------------------------------------------------------
@@ -250,11 +250,11 @@ resource "aws_codebuild_project" "lambda_build" {
     # Repo NAME only (not the full registry URL) — the buildspec composes the URI.
     environment_variable {
       name  = "LAMBDA_ECR_REPO"
-      value = aws_ecr_repository.email_parser.name
+      value = aws_ecr_repository.mastra_handler.name
     }
     environment_variable {
       name  = "FUNCTION_NAME"
-      value = "${var.app_name_prefix}-email-parser"
+      value = "${var.app_name_prefix}-mastra-handler"
     }
   }
 

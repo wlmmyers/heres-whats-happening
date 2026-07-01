@@ -252,7 +252,7 @@ resource "aws_iam_role_policy" "codebuild_app" {
 }
 
 # ---------------------------------------------------------------------------
-# CodeBuild role for the email-parser Lambda build+deploy project
+# CodeBuild role for the mastra-handler Lambda build+deploy project
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "codebuild_lambda" {
@@ -261,7 +261,7 @@ resource "aws_iam_role" "codebuild_lambda" {
 }
 
 data "aws_iam_policy_document" "codebuild_lambda" {
-  # ECR auth token (account-wide) + push to the email-parser repo only.
+  # ECR auth token (account-wide) + push to the mastra-handler repo only.
   statement {
     actions   = ["ecr:GetAuthorizationToken"]
     resources = ["*"]
@@ -276,12 +276,12 @@ data "aws_iam_policy_document" "codebuild_lambda" {
       "ecr:UploadLayerPart",
       "ecr:CompleteLayerUpload",
     ]
-    resources = [aws_ecr_repository.email_parser.arn]
+    resources = [aws_ecr_repository.mastra_handler.arn]
   }
   # Deploy: point the function at the freshly pushed image (function created in the prod stack).
   statement {
     actions   = ["lambda:UpdateFunctionCode"]
-    resources = ["arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${var.app_name_prefix}-email-parser"]
+    resources = ["arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${var.app_name_prefix}-mastra-handler"]
   }
   # Artifact bucket + logs.
   statement {
