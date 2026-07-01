@@ -46,13 +46,13 @@ resource "aws_ecr_lifecycle_policy" "app" {
   })
 }
 
-# ECR repository for the email-parser Lambda's container image. Lives in the
+# ECR repository for the mastra-handler Lambda's container image. Lives in the
 # bootstrap stack (like the app repo) so a bootstrap image can be pushed before
 # the prod stack's aws_lambda_function references it, and so the lambda CI lane
-# can push to it. The prod stack looks it up via data.aws_ecr_repository.email_parser.
+# can push to it. The prod stack looks it up via data.aws_ecr_repository.mastra_handler.
 
-resource "aws_ecr_repository" "email_parser" {
-  name                 = "${var.app_name_prefix}-email-parser"
+resource "aws_ecr_repository" "mastra_handler" {
+  name                 = "${var.app_name_prefix}-mastra-handler"
   image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
@@ -64,8 +64,8 @@ resource "aws_ecr_repository" "email_parser" {
   }
 }
 
-resource "aws_ecr_lifecycle_policy" "email_parser" {
-  repository = aws_ecr_repository.email_parser.name
+resource "aws_ecr_lifecycle_policy" "mastra_handler" {
+  repository = aws_ecr_repository.mastra_handler.name
 
   policy = jsonencode({
     rules = [

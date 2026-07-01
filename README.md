@@ -207,14 +207,14 @@ pnpm test:watch    # watch mode
 ## Email-newsletter ingest quickstart
 
 SES receives promoter newsletters at `shows@inbound.<domain>` → S3 → a
-Node/Mastra Lambda (`lambda/email-parser`) that parses plain text and flyer
+Node/Mastra Lambda (`lambda/mastra-handler`) that parses plain text and flyer
 images into `EventMessage` records on the events-queue. The existing consumer
 (started by `make run`) drains the queue and upserts events into Postgres
 exactly as it does for Ticketmaster or Spotify events; the `source` column is
 `email_newsletter`.
 
 ```bash
-cd lambda/email-parser
+cd lambda/mastra-handler
 pnpm install
 pnpm test
 ```
@@ -225,10 +225,10 @@ The `emailExtractor` Mastra agent is the core of the Lambda. You can drive it
 from the Studio UI without sending a real email:
 
 ```bash
-cp lambda/email-parser/.env.example lambda/email-parser/.env
-# Edit lambda/email-parser/.env and set ANTHROPIC_API_KEY
+cp lambda/mastra-handler/.env.example lambda/mastra-handler/.env
+# Edit lambda/mastra-handler/.env and set ANTHROPIC_API_KEY
 
-cd lambda/email-parser
+cd lambda/mastra-handler
 pnpm dev   # starts Mastra Studio
 # Open http://localhost:4111 — the emailExtractor agent appears in the sidebar.
 ```
@@ -245,7 +245,7 @@ export EVENTS_QUEUE_URL=http://localhost:9324/000000000000/events-queue
 export SQS_ENDPOINT=http://localhost:9324
 
 # Run a real .eml through the agent → ElasticMQ
-cd lambda/email-parser
+cd lambda/mastra-handler
 pnpm invoke-local src/__fixtures__/text-newsletter.eml
 
 # In another terminal: start the consumer so it drains the queue into Postgres
@@ -255,3 +255,7 @@ make run   # from repo root
 docker exec hwh_postgres psql -U app -d appdb \
   -c "SELECT e.title FROM events e JOIN event_sources s ON s.id = e.source_id WHERE s.name = 'email_newsletter' LIMIT 5;"
 ```
+
+### Poster endpoint
+
+The same Lambda also serves a **`POST /api/poster`** endpoint (via CloudFront → Lambda Function URL). It takes a JSON body with `{ performer, venue, date }` and returns `{ svg, svgUrl, pngUrl }`, where `svgUrl` and `pngUrl` are S3 URLs to artifacts written to the posters bucket. The endpoint composes poster graphics by fetching band imagery (currently stubbed) and rendering SVG to PNG via WebAssembly.
