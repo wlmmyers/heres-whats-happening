@@ -1,6 +1,5 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
 import type { PosterRequest } from "./poster-schema.js";
 
 export interface PosterSink {
@@ -35,8 +34,8 @@ export class S3PosterSink implements PosterSink {
     await this.s3.send(new PutObjectCommand({ Bucket: this.bucket, Key: svgKey, Body: svg, ContentType: "image/svg+xml" }));
     await this.s3.send(new PutObjectCommand({ Bucket: this.bucket, Key: pngKey, Body: Buffer.from(pngBase64, "base64"), ContentType: "image/png" }));
     const [svgUrl, pngUrl] = await Promise.all([
-      getSignedUrl(this.s3 as any, new GetObjectCommand({ Bucket: this.bucket, Key: svgKey }) as any, { expiresIn: 3600 }),
-      getSignedUrl(this.s3 as any, new GetObjectCommand({ Bucket: this.bucket, Key: pngKey }) as any, { expiresIn: 3600 }),
+      getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: svgKey }), { expiresIn: 3600 }),
+      getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: pngKey }), { expiresIn: 3600 }),
     ]);
     return { svgUrl, pngUrl };
   }
