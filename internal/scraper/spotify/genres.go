@@ -37,8 +37,9 @@ type GenreResolver interface {
 }
 
 type genreResolver struct {
-	q  *store.Queries
-	mb mbClient
+	q         *store.Queries
+	mb        mbClient
+	cacheOnly bool
 }
 
 // NewGenreResolver builds a resolver over the shared cache and a MusicBrainz client.
@@ -50,6 +51,15 @@ func NewGenreResolver(q *store.Queries, mb *musicbrainz.Client) GenreResolver {
 // MusicBrainz host and app User-Agent.
 func DefaultGenreResolver(q *store.Queries) GenreResolver {
 	return &genreResolver{q: q, mb: musicbrainz.New("", genreUserAgent)}
+}
+
+// CacheOnlyGenreResolver builds a resolver that only reads the shared cache and
+// never calls MusicBrainz — for latency-sensitive callers (the interactive
+// OAuth connect handler) that must not block on rate-limited lookups. Live
+// resolution is left to the daily scraper, which uses NewGenreResolver/
+// DefaultGenreResolver. A cache miss or stale row yields no genres here.
+func CacheOnlyGenreResolver(q *store.Queries) GenreResolver {
+	return &genreResolver{q: q, mb: nil, cacheOnly: true}
 }
 
 // Resolve returns an artist's genres, cache-first. Best-effort: any MusicBrainz
@@ -67,15 +77,22 @@ func (r *genreResolver) Resolve(ctx context.Context, name string) []musicbrainz.
 		if fresh(row) {
 			return decodeGenres(row.Genres)
 		}
-		// stale → fall through and re-resolve
+		// stale → fall through to (maybe) re-resolve
 	case errors.Is(err, pgx.ErrNoRows):
-		// miss → resolve
+		// miss → (maybe) resolve
 	default:
+		if r.cacheOnly {
+			log.Printf("scrape spotify: genre cache read %q (cache-only, continuing): %v", name, err)
+			return nil
+		}
 		// Cache read failed → try a live fetch without caching.
 		log.Printf("scrape spotify: genre cache read %q (continuing): %v", name, err)
 		return r.fetchLive(ctx, name)
 	}
 
+	if r.cacheOnly {
+		return nil
+	}
 	return r.resolveAndCache(ctx, key, name)
 }
 

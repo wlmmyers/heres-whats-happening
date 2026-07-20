@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -77,7 +78,9 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 // when there is no match.
 func (c *Client) SearchArtist(ctx context.Context, name string) (string, error) {
 	q := url.Values{}
-	q.Set("query", `artist:"`+name+`"`)
+	esc := strings.ReplaceAll(name, `\`, `\\`)
+	esc = strings.ReplaceAll(esc, `"`, `\"`)
+	q.Set("query", `artist:"`+esc+`"`)
 	q.Set("fmt", "json")
 	q.Set("limit", "1")
 	var payload struct {
@@ -102,7 +105,8 @@ func (c *Client) GetArtistGenres(ctx context.Context, mbid string) ([]Genre, err
 	var payload struct {
 		Genres []Genre `json:"genres"`
 	}
-	if err := c.get(ctx, "/ws/2/artist/"+mbid+"?"+q.Encode(), &payload); err != nil {
+	path := "/ws/2/artist/" + url.PathEscape(mbid) + "?" + q.Encode()
+	if err := c.get(ctx, path, &payload); err != nil {
 		return nil, err
 	}
 	return payload.Genres, nil

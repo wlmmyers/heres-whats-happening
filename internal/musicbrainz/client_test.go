@@ -58,6 +58,19 @@ func TestGetArtistGenres_ParsesCounts(t *testing.T) {
 	require.Equal(t, []musicbrainz.Genre{{Name: "indie folk", Count: 9}, {Name: "indie rock", Count: 8}}, gs)
 }
 
+func TestSearchArtist_EscapesQuoteInName(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("query")
+		_, _ = w.Write([]byte(`{"artists":[]}`))
+	}))
+	defer srv.Close()
+	c := musicbrainz.New(srv.URL, testUA)
+	_, err := c.SearchArtist(context.Background(), `The "Band"`)
+	require.NoError(t, err)
+	require.Equal(t, `artist:"The \"Band\""`, gotQuery)
+}
+
 func TestGet_Non2xxIsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)

@@ -97,6 +97,38 @@ func TestResolve_StaleOKRefetches(t *testing.T) {
 	require.Equal(t, 2, mb.searchCalls)
 }
 
+func TestResolve_CacheOnly_MissReturnsNilWithoutClient(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	mb := &stubMB{searchID: map[string]string{"Phoebe Bridgers": "mbid-pb"}}
+	r := &genreResolver{q: q, mb: mb, cacheOnly: true}
+
+	// Cold cache → cache-only returns nil and never touches the client.
+	require.Nil(t, r.Resolve(ctx, "Phoebe Bridgers"))
+	require.Equal(t, 0, mb.searchCalls)
+}
+
+func TestResolve_CacheOnly_ServesFreshHit(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	// Warm the cache with a live resolver, then read it cache-only.
+	live := &genreResolver{q: q, mb: &stubMB{
+		searchID: map[string]string{"Radiohead": "mbid-rh"},
+		genres:   map[string][]musicbrainz.Genre{"mbid-rh": {{Name: "art rock", Count: 5}}},
+	}}
+	require.NotNil(t, live.Resolve(ctx, "Radiohead"))
+
+	coStub := &stubMB{}
+	co := &genreResolver{q: q, mb: coStub, cacheOnly: true}
+	got := co.Resolve(ctx, "Radiohead")
+	require.Equal(t, []musicbrainz.Genre{{Name: "art rock", Count: 5}}, got)
+	require.Equal(t, 0, coStub.searchCalls)
+}
+
 func TestResolve_TransientSearchErrorNotCached(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
