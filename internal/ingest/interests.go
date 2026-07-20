@@ -60,7 +60,7 @@ func (h *InterestHandler) replaceInterests(ctx context.Context, pgUID pgtype.UUI
 		return fmt.Errorf("delete artists: %w", err)
 	}
 	for _, item := range m.SpotifyTopArtists {
-		w := rankWeight(item.Rank)
+		w := events.RankWeight(item.Rank)
 		if err := h.q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
 			UserID:          pgUID,
 			Kind:            "spotify_top_artist",
@@ -78,7 +78,7 @@ func (h *InterestHandler) replaceInterests(ctx context.Context, pgUID pgtype.UUI
 		return fmt.Errorf("delete track artists: %w", err)
 	}
 	for _, item := range m.SpotifyTopTrackArtists {
-		w := rankWeight(item.Rank)
+		w := events.RankWeight(item.Rank)
 		if err := h.q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
 			UserID:          pgUID,
 			Kind:            "spotify_top_track_artist",
@@ -96,7 +96,7 @@ func (h *InterestHandler) replaceInterests(ctx context.Context, pgUID pgtype.UUI
 		return fmt.Errorf("delete saved song artists: %w", err)
 	}
 	for _, item := range m.SpotifySavedSongArtists {
-		w := rankWeight(item.Rank)
+		w := events.RankWeight(item.Rank)
 		if err := h.q.InsertSpotifyInterest(ctx, store.InsertSpotifyInterestParams{
 			UserID:          pgUID,
 			Kind:            "spotify_saved_song_artist",
@@ -146,25 +146,6 @@ func (h *InterestHandler) embedAndMatch(ctx context.Context, pgUID pgtype.UUID) 
 		return fmt.Errorf("match user: %w", err)
 	}
 	return nil
-}
-
-// rankWeight maps a 1-based rank to an interest weight: rank 1 → 1.0, ramping
-// down linearly to 0.6 at rank 50 (the size of the Spotify top-artist and
-// top-track lists), then holding at 0.6 for any lower-ranked items. Used for
-// artists and track artists, whose lists are capped at 50.
-func rankWeight(rank int) float64 {
-	const (
-		maxRank   = 50
-		minWeight = 0.6
-	)
-	if rank <= 1 {
-		return 1.0
-	}
-	w := 1.0 - float64(rank-1)*(1.0-minWeight)/(maxRank-1)
-	if w < minWeight {
-		return minWeight
-	}
-	return w
 }
 
 // rankGenreWeight maps a 1-based rank to a genre weight: rank 1 → 1.0, decaying

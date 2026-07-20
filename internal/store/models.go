@@ -9,6 +9,14 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
+type ArtistGenreCache struct {
+	NameKey    string             `json:"name_key"`
+	Mbid       *string            `json:"mbid"`
+	Genres     []byte             `json:"genres"`
+	Status     string             `json:"status"`
+	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
+}
+
 type City struct {
 	ID       pgtype.UUID `json:"id"`
 	Slug     string      `json:"slug"`

@@ -152,7 +152,7 @@ func SpotifyExchange(
 		})
 
 		// Immediate sync — best-effort. If it fails, the daily scraper picks up.
-		adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, queueURL)
+		adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, queueURL, spotifyscrape.CacheOnlyGenreResolver(q))
 		_ = adapter.ScrapeOne(ctx, pgUID)
 
 		writeJSON(w, http.StatusOK, map[string]string{"status": "connected"})

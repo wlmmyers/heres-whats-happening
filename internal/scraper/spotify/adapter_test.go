@@ -13,8 +13,9 @@ import (
 
 	"github.com/wmyers/heres-whats-happening/internal/crypto"
 	"github.com/wmyers/heres-whats-happening/internal/events"
-	spotifyclient "github.com/wmyers/heres-whats-happening/internal/spotify"
+	"github.com/wmyers/heres-whats-happening/internal/musicbrainz"
 	spotifyscrape "github.com/wmyers/heres-whats-happening/internal/scraper/spotify"
+	spotifyclient "github.com/wmyers/heres-whats-happening/internal/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 	"github.com/wmyers/heres-whats-happening/internal/testdb"
 )
@@ -35,6 +36,14 @@ type fakePublisher struct {
 func (p *fakePublisher) Send(ctx context.Context, queueURL string, body []byte) error {
 	p.sent = append(p.sent, body)
 	return nil
+}
+
+type stubGenreResolver struct {
+	byName map[string][]musicbrainz.Genre
+}
+
+func (s stubGenreResolver) Resolve(ctx context.Context, name string) []musicbrainz.Genre {
+	return s.byName[name]
 }
 
 func TestScrapeOne_PublishesInterestMessage(t *testing.T) {
@@ -102,7 +111,11 @@ func TestScrapeOne_PublishesInterestMessage(t *testing.T) {
 
 	client := spotifyclient.New("cid", "csec", "http://localhost/cb", srv.URL)
 	pub := &fakePublisher{}
-	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/interests-queue")
+	resolver := stubGenreResolver{byName: map[string][]musicbrainz.Genre{
+		"Phoebe Bridgers": {{Name: "indie folk", Count: 9}, {Name: "indie rock", Count: 8}},
+		"MUNA":            {{Name: "indie pop", Count: 5}},
+	}}
+	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/interests-queue", resolver)
 
 	require.NoError(t, adapter.ScrapeOne(ctx, userRow.ID))
 	require.Len(t, pub.sent, 1)
@@ -118,15 +131,84 @@ func TestScrapeOne_PublishesInterestMessage(t *testing.T) {
 	require.Equal(t, 1, msg.SpotifyTopTrackArtists[0].Rank)
 	require.Equal(t, "MUNA", msg.SpotifyTopTrackArtists[1].Name)
 	require.Equal(t, 2, msg.SpotifyTopTrackArtists[1].Rank)
-	// Genres ranked by frequency: indie pop appears in 2 artists → rank 1; indie rock in 1 → rank 2.
-	require.Equal(t, "indie pop", msg.SpotifyTopGenres[0].Name)
+	// Genres ranked by score: RankWeight(rank) * mb count.
+	// indie folk = RankWeight(1)*9 = 9; indie rock = RankWeight(1)*8 = 8;
+	// indie pop = RankWeight(2)*5 ≈ 4.96.
+	require.Len(t, msg.SpotifyTopGenres, 3)
+	require.Equal(t, "indie folk", msg.SpotifyTopGenres[0].Name)
+	require.Equal(t, 1, msg.SpotifyTopGenres[0].Rank)
 	require.Equal(t, "indie rock", msg.SpotifyTopGenres[1].Name)
+	require.Equal(t, 2, msg.SpotifyTopGenres[1].Rank)
+	require.Equal(t, "indie pop", msg.SpotifyTopGenres[2].Name)
+	require.Equal(t, 3, msg.SpotifyTopGenres[2].Rank)
 	// Saved-song artists ranked by recency (most recently saved first).
 	require.Len(t, msg.SpotifySavedSongArtists, 2)
 	require.Equal(t, "Lucy Dacus", msg.SpotifySavedSongArtists[0].Name)
 	require.Equal(t, 1, msg.SpotifySavedSongArtists[0].Rank)
 	require.Equal(t, "Julien Baker", msg.SpotifySavedSongArtists[1].Name)
 	require.Equal(t, 2, msg.SpotifySavedSongArtists[1].Rank)
+}
+
+func TestScrapeOne_GenreTieBreaksByNameAscending(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email:        "genre-tiebreak@example.com",
+		PasswordHash: "stub",
+		CityID:       city.ID,
+	})
+	require.NoError(t, err)
+
+	key := makeTestKey(t)
+	cipher, err := crypto.NewCipher(key)
+	require.NoError(t, err)
+	at, _ := cipher.Encrypt([]byte("AT-original"))
+	rt, _ := cipher.Encrypt([]byte("RT-original"))
+	require.NoError(t, q.UpsertUserSpotifyTokens(ctx, store.UpsertUserSpotifyTokensParams{
+		UserID:          userRow.ID,
+		AccessTokenEnc:  at,
+		RefreshTokenEnc: rt,
+		ExpiresAt:       pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		Scope:           "user-top-read",
+	}))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/me/top/artists":
+			_, _ = w.Write([]byte(`{"items":[{"name":"A","genres":[]}]}`))
+		case "/v1/me/top/tracks":
+			_, _ = w.Write([]byte(`{"items":[]}`))
+		case "/v1/me/tracks":
+			_, _ = w.Write([]byte(`{"next":null,"items":[]}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	client := spotifyclient.New("cid", "csec", "http://localhost/cb", srv.URL)
+	pub := &fakePublisher{}
+	// "A" at rank 1 has two genres with equal counts, so both get the same
+	// score (RankWeight(1)*count) — the tie must break by name ascending.
+	resolver := stubGenreResolver{byName: map[string][]musicbrainz.Genre{
+		"A": {{Name: "zydeco", Count: 5}, {Name: "ambient", Count: 5}},
+	}}
+	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/q", resolver)
+
+	require.NoError(t, adapter.ScrapeOne(ctx, userRow.ID))
+	require.Len(t, pub.sent, 1)
+
+	var msg events.InterestMessage
+	require.NoError(t, json.Unmarshal(pub.sent[0], &msg))
+	require.Len(t, msg.SpotifyTopGenres, 2)
+	require.Equal(t, "ambient", msg.SpotifyTopGenres[0].Name)
+	require.Equal(t, 1, msg.SpotifyTopGenres[0].Rank)
+	require.Equal(t, "zydeco", msg.SpotifyTopGenres[1].Name)
+	require.Equal(t, 2, msg.SpotifyTopGenres[1].Rank)
 }
 
 func TestScrapeOne_SavedTracksForbidden_NonFatal(t *testing.T) {
@@ -174,7 +256,7 @@ func TestScrapeOne_SavedTracksForbidden_NonFatal(t *testing.T) {
 
 	client := spotifyclient.New("cid", "csec", "http://localhost/cb", srv.URL)
 	pub := &fakePublisher{}
-	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/q")
+	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/q", stubGenreResolver{})
 
 	// A 403 on saved tracks must not abort the scrape: top artists/tracks
 	// still publish, saved songs come through empty.
@@ -248,7 +330,7 @@ func TestScrapeOne_RefreshesExpiredToken(t *testing.T) {
 
 	client := spotifyclient.New("cid", "csec", "http://localhost/cb", srv.URL)
 	pub := &fakePublisher{}
-	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/q")
+	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/q", stubGenreResolver{})
 
 	require.NoError(t, adapter.ScrapeOne(ctx, userRow.ID))
 	require.Equal(t, 1, tokenCalls)
@@ -314,7 +396,7 @@ func TestScrapeOne_SavedSongArtistsRankedByRecency(t *testing.T) {
 
 	client := spotifyclient.New("cid", "csec", "http://localhost/cb", srv.URL)
 	pub := &fakePublisher{}
-	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/q")
+	adapter := spotifyscrape.NewAdapter(q, cipher, client, pub, "http://localhost/q", stubGenreResolver{})
 
 	require.NoError(t, adapter.ScrapeOne(ctx, userRow.ID))
 	require.Len(t, pub.sent, 1)

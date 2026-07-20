@@ -167,6 +167,7 @@ func truncateAll(t *testing.T, p *pgxpool.Pool) {
 		"ical_tokens",
 		"refresh_tokens",
 		"users",
+		"artist_genre_cache",
 	}
 	for _, tbl := range tables {
 		_, err := p.Exec(ctx, "TRUNCATE TABLE "+tbl+" CASCADE")
