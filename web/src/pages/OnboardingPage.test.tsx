@@ -35,13 +35,37 @@ beforeEach(() => {
 describe('OnboardingPage', () => {
   it('lists existing interests and lets the user add one', async () => {
     (interestsApi.listInterests as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce([{ id: 'i1', value: 'jazz', normalized_value: 'jazz', weight: 1, created_at: '' }])
       .mockResolvedValueOnce([
-        { id: 'i1', value: 'jazz', normalized_value: 'jazz', weight: 1, created_at: '' },
-        { id: 'i2', value: 'theater', normalized_value: 'theater', weight: 1, created_at: '' },
+        {
+          id: 'i1',
+          value: 'jazz',
+          normalized_value: 'jazz',
+          weight: 1,
+          created_at: '',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'i1',
+          value: 'jazz',
+          normalized_value: 'jazz',
+          weight: 1,
+          created_at: '',
+        },
+        {
+          id: 'i2',
+          value: 'theater',
+          normalized_value: 'theater',
+          weight: 1,
+          created_at: '',
+        },
       ]);
     (interestsApi.createInterest as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      id: 'i2', value: 'theater', normalized_value: 'theater', weight: 1, created_at: '',
+      id: 'i2',
+      value: 'theater',
+      normalized_value: 'theater',
+      weight: 1,
+      created_at: '',
     });
     renderPage();
     await waitFor(() => expect(screen.getByText('jazz')).toBeInTheDocument());

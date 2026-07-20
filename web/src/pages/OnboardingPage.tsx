@@ -34,7 +34,10 @@ export default function OnboardingPage() {
         <h1 className={c.pageTitle}>Tell us what you're into</h1>
         <p className={s.lead}>
           Add tags — genres, activities, anything. You can also{' '}
-          <Link to="/settings" className={s.inlineLink}>connect Spotify</Link> for richer matches.
+          <Link to="/settings" className={s.inlineLink}>
+            connect Spotify
+          </Link>{' '}
+          for richer matches.
         </p>
       </header>
 
@@ -48,11 +51,7 @@ export default function OnboardingPage() {
         {addMut.isError && <div className={s.error}>Couldn't save that tag.</div>}
       </section>
 
-      <button
-        type="button"
-        onClick={() => navigate('/calendar')}
-        className={s.continueButton}
-      >
+      <button type="button" onClick={() => navigate('/calendar')} className={s.continueButton}>
         Continue
       </button>
     </div>

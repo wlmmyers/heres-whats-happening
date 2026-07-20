@@ -36,9 +36,16 @@ export const dropdown = style({
   boxShadow: shadow.md,
 });
 
-export const email = style({ marginBottom: '0.5rem', ...fontSize.xs, color: color.gray500 });
+export const email = style({
+  marginBottom: '0.5rem',
+  ...fontSize.xs,
+  color: color.gray500,
+});
 
-export const divider = style({ marginBottom: '0.5rem', borderColor: color.gray100 });
+export const divider = style({
+  marginBottom: '0.5rem',
+  borderColor: color.gray100,
+});
 
 export const signOut = style({
   cursor: 'pointer',

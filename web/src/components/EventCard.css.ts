@@ -32,9 +32,17 @@ export const score = style({
   whiteSpace: 'nowrap',
 });
 
-export const date = style({ ...fontSize.sm, color: color.gray700, marginTop: '0.25rem' });
+export const date = style({
+  ...fontSize.sm,
+  color: color.gray700,
+  marginTop: '0.25rem',
+});
 
-export const matched = style({ ...fontSize.xs, color: color.blue700, marginTop: '0.5rem' });
+export const matched = style({
+  ...fontSize.xs,
+  color: color.blue700,
+  marginTop: '0.5rem',
+});
 
 export const notInterestedRow = style({
   marginTop: '0.75rem',

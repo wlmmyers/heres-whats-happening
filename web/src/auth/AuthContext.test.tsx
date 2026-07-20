@@ -28,7 +28,10 @@ function Probe() {
 
 describe('AuthProvider', () => {
   it('boots to "loading" then "authenticated" when /me succeeds', async () => {
-    (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ id: 'u1', email: 'a@x' });
+    (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'u1',
+      email: 'a@x',
+    });
     render(
       <AuthProvider>
         <Probe />
@@ -56,7 +59,10 @@ describe('AuthProvider', () => {
   it('login() transitions to authenticated', async () => {
     (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('401'));
     (authApi.login as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
-    (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ id: 'u2', email: 'b@x' });
+    (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'u2',
+      email: 'b@x',
+    });
 
     let auth: ReturnType<typeof useAuth>;
     function Capture() {

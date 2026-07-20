@@ -21,7 +21,9 @@ describe('TagInput', () => {
 
   it('renders chips for each value and calls onRemove', async () => {
     const onRemove = vi.fn();
-    render(<TagInput values={['jazz', 'rock']} onAdd={vi.fn()} onRemove={onRemove} placeholder="add" />);
+    render(
+      <TagInput values={['jazz', 'rock']} onAdd={vi.fn()} onRemove={onRemove} placeholder="add" />,
+    );
     const removeJazz = screen.getByRole('button', { name: /remove jazz/i });
     await userEvent.click(removeJazz);
     expect(onRemove).toHaveBeenCalledWith('jazz');

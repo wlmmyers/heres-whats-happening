@@ -68,7 +68,10 @@ export default function CalendarPage() {
                   type="button"
                   onClick={() => setMonths(opt.months)}
                   aria-pressed={active}
-                  className={clsx(s.rangeButton, active ? s.rangeButtonActive : s.rangeButtonInactive)}
+                  className={clsx(
+                    s.rangeButton,
+                    active ? s.rangeButtonActive : s.rangeButtonInactive,
+                  )}
                 >
                   {opt.label}
                 </button>

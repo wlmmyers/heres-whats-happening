@@ -22,6 +22,8 @@ describe('notInterested api', () => {
   it('DELETEs /me/not-interested to reset the list', async () => {
     (apiFetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
     await resetNotInterested();
-    expect(apiFetch).toHaveBeenCalledWith('/me/not-interested', { method: 'DELETE' });
+    expect(apiFetch).toHaveBeenCalledWith('/me/not-interested', {
+      method: 'DELETE',
+    });
   });
 });

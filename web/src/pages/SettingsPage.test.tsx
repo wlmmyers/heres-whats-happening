@@ -55,9 +55,13 @@ function renderPage() {
 beforeEach(() => {
   vi.resetAllMocks();
   (interestsApi.listInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-  (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: false });
+  (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+    connected: false,
+  });
   (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValue({
-    id: 'u1', email: 'a@x', score_threshold: 0.3,
+    id: 'u1',
+    email: 'a@x',
+    score_threshold: 0.3,
   });
 });
 
@@ -88,7 +92,9 @@ describe('SettingsPage', () => {
   });
 
   it('generates an iCal URL on demand and reveals it', async () => {
-    (icalApi.createIcalToken as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ url: 'http://x/ical/abc.ics' });
+    (icalApi.createIcalToken as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      url: 'http://x/ical/abc.ics',
+    });
     renderPage();
     await userEvent.click(screen.getByRole('button', { name: /generate calendar url/i }));
     await waitFor(() => expect(screen.getByText('http://x/ical/abc.ics')).toBeInTheDocument());
@@ -96,11 +102,23 @@ describe('SettingsPage', () => {
 
   it('lets the user add a manual interest', async () => {
     (interestsApi.createInterest as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      id: 'i1', value: 'theater', normalized_value: 'theater', weight: 1, created_at: '',
+      id: 'i1',
+      value: 'theater',
+      normalized_value: 'theater',
+      weight: 1,
+      created_at: '',
     });
     (interestsApi.listInterests as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: 'i1', value: 'theater', normalized_value: 'theater', weight: 1, created_at: '' }]);
+      .mockResolvedValueOnce([
+        {
+          id: 'i1',
+          value: 'theater',
+          normalized_value: 'theater',
+          weight: 1,
+          created_at: '',
+        },
+      ]);
     renderPage();
     await userEvent.type(screen.getByPlaceholderText(/add an interest/i), 'theater{enter}');
     await waitFor(() => expect(interestsApi.createInterest).toHaveBeenCalledWith('theater'));
@@ -108,14 +126,18 @@ describe('SettingsPage', () => {
   });
 
   it('shows only the Disconnect button when Spotify is connected', async () => {
-    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: true });
+    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      connected: true,
+    });
     renderPage();
     expect(await screen.findByRole('button', { name: /disconnect/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /connect spotify/i })).not.toBeInTheDocument();
   });
 
   it('shows only the Connect button when Spotify is not connected', async () => {
-    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: false });
+    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      connected: false,
+    });
     renderPage();
     expect(await screen.findByRole('button', { name: /connect spotify/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
@@ -138,7 +160,9 @@ describe('SettingsPage', () => {
     renderPage();
 
     // Slider initialises from score_threshold (0.3 -> 30%).
-    const slider = await screen.findByRole('slider', { name: /match sensitivity/i });
+    const slider = await screen.findByRole('slider', {
+      name: /match sensitivity/i,
+    });
     expect(slider).toHaveValue('30');
     expect(screen.getByRole('button', { name: /save threshold/i })).toBeDisabled();
 
@@ -148,8 +172,6 @@ describe('SettingsPage', () => {
 
     // Confirm dialog appears; confirming calls the API with the fraction.
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
-    await waitFor(() =>
-      expect(matchApi.updateMatchThreshold).toHaveBeenCalledWith(0.45),
-    );
+    await waitFor(() => expect(matchApi.updateMatchThreshold).toHaveBeenCalledWith(0.45));
   });
 });

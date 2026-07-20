@@ -22,11 +22,7 @@ export default function ConfirmDialog({
 }: Props) {
   if (!open) return null;
   return (
-    <div
-      data-testid="confirm-backdrop"
-      className={s.backdrop}
-      onClick={onCancel}
-    >
+    <div data-testid="confirm-backdrop" className={s.backdrop} onClick={onCancel}>
       <div
         role="dialog"
         aria-modal="true"
@@ -35,21 +31,19 @@ export default function ConfirmDialog({
         className={s.dialog}
         onClick={(e) => e.stopPropagation()}
       >
-        {title && <h2 id="confirm-dialog-title" className={s.title}>{title}</h2>}
-        <p id="confirm-dialog-desc" className={s.message}>{message}</p>
+        {title && (
+          <h2 id="confirm-dialog-title" className={s.title}>
+            {title}
+          </h2>
+        )}
+        <p id="confirm-dialog-desc" className={s.message}>
+          {message}
+        </p>
         <div className={s.actions}>
-          <button
-            type="button"
-            onClick={onCancel}
-            className={c.buttonSecondary}
-          >
+          <button type="button" onClick={onCancel} className={c.buttonSecondary}>
             {cancelLabel}
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={c.buttonPrimary}
-          >
+          <button type="button" onClick={onConfirm} className={c.buttonPrimary}>
             {confirmLabel}
           </button>
         </div>

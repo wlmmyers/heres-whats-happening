@@ -21,13 +21,20 @@ export const cover = style({
 
 export const header = style({ marginTop: '1rem' });
 
-export const title = style({ ...fontSize['3xl'], fontWeight: fontWeight.semibold });
+export const title = style({
+  ...fontSize['3xl'],
+  fontWeight: fontWeight.semibold,
+});
 
 export const date = style({ color: color.gray700, marginTop: '0.25rem' });
 
 export const venue = style({ color: color.gray600, marginTop: '0.25rem' });
 
-export const score = style({ ...fontSize.sm, color: color.gray500, marginTop: '1rem' });
+export const score = style({
+  ...fontSize.sm,
+  color: color.gray500,
+  marginTop: '1rem',
+});
 
 export const matched = style({
   backgroundColor: color.blue50,

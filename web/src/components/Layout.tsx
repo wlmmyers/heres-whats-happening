@@ -11,7 +11,11 @@ export default function Layout() {
     <div className={s.page}>
       <header className={s.header}>
         <div
-          style={{ backgroundImage: `url('/titleLogo.png')`, width: '280px', height: '40px' }}
+          style={{
+            backgroundImage: `url('/titleGraphic1.png')`,
+            width: '280px',
+            height: '40px',
+          }}
           className={s.logo}
         />
         <NavLink to="/calendar" className={link}>
