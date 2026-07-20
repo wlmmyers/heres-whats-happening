@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { surface } from '../styles/common.css';
+import { card } from '../styles/common.css';
 import { color, radius, shadow, fontSize, fontWeight, transition } from '../styles/theme';
 
 export const header = style({
@@ -44,7 +44,7 @@ export const rangeButtonInactive = style({
 export const errorBox = style({ color: color.red600, marginTop: '1rem' });
 
 export const emptyState = style([
-  surface,
+  card,
   {
     padding: '2rem',
     textAlign: 'center',

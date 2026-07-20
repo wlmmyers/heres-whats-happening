@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { surface, errorText, buttonSubmit } from '../styles/common.css';
+import { card, errorText, buttonSubmit } from '../styles/common.css';
 import { color, fontSize, fontWeight } from '../styles/theme';
 
 export const page = style({
@@ -11,7 +11,7 @@ export const page = style({
   paddingInline: '1rem',
 });
 
-export const form = style([surface, { width: '100%', maxWidth: '24rem', padding: '1.5rem' }]);
+export const form = style([card, { width: '100%', maxWidth: '24rem', padding: '1.5rem' }]);
 
 export const title = style({ ...fontSize.xl, fontWeight: fontWeight.semibold });
 

@@ -1,9 +1,9 @@
 import { style } from '@vanilla-extract/css';
-import { surface } from '../styles/common.css';
+import { card } from '../styles/common.css';
 import { color, fontSize, fontWeight, radius, shadow, transition } from '../styles/theme';
 
-export const card = style([
-  surface,
+export const eventCard = style([
+  card,
   {
     padding: '1rem',
     ...transition,

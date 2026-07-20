@@ -1,8 +1,8 @@
 import { style } from '@vanilla-extract/css';
-import { surface, buttonPrimary, buttonSecondary, errorText } from '../styles/common.css';
+import { card, buttonPrimary, buttonSecondary, errorText } from '../styles/common.css';
 import { color, radius, fontSize } from '../styles/theme';
 
-export const section = style([surface, { padding: '1rem', marginTop: '2rem' }]);
+export const section = style([card, { padding: '1rem', marginTop: '2rem' }]);
 
 export const desc = style({
   ...fontSize.sm,

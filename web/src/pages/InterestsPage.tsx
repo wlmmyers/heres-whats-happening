@@ -19,7 +19,7 @@ const COLLAPSE_AT = 20;
 export default function InterestsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [spotifyInterestsExpanded, setSpotifyInterestsExpanded] = useState(false);
 
   const { data: interests = [] } = useQuery<Interest[]>({
     queryKey: ['interests'],
@@ -28,14 +28,12 @@ export default function InterestsPage() {
 
   // Loaded independently of status: if groups arrive first we render them
   // immediately rather than blocking on the status request.
-  const { data: spotifyGroups = [], isPending: spotifyInterestsPending } = useQuery<
-    SpotifyInterestGroup[]
-  >({
+  const { data: spotifyGroups = [] } = useQuery<SpotifyInterestGroup[]>({
     queryKey: ['spotifyInterests'],
     queryFn: listSpotifyInterests,
   });
   const { data: spotifyStatus } = useQuery({
-    queryKey: ['spotify-status'],
+    queryKey: ['spotifyStatus'],
     queryFn: getSpotifyStatus,
   });
 
@@ -54,28 +52,26 @@ export default function InterestsPage() {
 
   const values = interests.map((i) => i.value);
 
-  function toggle(kind: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(kind)) next.delete(kind);
-      else next.add(kind);
-      return next;
-    });
+  function toggleExpanded() {
+    setSpotifyInterestsExpanded((prev) => !prev);
   }
 
   // This page doubles as the signup onboarding step, so a brand-new user with
   // no Spotify connection must not see a dead-end "go connect Spotify" prompt
   // mid-signup. Show the section only when it has something to say.
   const showSpotify = spotifyGroups.length > 0 || spotifyStatus?.connected === true;
+  const spotifyAllInterests = spotifyGroups.flatMap((g) => g.interests);
+  const spotifyUniqueArtists = new Set(spotifyAllInterests.map((i) => i.value));
 
   return (
     <div>
       <header>
-        <h1 className={c.pageTitle}>Tell us what you're into</h1>
-        <p className={s.lead}>Add tags — genres, activities, anything.</p>
+        <h1 className={c.pageTitle}>Your interests</h1>
       </header>
 
-      <section className={s.section}>
+      <section className={c.section}>
+        <h2 className={s.sectionHeading}>Tell us what you're into</h2>
+        <p className={s.lead}>Add genres and artists you like</p>
         <TagInput
           values={values}
           onAdd={(v) => addMut.mutate(v)}
@@ -86,42 +82,36 @@ export default function InterestsPage() {
       </section>
 
       {showSpotify && (
-        <section className={s.section}>
+        <section className={c.section}>
           <h2 className={s.sectionHeading}>From your Spotify</h2>
           {spotifyGroups.length === 0 ? (
-            !spotifyInterestsPending && (
-              <p className={s.emptyNote}>
-                We haven't pulled your listening history yet. Check back soon.
-              </p>
-            )
+            <p className={s.emptyNote}>
+              We haven't pulled your listening history yet. Check back soon.
+            </p>
           ) : (
-            spotifyGroups.map((group) => {
-              const isExpanded = expanded.has(group.kind);
-              const shown = isExpanded
-                ? group.interests
-                : group.interests.slice(0, COLLAPSE_AT);
-              return (
-                <div key={group.kind}>
-                  <h3 className={s.groupHeading}>{group.label}</h3>
-                  <TagList values={shown.map((i) => i.value)} />
-                  {group.interests.length > COLLAPSE_AT && (
-                    <button
-                      type="button"
-                      className={s.showAllButton}
-                      onClick={() => toggle(group.kind)}
-                    >
-                      {isExpanded ? 'Show less' : `Show all (${group.interests.length})`}
-                    </button>
-                  )}
-                </div>
-              );
-            })
+            <div>
+              <p className={s.lead}>
+                Spotify-derived artists from your top artists, top tracks, and liked songs
+              </p>
+              <TagList
+                values={
+                  spotifyInterestsExpanded
+                    ? Array.from(spotifyUniqueArtists)
+                    : Array.from(spotifyUniqueArtists).slice(0, COLLAPSE_AT)
+                }
+              />
+              {spotifyUniqueArtists.size > COLLAPSE_AT && (
+                <button type="button" className={s.showAllButton} onClick={() => toggleExpanded()}>
+                  {spotifyInterestsExpanded ? 'Show less' : 'Show all'}
+                </button>
+              )}
+            </div>
           )}
         </section>
       )}
 
       <button type="button" onClick={() => navigate('/calendar')} className={s.continueButton}>
-        Continue
+        Go to Calendar
       </button>
     </div>
   );

@@ -20,7 +20,7 @@ export default function EventCard({
   const matchedBits = [...event.matched_because.performers, ...event.matched_because.genres];
 
   return (
-    <div className={s.card}>
+    <div className={s.eventCard}>
       <Link to={`/events/${event.id}`} className={s.link}>
         {event.image_url && <img src={event.image_url} alt="" className={s.thumbnail} />}
         <div className={s.body}>

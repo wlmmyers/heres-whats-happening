@@ -62,6 +62,7 @@ export const description = style({
   color: color.gray800,
   whiteSpace: 'pre-wrap',
   marginTop: '1rem',
+  fontSize: fontSize.sm.fontSize,
 });
 
 export const viewEvent = style([
