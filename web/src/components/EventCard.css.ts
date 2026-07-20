@@ -1,9 +1,9 @@
 import { style } from '@vanilla-extract/css';
-import { surface } from '../styles/common.css';
-import { color, fontSize, fontWeight, shadow, transition } from '../styles/theme';
+import { card } from '../styles/common.css';
+import { color, fontSize, fontWeight, radius, shadow, transition } from '../styles/theme';
 
-export const card = style([
-  surface,
+export const eventCard = style([
+  card,
   {
     padding: '1rem',
     ...transition,
@@ -11,7 +11,21 @@ export const card = style([
   },
 ]);
 
-export const link = style({ display: 'block' });
+export const link = style({
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: '0.75rem',
+});
+
+export const thumbnail = style({
+  flexShrink: 0,
+  width: '5rem',
+  height: '5rem',
+  objectFit: 'cover',
+  borderRadius: radius.sm,
+});
+
+export const body = style({ minWidth: 0, flexGrow: 1 });
 
 export const titleRow = style({
   display: 'flex',

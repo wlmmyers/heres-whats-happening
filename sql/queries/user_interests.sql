@@ -24,3 +24,9 @@ SELECT user_id, kind, value, normalized_value, weight
 FROM user_interests
 WHERE user_id = ANY($1::uuid[])
 ORDER BY user_id, weight DESC;
+
+-- name: ListInterestsByUserAndKinds :many
+SELECT id, kind, value, normalized_value, weight, created_at
+FROM user_interests
+WHERE user_id = $1 AND kind = ANY(sqlc.arg(kinds)::text[])
+ORDER BY weight DESC, normalized_value ASC;

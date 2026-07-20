@@ -3,7 +3,7 @@ import RequireAuth from './auth/RequireAuth';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
-import OnboardingPage from './pages/OnboardingPage';
+import InterestsPage from './pages/InterestsPage';
 import CalendarPage from './pages/CalendarPage';
 import EventDetailPage from './pages/EventDetailPage';
 import SettingsPage from './pages/SettingsPage';
@@ -23,7 +23,7 @@ export default function App() {
         }
       >
         <Route index element={<Navigate to="/calendar" replace />} />
-        <Route path="onboarding" element={<OnboardingPage />} />
+        <Route path="interests" element={<InterestsPage />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="events/:id" element={<EventDetailPage />} />
         <Route path="settings" element={<SettingsPage />} />

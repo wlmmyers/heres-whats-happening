@@ -39,7 +39,7 @@ export default function LoginPage() {
 
   return (
     <div className={s.page}>
-      <div className={s.card}>
+      <div className={s.loginCard}>
         <img src="/titleGraphic1.png" alt="Logo" style={{ width: '300px' }} className={s.logo} />
         <form onSubmit={onSubmit} className={s.form}>
           <h1 className={s.title}>Sign in</h1>

@@ -1,17 +1,14 @@
 import { style } from '@vanilla-extract/css';
-import { surface, buttonPrimary, buttonSecondary, errorText } from '../styles/common.css';
+import { card, buttonPrimary, buttonSecondary, errorText } from '../styles/common.css';
 import { color, radius, fontSize } from '../styles/theme';
 
-export const section = style([surface, { padding: '1rem', marginTop: '2rem' }]);
+export const section = style([card, { padding: '1rem', marginTop: '2rem' }]);
 
 export const desc = style({
   ...fontSize.sm,
   color: color.gray700,
   marginTop: '0.75rem',
 });
-
-// wrapper to give the TagInput (a child component) its top margin
-export const item = style({ marginTop: '0.75rem' });
 
 // --- Match sensitivity section ---
 export const sliderRow = style({

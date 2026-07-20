@@ -1,7 +1,7 @@
 import { style } from '@vanilla-extract/css';
 import { color, radius, shadow, fontSize, fontWeight } from './theme';
 
-export const surface = style({
+export const card = style({
   backgroundColor: color.white,
   boxShadow: shadow.base,
   borderRadius: radius.sm,
@@ -59,8 +59,10 @@ export const pageTitle = style({
 });
 
 export const sectionTitle = style({
-  ...fontSize.lg,
+  ...fontSize.base,
   fontWeight: fontWeight.medium,
 });
+
+export const section = style([card, { padding: '1rem', marginTop: '1.5rem' }]);
 
 export const errorText = style({ ...fontSize.sm, color: color.red600 });

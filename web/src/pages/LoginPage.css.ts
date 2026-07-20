@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { surface, errorText, buttonSubmit } from '../styles/common.css';
+import { card, errorText, buttonSubmit } from '../styles/common.css';
 import { color, fontSize, fontWeight } from '../styles/theme';
 
 export const page = style({
@@ -22,8 +22,8 @@ export const logo = style({
   },
 });
 
-export const card = style([
-  surface,
+export const loginCard = style([
+  card,
   {
     width: '100%',
     maxWidth: '24rem',

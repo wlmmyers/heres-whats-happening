@@ -28,11 +28,11 @@ type interestOut struct {
 	CreatedAt       string  `json:"created_at"`
 }
 
-type listInterestsResponse struct {
+type listManualInterestsResponse struct {
 	Interests []interestOut `json:"interests"`
 }
 
-func ListInterests(q *store.Queries) http.HandlerFunc {
+func ListManualInterests(q *store.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid, ok := middleware.UserIDFromContext(r.Context())
 		if !ok {
@@ -56,11 +56,11 @@ func ListInterests(q *store.Queries) http.HandlerFunc {
 				CreatedAt:       row.CreatedAt.Time.UTC().Format(time.RFC3339),
 			})
 		}
-		writeJSON(w, http.StatusOK, listInterestsResponse{Interests: out})
+		writeJSON(w, http.StatusOK, listManualInterestsResponse{Interests: out})
 	}
 }
 
-type createInterestRequest struct {
+type createManualInterestRequest struct {
 	Value string `json:"value"`
 }
 
@@ -84,14 +84,14 @@ func publishEmbed(ctx context.Context, pub CallbackPublisher, queueURL string, u
 	}
 }
 
-func CreateInterest(q *store.Queries, pub CallbackPublisher, queueURL string) http.HandlerFunc {
+func CreateManualInterest(q *store.Queries, pub CallbackPublisher, queueURL string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid, ok := middleware.UserIDFromContext(r.Context())
 		if !ok {
 			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
 			return
 		}
-		var req createInterestRequest
+		var req createManualInterestRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httperr.Write(w, http.StatusBadRequest, "bad_json", "request body is not valid JSON")
 			return
@@ -129,7 +129,7 @@ func CreateInterest(q *store.Queries, pub CallbackPublisher, queueURL string) ht
 	}
 }
 
-func DeleteInterest(q *store.Queries, pub CallbackPublisher, queueURL string) http.HandlerFunc {
+func DeleteManualInterest(q *store.Queries, pub CallbackPublisher, queueURL string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid, ok := middleware.UserIDFromContext(r.Context())
 		if !ok {

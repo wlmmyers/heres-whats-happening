@@ -13,10 +13,10 @@ const event: CalendarEvent = {
   matched_because: { performers: ['Phoebe Bridgers'], genres: ['indie'] },
 };
 
-function renderCard(onNotInterested?: (id: string) => void) {
+function renderCard(onNotInterested?: (id: string) => void, overrides?: Partial<CalendarEvent>) {
   return render(
     <MemoryRouter>
-      <EventCard event={event} onNotInterested={onNotInterested} />
+      <EventCard event={{ ...event, ...overrides }} onNotInterested={onNotInterested} />
     </MemoryRouter>,
   );
 }
@@ -25,6 +25,16 @@ describe('EventCard', () => {
   it('links to the event detail page', () => {
     renderCard();
     expect(screen.getByRole('link')).toHaveAttribute('href', '/events/e1');
+  });
+
+  it('renders an image tile when the event has an image_url', () => {
+    const { container } = renderCard(undefined, { image_url: 'https://cdn.test/pb.jpg' });
+    expect(container.querySelector('img')).toHaveAttribute('src', 'https://cdn.test/pb.jpg');
+  });
+
+  it('renders no image tile when the event has no image_url', () => {
+    const { container } = renderCard();
+    expect(container.querySelector('img')).toBeNull();
   });
 
   it('renders no Not interested button without the callback', () => {

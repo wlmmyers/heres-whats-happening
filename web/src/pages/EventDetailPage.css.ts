@@ -11,15 +11,28 @@ export const backLink = style({
   ':hover': { textDecorationLine: 'underline' },
 });
 
-export const cover = style({
-  width: '100%',
-  maxHeight: '24rem',
+export const thumbnail = style({
+  flexShrink: 0,
+  width: '8rem',
+  height: '8rem',
   objectFit: 'cover',
   borderRadius: radius.sm,
-  marginTop: '1rem',
+  '@media': {
+    'screen and (max-width: 768px)': { width: '100%', height: 'auto' },
+  },
 });
 
-export const header = style({ marginTop: '1rem' });
+export const header = style({
+  marginTop: '1rem',
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: '1rem',
+  '@media': {
+    'screen and (max-width: 768px)': { flexDirection: 'column' },
+  },
+});
+
+export const headerText = style({ minWidth: 0, flexGrow: 1 });
 
 export const title = style({
   ...fontSize['3xl'],
@@ -49,6 +62,7 @@ export const description = style({
   color: color.gray800,
   whiteSpace: 'pre-wrap',
   marginTop: '1rem',
+  fontSize: fontSize.sm.fontSize,
 });
 
 export const viewEvent = style([

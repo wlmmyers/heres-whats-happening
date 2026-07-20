@@ -88,7 +88,7 @@ export default function CalendarPage() {
       ) : events.length === 0 ? (
         <div className={s.emptyState}>
           No upcoming matches yet. Add some interests on the{' '}
-          <a href="/onboarding" className={s.inlineLink}>
+          <a href="/interests" className={s.inlineLink}>
             Interests
           </a>{' '}
           page or wait for the next match run.

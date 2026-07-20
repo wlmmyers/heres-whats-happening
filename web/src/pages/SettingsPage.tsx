@@ -1,35 +1,16 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createInterest, deleteInterest, listInterests, type Interest } from '../api/interests';
 import { startSpotifyConnect, disconnectSpotify, getSpotifyStatus } from '../api/spotify';
 import { createIcalToken, revokeIcalToken } from '../api/ical';
 import { getMe } from '../api/auth';
 import { updateMatchThreshold, MIN_THRESHOLD, MAX_THRESHOLD } from '../api/match';
 import { resetNotInterested } from '../api/notInterested';
 import ConfirmDialog from '../components/ConfirmDialog';
-import TagInput from '../components/TagInput';
 import * as s from './SettingsPage.css';
 import * as c from '../styles/common.css';
 
 export default function SettingsPage() {
   const qc = useQueryClient();
-  const { data: interests = [] } = useQuery<Interest[]>({
-    queryKey: ['interests'],
-    queryFn: listInterests,
-  });
-
-  const addInterest = useMutation({
-    mutationFn: (value: string) => createInterest(value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['interests'] }),
-  });
-  const removeInterest = useMutation({
-    mutationFn: (value: string) => {
-      const target = interests.find((i) => i.value === value);
-      if (!target) return Promise.resolve();
-      return deleteInterest(target.id);
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['interests'] }),
-  });
   const { data: spotifyStatus, isLoading: spotifyStatusLoading } = useQuery({
     queryKey: ['spotify-status'],
     queryFn: getSpotifyStatus,
@@ -42,7 +23,10 @@ export default function SettingsPage() {
   });
   const disconnectSpotifyMut = useMutation({
     mutationFn: disconnectSpotify,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['spotify-status'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['spotify-status'] });
+      qc.invalidateQueries({ queryKey: ['spotifyInterests'] });
+    },
   });
 
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: getMe });
@@ -93,19 +77,6 @@ export default function SettingsPage() {
   return (
     <div>
       <h1 className={c.pageTitle}>Settings</h1>
-
-      {/* Interests */}
-      <section className={s.section}>
-        <h2 className={c.sectionTitle}>Manual interests</h2>
-        <div className={s.item}>
-          <TagInput
-            values={interests.map((i) => i.value)}
-            onAdd={(v) => addInterest.mutate(v)}
-            onRemove={(v) => removeInterest.mutate(v)}
-            placeholder="Add an interest and press Enter"
-          />
-        </div>
-      </section>
 
       {/* Match sensitivity */}
       <section className={s.section}>

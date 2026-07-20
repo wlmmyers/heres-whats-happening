@@ -24,7 +24,7 @@ export const logo = style({
 });
 
 export const main = style({
-  maxWidth: '64rem',
+  maxWidth: '60rem',
   marginInline: 'auto',
   paddingInline: '1rem',
   paddingBlock: '1.5rem',

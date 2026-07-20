@@ -51,6 +51,22 @@ describe('EventDetailPage', () => {
     );
   });
 
+  it('renders the image tile inside the header when the event has an image_url', async () => {
+    (calApi.getEvent as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'e1',
+      title: 'PB Live',
+      starts_at: '2026-06-15T20:00:00Z',
+      image_url: 'https://cdn.test/pb.jpg',
+      venue: { name: 'The Bowl' },
+      score: 0.82,
+      matched_because: { performers: [], genres: [] },
+    });
+    const { container } = renderAt('/events/e1');
+    await waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
+    const img = container.querySelector('header img');
+    expect(img).toHaveAttribute('src', 'https://cdn.test/pb.jpg');
+  });
+
   it('renders 404 if event not found', async () => {
     const err = Object.assign(new Error('not found'), {
       status: 404,

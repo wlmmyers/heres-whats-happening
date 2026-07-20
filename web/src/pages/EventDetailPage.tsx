@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { getEvent, type CalendarEvent } from '../api/calendar';
 import Spinner from '../components/Spinner';
 import * as s from './EventDetailPage.css';
+import * as c from '../styles/common.css';
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -33,14 +34,15 @@ export default function EventDetailPage() {
         {`< Calendar`}
       </Link>
 
-      {data.image_url && <img src={data.image_url} alt={data.title} className={s.cover} />}
-
       <header className={s.header}>
-        <h1 className={s.title}>{data.title}</h1>
-        <div className={s.date}>{dateLabel}</div>
-        <div className={s.venue}>
-          {data.venue.name}
-          {data.venue.address && <> · {data.venue.address}</>}
+        {data.image_url && <img src={data.image_url} alt="" className={s.thumbnail} />}
+        <div className={s.headerText}>
+          <h1 className={s.title}>{data.title}</h1>
+          <div className={s.date}>{dateLabel}</div>
+          <div className={s.venue}>
+            {data.venue.name}
+            {data.venue.address && <> · {data.venue.address}</>}
+          </div>
         </div>
       </header>
 
@@ -49,9 +51,10 @@ export default function EventDetailPage() {
       {matchedBits.length > 0 && (
         <div className={s.matched}>Matched because: {matchedBits.join(', ')}</div>
       )}
-
-      {data.description && <p className={s.description}>{data.description}</p>}
-
+      <section className={c.section}>
+        <h2 className={c.sectionTitle}>From the venue</h2>
+        {data.description && <p className={s.description}>{data.description}</p>}
+      </section>
       {data.url && (
         <a href={data.url} target="_blank" rel="noreferrer" className={s.viewEvent}>
           View event

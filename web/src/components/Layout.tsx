@@ -21,7 +21,7 @@ export default function Layout() {
         <NavLink to="/calendar" className={link}>
           Calendar
         </NavLink>
-        <NavLink to="/onboarding" className={link}>
+        <NavLink to="/interests" className={link}>
           Interests
         </NavLink>
         <NavLink to="/settings" className={link}>
