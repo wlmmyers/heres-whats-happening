@@ -31,10 +31,11 @@ type Adapter struct {
 	client   *spotify.Client
 	pub      Publisher
 	queueURL string
+	genres   GenreResolver
 }
 
-func NewAdapter(q *store.Queries, c *crypto.Cipher, client *spotify.Client, pub Publisher, queueURL string) *Adapter {
-	return &Adapter{q: q, cipher: c, client: client, pub: pub, queueURL: queueURL}
+func NewAdapter(q *store.Queries, c *crypto.Cipher, client *spotify.Client, pub Publisher, queueURL string, genres GenreResolver) *Adapter {
+	return &Adapter{q: q, cipher: c, client: client, pub: pub, queueURL: queueURL, genres: genres}
 }
 
 // ScrapeOne fetches one user's top artists/genres and publishes an
@@ -111,14 +112,15 @@ func (a *Adapter) ScrapeOne(ctx context.Context, userID pgtype.UUID) error {
 		FetchedAt: time.Now().UTC(),
 	}
 	msg.SpotifyTopArtists = make([]events.SpotifyTopItem, 0, len(artists))
-	genreCount := map[string]int{}
+	genreScore := map[string]float64{}
 	for i, ar := range artists {
+		rank := i + 1
 		msg.SpotifyTopArtists = append(msg.SpotifyTopArtists, events.SpotifyTopItem{
 			Name: ar.Name,
-			Rank: i + 1,
+			Rank: rank,
 		})
-		for _, g := range ar.Genres {
-			genreCount[g]++
+		for _, g := range a.genres.Resolve(ctx, ar.Name) {
+			genreScore[g.Name] += events.RankWeight(rank) * float64(g.Count)
 		}
 	}
 
@@ -163,22 +165,22 @@ func (a *Adapter) ScrapeOne(ctx context.Context, userID pgtype.UUID) error {
 		}
 	}
 
-	type gc struct {
+	type scored struct {
 		name  string
-		count int
+		score float64
 	}
-	gs := make([]gc, 0, len(genreCount))
-	for name, count := range genreCount {
-		gs = append(gs, gc{name, count})
+	ranked := make([]scored, 0, len(genreScore))
+	for name, score := range genreScore {
+		ranked = append(ranked, scored{name, score})
 	}
-	sort.SliceStable(gs, func(i, j int) bool {
-		if gs[i].count != gs[j].count {
-			return gs[i].count > gs[j].count
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
 		}
-		return gs[i].name < gs[j].name
+		return ranked[i].name < ranked[j].name
 	})
-	msg.SpotifyTopGenres = make([]events.SpotifyTopItem, 0, len(gs))
-	for i, g := range gs {
+	msg.SpotifyTopGenres = make([]events.SpotifyTopItem, 0, len(ranked))
+	for i, g := range ranked {
 		msg.SpotifyTopGenres = append(msg.SpotifyTopGenres, events.SpotifyTopItem{
 			Name: g.name,
 			Rank: i + 1,

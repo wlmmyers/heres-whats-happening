@@ -249,7 +249,7 @@ func scrapeSpotify(args []string) error {
 		return fmt.Errorf("crypto: %w", err)
 	}
 
-	adapter := spotifyscrape.NewAdapter(q, cipher, spClient, qClient, cfg.InterestsQueueURL)
+	adapter := spotifyscrape.NewAdapter(q, cipher, spClient, qClient, cfg.InterestsQueueURL, spotifyscrape.DefaultGenreResolver(q))
 	errs := adapter.ScrapeAll(ctx)
 	for _, e := range errs {
 		fmt.Fprintf(os.Stderr, "scrape spotify error: %v\n", e)
