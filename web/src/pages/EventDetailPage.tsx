@@ -33,14 +33,15 @@ export default function EventDetailPage() {
         {`< Calendar`}
       </Link>
 
-      {data.image_url && <img src={data.image_url} alt={data.title} className={s.cover} />}
-
       <header className={s.header}>
-        <h1 className={s.title}>{data.title}</h1>
-        <div className={s.date}>{dateLabel}</div>
-        <div className={s.venue}>
-          {data.venue.name}
-          {data.venue.address && <> · {data.venue.address}</>}
+        {data.image_url && <img src={data.image_url} alt="" className={s.thumbnail} />}
+        <div className={s.headerText}>
+          <h1 className={s.title}>{data.title}</h1>
+          <div className={s.date}>{dateLabel}</div>
+          <div className={s.venue}>
+            {data.venue.name}
+            {data.venue.address && <> · {data.venue.address}</>}
+          </div>
         </div>
       </header>
 

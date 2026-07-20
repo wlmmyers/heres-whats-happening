@@ -24,7 +24,7 @@ function renderPage() {
       <AuthProvider>
         <Routes>
           <Route path="/signup" element={<SignupPage />} />
-          <Route path="/onboarding" element={<div>onboarding-route</div>} />
+          <Route path="/interests" element={<div>onboarding-route</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -43,7 +43,7 @@ describe('SignupPage', () => {
     await userEvent.type(screen.getByLabelText(/email/i), 'new@x');
     await userEvent.type(screen.getByLabelText(/password/i), 'hunter22');
     await userEvent.click(screen.getByRole('button', { name: /create account/i }));
-    await waitFor(() => expect(screen.getByText(/onboarding-route/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/interests-route/)).toBeInTheDocument());
     expect(authApi.signup).toHaveBeenCalledWith('new@x', 'hunter22');
   });
 

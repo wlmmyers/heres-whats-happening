@@ -3,23 +3,23 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import OnboardingPage from './OnboardingPage';
+import InterestsPage from './InterestsPage';
 
-vi.mock('../api/interests', () => ({
-  listInterests: vi.fn(),
-  createInterest: vi.fn(),
-  deleteInterest: vi.fn(),
+vi.mock('../api/manualInterests', () => ({
+  listManualInterests: vi.fn(),
+  createManualInterest: vi.fn(),
+  deleteManualInterest: vi.fn(),
 }));
 
-import * as interestsApi from '../api/interests';
+import * as interestsApi from '../api/manualInterests';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/onboarding']}>
+      <MemoryRouter initialEntries={['/interests']}>
         <Routes>
-          <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route path="/interests" element={<InterestsPage />} />
           <Route path="/calendar" element={<div>calendar-route</div>} />
         </Routes>
       </MemoryRouter>
@@ -29,12 +29,12 @@ function renderPage() {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  (interestsApi.listInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+  (interestsApi.listManualInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 });
 
-describe('OnboardingPage', () => {
+describe('InterestsPage', () => {
   it('lists existing interests and lets the user add one', async () => {
-    (interestsApi.listInterests as ReturnType<typeof vi.fn>)
+    (interestsApi.listManualInterests as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce([
         {
           id: 'i1',
@@ -60,7 +60,7 @@ describe('OnboardingPage', () => {
           created_at: '',
         },
       ]);
-    (interestsApi.createInterest as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    (interestsApi.createManualInterest as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       id: 'i2',
       value: 'theater',
       normalized_value: 'theater',
@@ -71,7 +71,7 @@ describe('OnboardingPage', () => {
     await waitFor(() => expect(screen.getByText('jazz')).toBeInTheDocument());
 
     await userEvent.type(screen.getByPlaceholderText(/add an interest/i), 'theater{enter}');
-    await waitFor(() => expect(interestsApi.createInterest).toHaveBeenCalledWith('theater'));
+    await waitFor(() => expect(interestsApi.createManualInterest).toHaveBeenCalledWith('theater'));
     await waitFor(() => expect(screen.getByText('theater')).toBeInTheDocument());
   });
 

@@ -5,11 +5,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import SettingsPage from './SettingsPage';
 
-vi.mock('../api/interests', () => ({
-  listInterests: vi.fn(),
-  createInterest: vi.fn(),
-  deleteInterest: vi.fn(),
-}));
 vi.mock('../api/spotify', () => ({
   startSpotifyConnect: vi.fn(),
   disconnectSpotify: vi.fn(),
@@ -32,7 +27,6 @@ vi.mock('../api/notInterested', () => ({
   resetNotInterested: vi.fn(),
 }));
 
-import * as interestsApi from '../api/interests';
 import * as icalApi from '../api/ical';
 import * as spotifyApi from '../api/spotify';
 import * as authApi from '../api/auth';
@@ -54,7 +48,6 @@ function renderPage() {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  (interestsApi.listInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
     connected: false,
   });
@@ -98,31 +91,6 @@ describe('SettingsPage', () => {
     renderPage();
     await userEvent.click(screen.getByRole('button', { name: /generate calendar url/i }));
     await waitFor(() => expect(screen.getByText('http://x/ical/abc.ics')).toBeInTheDocument());
-  });
-
-  it('lets the user add a manual interest', async () => {
-    (interestsApi.createInterest as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      id: 'i1',
-      value: 'theater',
-      normalized_value: 'theater',
-      weight: 1,
-      created_at: '',
-    });
-    (interestsApi.listInterests as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          id: 'i1',
-          value: 'theater',
-          normalized_value: 'theater',
-          weight: 1,
-          created_at: '',
-        },
-      ]);
-    renderPage();
-    await userEvent.type(screen.getByPlaceholderText(/add an interest/i), 'theater{enter}');
-    await waitFor(() => expect(interestsApi.createInterest).toHaveBeenCalledWith('theater'));
-    await waitFor(() => expect(screen.getByText('theater')).toBeInTheDocument());
   });
 
   it('shows only the Disconnect button when Spotify is connected', async () => {

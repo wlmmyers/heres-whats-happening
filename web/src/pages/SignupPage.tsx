@@ -18,7 +18,7 @@ export default function SignupPage() {
     setSubmitting(true);
     try {
       await signup(email, password);
-      navigate('/onboarding', { replace: true });
+      navigate('/interests', { replace: true });
     } catch (err) {
       const code = (err as { code?: string }).code;
       if (code === 'email_taken') {

@@ -1,27 +1,27 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import TagInput from '../components/TagInput';
-import { createInterest, deleteInterest, listInterests, type Interest } from '../api/interests';
-import * as s from './OnboardingPage.css';
+import { createManualInterest, deleteManualInterest, listManualInterests, type Interest } from '../api/manualInterests';
+import * as s from './InterestsPage.css';
 import * as c from '../styles/common.css';
 
-export default function OnboardingPage() {
+export default function InterestsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { data: interests = [] } = useQuery<Interest[]>({
     queryKey: ['interests'],
-    queryFn: listInterests,
+    queryFn: listManualInterests,
   });
 
   const addMut = useMutation({
-    mutationFn: (value: string) => createInterest(value),
+    mutationFn: (value: string) => createManualInterest(value),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['interests'] }),
   });
   const removeMut = useMutation({
     mutationFn: (value: string) => {
       const target = interests.find((i) => i.value === value);
       if (!target) return Promise.resolve();
-      return deleteInterest(target.id);
+      return deleteManualInterest(target.id);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['interests'] }),
   });
@@ -32,13 +32,7 @@ export default function OnboardingPage() {
     <div>
       <header>
         <h1 className={c.pageTitle}>Tell us what you're into</h1>
-        <p className={s.lead}>
-          Add tags — genres, activities, anything. You can also{' '}
-          <Link to="/settings" className={s.inlineLink}>
-            connect Spotify
-          </Link>{' '}
-          for richer matches.
-        </p>
+        <p className={s.lead}>Add tags — genres, activities, anything.</p>
       </header>
 
       <section className={s.section}>

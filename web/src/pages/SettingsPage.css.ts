@@ -10,9 +10,6 @@ export const desc = style({
   marginTop: '0.75rem',
 });
 
-// wrapper to give the TagInput (a child component) its top margin
-export const item = style({ marginTop: '0.75rem' });
-
 // --- Match sensitivity section ---
 export const sliderRow = style({
   display: 'flex',
