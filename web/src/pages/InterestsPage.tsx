@@ -28,12 +28,14 @@ export default function InterestsPage() {
 
   // Loaded independently of status: if groups arrive first we render them
   // immediately rather than blocking on the status request.
-  const { data: spotifyGroups = [] } = useQuery<SpotifyInterestGroup[]>({
+  const { data: spotifyGroups = [], isPending: spotifyInterestsPending } = useQuery<
+    SpotifyInterestGroup[]
+  >({
     queryKey: ['spotifyInterests'],
     queryFn: listSpotifyInterests,
   });
   const { data: spotifyStatus } = useQuery({
-    queryKey: ['spotifyStatus'],
+    queryKey: ['spotify-status'],
     queryFn: getSpotifyStatus,
   });
 
@@ -87,9 +89,11 @@ export default function InterestsPage() {
         <section className={s.section}>
           <h2 className={s.sectionHeading}>From your Spotify</h2>
           {spotifyGroups.length === 0 ? (
-            <p className={s.emptyNote}>
-              We haven't pulled your listening history yet. Check back soon.
-            </p>
+            !spotifyInterestsPending && (
+              <p className={s.emptyNote}>
+                We haven't pulled your listening history yet. Check back soon.
+              </p>
+            )
           ) : (
             spotifyGroups.map((group) => {
               const isExpanded = expanded.has(group.kind);

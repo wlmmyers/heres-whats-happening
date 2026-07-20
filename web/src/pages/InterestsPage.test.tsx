@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import InterestsPage from './InterestsPage';
+import type { SpotifyInterestGroup } from '../api/spotifyInterests';
 
 vi.mock('../api/manualInterests', () => ({
   listManualInterests: vi.fn(),
@@ -154,6 +155,34 @@ describe('InterestsPage — Spotify section', () => {
     (spotifyInterestsApi.listSpotifyInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: true });
     renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText(/haven't pulled your listening history yet/i)).toBeInTheDocument(),
+    );
+  });
+
+  it('does not show the "haven\'t pulled yet" copy while spotify interests are still loading', async () => {
+    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: true });
+
+    let resolveInterests!: (value: SpotifyInterestGroup[]) => void;
+    const deferred = new Promise<SpotifyInterestGroup[]>((resolve) => {
+      resolveInterests = resolve;
+    });
+    (spotifyInterestsApi.listSpotifyInterests as ReturnType<typeof vi.fn>).mockReturnValue(
+      deferred,
+    );
+
+    renderPage();
+
+    // The status query resolves quickly and the section becomes visible, but
+    // the interests query is still pending — the empty-state copy must not
+    // appear yet.
+    await waitFor(() => expect(screen.getByText(/from your spotify/i)).toBeInTheDocument());
+    expect(
+      screen.queryByText(/haven't pulled your listening history yet/i),
+    ).not.toBeInTheDocument();
+
+    resolveInterests([]);
 
     await waitFor(() =>
       expect(screen.getByText(/haven't pulled your listening history yet/i)).toBeInTheDocument(),

@@ -23,7 +23,10 @@ export default function SettingsPage() {
   });
   const disconnectSpotifyMut = useMutation({
     mutationFn: disconnectSpotify,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['spotify-status'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['spotify-status'] });
+      qc.invalidateQueries({ queryKey: ['spotifyInterests'] });
+    },
   });
 
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: getMe });

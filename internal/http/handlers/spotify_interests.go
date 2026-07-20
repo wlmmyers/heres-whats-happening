@@ -14,9 +14,11 @@ import (
 )
 
 // spotifyKinds is the set of Spotify-derived interest kinds. The order here is
-// the display order of the response groups. Adding a fifth Spotify kind is a
-// change to this slice plus spotifyKindLabels — the frontend renders whatever
-// groups it is handed.
+// the display order of the response groups. Adding a fifth Spotify kind means
+// updating this slice, spotifyKindLabels, and the DeleteSpotifyDerivedInterests
+// query in sql/queries/user_spotify_tokens.sql, which hardcodes the same four
+// kinds — a fifth kind would otherwise be silently orphaned on disconnect. The
+// frontend renders whatever groups it is handed.
 var spotifyKinds = []string{
 	"spotify_top_artist",
 	"spotify_top_track_artist",
