@@ -146,6 +146,13 @@ func TestGetSpotifyInterests_NoDataReturnsEmptyGroups(t *testing.T) {
 	code, groups := getSpotifyInterests(t, q, signer, token)
 	require.Equal(t, http.StatusOK, code)
 	require.Empty(t, groups)
+
+	// Verify raw response body contains empty array [], not null, to guard against regression
+	req := httptest.NewRequest(http.MethodGet, "/me/spotify-interests", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	middleware.RequireAuth(signer)(handlers.SpotifyInterests(q)).ServeHTTP(rec, req)
+	require.Contains(t, rec.Body.String(), `"groups":[]`)
 }
 
 func TestGetSpotifyInterests_ReturnsOnlyOwn(t *testing.T) {
