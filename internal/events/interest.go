@@ -38,3 +38,22 @@ type SpotifyTopItem struct {
 	Name string `json:"name"`
 	Rank int    `json:"rank"`
 }
+
+// RankWeight maps a 1-based rank to an interest weight: rank 1 -> 1.0, ramping
+// down linearly to 0.6 at rank 50 (the size of the Spotify top-artist and
+// top-track lists), then holding at 0.6 for lower ranks. Shared by the ingest
+// weighting of artists/track-artists and the scraper's genre aggregation.
+func RankWeight(rank int) float64 {
+	const (
+		maxRank   = 50
+		minWeight = 0.6
+	)
+	if rank <= 1 {
+		return 1.0
+	}
+	w := 1.0 - float64(rank-1)*(1.0-minWeight)/(maxRank-1)
+	if w < minWeight {
+		return minWeight
+	}
+	return w
+}
