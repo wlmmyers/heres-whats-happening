@@ -75,6 +75,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/me/manual-interests", handlers.ListManualInterests(s.Queries))
 		r.Post("/me/manual-interests", handlers.CreateManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
 		r.Delete("/me/manual-interests/{id}", handlers.DeleteManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
+		r.Get("/me/spotify-interests", handlers.SpotifyInterests(s.Queries))
 		r.Get("/integrations/spotify/connect", handlers.SpotifyConnect(s.SpotifyClient, s.OAuthHMACKey))
 		r.Get("/integrations/spotify/status", handlers.SpotifyStatus(s.Queries))
 		r.Post("/integrations/spotify/exchange", handlers.SpotifyExchange(
