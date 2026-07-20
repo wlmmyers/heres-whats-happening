@@ -10,7 +10,11 @@ export const header = style({
   gap: '0.75rem',
 });
 
-export const controls = style({ display: 'flex', alignItems: 'center', gap: '0.5rem' });
+export const controls = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+});
 
 export const controlLabel = style({ ...fontSize.sm, color: color.gray500 });
 
@@ -41,10 +45,18 @@ export const errorBox = style({ color: color.red600, marginTop: '1rem' });
 
 export const emptyState = style([
   surface,
-  { padding: '2rem', textAlign: 'center', color: color.gray600, marginTop: '1rem' },
+  {
+    padding: '2rem',
+    textAlign: 'center',
+    color: color.gray600,
+    marginTop: '1rem',
+  },
 ]);
 
-export const inlineLink = style({ color: color.blue600, textDecorationLine: 'underline' });
+export const inlineLink = style({
+  color: color.blue600,
+  textDecorationLine: 'underline',
+});
 
 export const list = style({ marginTop: '1rem' });
 

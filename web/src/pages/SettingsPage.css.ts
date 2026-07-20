@@ -4,7 +4,11 @@ import { color, radius, fontSize } from '../styles/theme';
 
 export const section = style([surface, { padding: '1rem', marginTop: '2rem' }]);
 
-export const desc = style({ ...fontSize.sm, color: color.gray700, marginTop: '0.75rem' });
+export const desc = style({
+  ...fontSize.sm,
+  color: color.gray700,
+  marginTop: '0.75rem',
+});
 
 // wrapper to give the TagInput (a child component) its top margin
 export const item = style({ marginTop: '0.75rem' });

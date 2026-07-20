@@ -45,11 +45,17 @@ describe('EventDetailPage', () => {
     expect(screen.getByText(/The Bowl/)).toBeInTheDocument();
     expect(screen.getByText(/100 Main St/)).toBeInTheDocument();
     expect(screen.getByText(/82% match/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /tickets|view event/i })).toHaveAttribute('href', 'https://tix.example/aaa');
+    expect(screen.getByRole('link', { name: /tickets|view event/i })).toHaveAttribute(
+      'href',
+      'https://tix.example/aaa',
+    );
   });
 
   it('renders 404 if event not found', async () => {
-    const err = Object.assign(new Error('not found'), { status: 404, code: 'not_found' });
+    const err = Object.assign(new Error('not found'), {
+      status: 404,
+      code: 'not_found',
+    });
     (calApi.getEvent as ReturnType<typeof vi.fn>).mockRejectedValueOnce(err);
     renderAt('/events/missing');
     await waitFor(() => expect(screen.getByText(/event not found/i)).toBeInTheDocument());

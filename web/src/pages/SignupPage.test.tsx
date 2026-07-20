@@ -34,7 +34,10 @@ function renderPage() {
 describe('SignupPage', () => {
   it('signs up and redirects to onboarding', async () => {
     (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('401'));
-    (authApi.signup as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ id: 'u', email: 'new@x' });
+    (authApi.signup as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'u',
+      email: 'new@x',
+    });
 
     renderPage();
     await userEvent.type(screen.getByLabelText(/email/i), 'new@x');
@@ -46,13 +49,18 @@ describe('SignupPage', () => {
 
   it('shows error on duplicate email', async () => {
     (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('401'));
-    const err = Object.assign(new Error('email taken'), { status: 409, code: 'email_taken' });
+    const err = Object.assign(new Error('email taken'), {
+      status: 409,
+      code: 'email_taken',
+    });
     (authApi.signup as ReturnType<typeof vi.fn>).mockRejectedValueOnce(err);
 
     renderPage();
     await userEvent.type(screen.getByLabelText(/email/i), 'dup@x');
     await userEvent.type(screen.getByLabelText(/password/i), 'hunter22');
     await userEvent.click(screen.getByRole('button', { name: /create account/i }));
-    await waitFor(() => expect(screen.getByText(/an account with that email already exists/i)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/an account with that email already exists/i)).toBeInTheDocument(),
+    );
   });
 });

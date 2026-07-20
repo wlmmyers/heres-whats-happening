@@ -182,36 +182,26 @@ export default function SettingsPage() {
       <section className={s.section}>
         <h2 className={c.sectionTitle}>Calendar subscription</h2>
         <p className={s.desc}>
-          Generate a URL you can paste into iOS Calendar, Google Calendar, or Fantastical
-          to subscribe to your matched events. The URL is shown once — store it somewhere safe.
+          Generate a URL you can paste into iOS Calendar, Google Calendar, or Fantastical to
+          subscribe to your matched events. The URL is shown once — store it somewhere safe.
         </p>
         <div className={s.buttonRow}>
-          <button
-            type="button"
-            onClick={() => generateIcal.mutate()}
-            className={c.buttonPrimary}
-          >
+          <button type="button" onClick={() => generateIcal.mutate()} className={c.buttonPrimary}>
             Generate calendar URL
           </button>
-          <button
-            type="button"
-            onClick={() => revokeIcal.mutate()}
-            className={c.buttonSecondary}
-          >
+          <button type="button" onClick={() => revokeIcal.mutate()} className={c.buttonSecondary}>
             Revoke
           </button>
         </div>
-        {icalURL && (
-          <code className={s.codeBlock}>{icalURL}</code>
-        )}
+        {icalURL && <code className={s.codeBlock}>{icalURL}</code>}
       </section>
 
       {/* Hidden events */}
       <section className={s.section}>
         <h2 className={c.sectionTitle}>Hidden events</h2>
         <p className={s.desc}>
-          Events you marked "not interested" are hidden from your calendar. Reset to show
-          them all again.
+          Events you marked "not interested" are hidden from your calendar. Reset to show them all
+          again.
         </p>
         <button
           type="button"

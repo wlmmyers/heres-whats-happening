@@ -47,4 +47,7 @@ globalStyle('ol, ul', { listStyle: 'none' });
 
 globalStyle('hr', { height: 0, color: 'inherit', borderTopWidth: '1px' });
 
-globalStyle('code, pre', { fontFamily: 'ui-monospace, monospace', fontSize: '1em' });
+globalStyle('code, pre', {
+  fontFamily: 'ui-monospace, monospace',
+  fontSize: '1em',
+});

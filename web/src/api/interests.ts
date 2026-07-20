@@ -14,7 +14,10 @@ export async function listInterests(): Promise<Interest[]> {
 }
 
 export async function createInterest(value: string): Promise<Interest> {
-  return apiFetch<Interest>('/me/interests', { method: 'POST', body: { value } });
+  return apiFetch<Interest>('/me/interests', {
+    method: 'POST',
+    body: { value },
+  });
 }
 
 export async function deleteInterest(id: string): Promise<void> {

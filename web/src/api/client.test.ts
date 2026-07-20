@@ -40,7 +40,8 @@ describe('apiFetch', () => {
     let call = 0;
     global.fetch = vi.fn().mockImplementation((url: string) => {
       call += 1;
-      if (call === 1) return Promise.resolve(mockJsonResponse(401, { error: { code: 'invalid_token' } }));
+      if (call === 1)
+        return Promise.resolve(mockJsonResponse(401, { error: { code: 'invalid_token' } }));
       if (call === 2 && url.endsWith('/auth/refresh')) {
         return Promise.resolve(mockJsonResponse(200, { access_token: 'fresh' }));
       }
@@ -54,7 +55,9 @@ describe('apiFetch', () => {
 
   it('throws ApiError with status + code on non-2xx (not 401)', async () => {
     global.fetch = vi.fn().mockResolvedValueOnce(
-      mockJsonResponse(400, { error: { code: 'bad_request', message: 'nope' } }),
+      mockJsonResponse(400, {
+        error: { code: 'bad_request', message: 'nope' },
+      }),
     );
     await expect(apiFetch('/me')).rejects.toThrowError(
       expect.objectContaining({ status: 400, code: 'bad_request' }),

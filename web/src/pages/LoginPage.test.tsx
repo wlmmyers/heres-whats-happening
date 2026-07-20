@@ -37,7 +37,10 @@ describe('LoginPage', () => {
     (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('401'));
     (authApi.login as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
     // useAuth().login internally calls getMe again — return the user this time.
-    (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ id: 'u', email: 'a@x' });
+    (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'u',
+      email: 'a@x',
+    });
 
     renderPage();
     await userEvent.type(screen.getByLabelText(/email/i), 'a@x');
@@ -51,7 +54,10 @@ describe('LoginPage', () => {
 
   it('renders error message on failure', async () => {
     (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('401'));
-    const err = Object.assign(new Error('Invalid'), { status: 401, code: 'invalid_credentials' });
+    const err = Object.assign(new Error('Invalid'), {
+      status: 401,
+      code: 'invalid_credentials',
+    });
     (authApi.login as ReturnType<typeof vi.fn>).mockRejectedValueOnce(err);
 
     renderPage();

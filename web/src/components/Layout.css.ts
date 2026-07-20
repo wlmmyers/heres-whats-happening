@@ -1,7 +1,10 @@
 import { style } from '@vanilla-extract/css';
 import { color, radius } from '../styles/theme';
 
-export const page = style({ minHeight: '100vh', backgroundColor: color.gray50 });
+export const page = style({
+  minHeight: '100vh',
+  backgroundColor: color.gray50,
+});
 
 export const header = style({
   backgroundColor: color.white,
@@ -33,7 +36,10 @@ export const navLink = style({
   borderRadius: radius.sm,
 });
 
-export const navLinkActive = style({ backgroundColor: color.blue100, color: color.blue800 });
+export const navLinkActive = style({
+  backgroundColor: color.blue100,
+  color: color.blue800,
+});
 
 export const navLinkInactive = style({
   color: color.gray700,

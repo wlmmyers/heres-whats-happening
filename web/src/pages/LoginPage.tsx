@@ -39,51 +39,49 @@ export default function LoginPage() {
 
   return (
     <div className={s.page}>
-      <img src="/titleLogo.png" alt="Logo" style={{ width: '300px' }} className={s.logo} />
-      <form onSubmit={onSubmit} className={s.form}>
-        <h1 className={s.title}>Sign in</h1>
+      <div className={s.card}>
+        <img src="/titleGraphic1.png" alt="Logo" style={{ width: '300px' }} className={s.logo} />
+        <form onSubmit={onSubmit} className={s.form}>
+          <h1 className={s.title}>Sign in</h1>
 
-        <label className={s.field}>
-          <span className={s.fieldLabel}>Email</span>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            required
-            className={c.textInput}
-          />
-        </label>
+          <label className={s.field}>
+            <span className={s.fieldLabel}>Email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+              required
+              className={c.textInput}
+            />
+          </label>
 
-        <label className={s.field}>
-          <span className={s.fieldLabel}>Password</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-            className={c.textInput}
-          />
-        </label>
+          <label className={s.field}>
+            <span className={s.fieldLabel}>Password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+              className={c.textInput}
+            />
+          </label>
 
-        {error && <div className={s.error}>{error}</div>}
+          {error && <div className={s.error}>{error}</div>}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className={s.submit}
-        >
-          {submitting ? 'Signing in…' : 'Sign in'}
-        </button>
+          <button type="submit" disabled={submitting} className={s.submit}>
+            {submitting ? 'Signing in…' : 'Sign in'}
+          </button>
 
-        <p className={s.switchText}>
-          No account?{' '}
-          <Link to="/signup" className={s.switchLink}>
-            Sign up
-          </Link>
-        </p>
-      </form>
+          <p className={s.switchText}>
+            No account?{' '}
+            <Link to="/signup" className={s.switchLink}>
+              Sign up
+            </Link>
+          </p>
+        </form>
+      </div>
     </div>
   );
 }

@@ -65,11 +65,7 @@ export default function SignupPage() {
 
         {error && <div className={s.error}>{error}</div>}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className={s.submit}
-        >
+        <button type="submit" disabled={submitting} className={s.submit}>
           {submitting ? 'Creating…' : 'Create account'}
         </button>
 

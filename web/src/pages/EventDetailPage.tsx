@@ -33,13 +33,7 @@ export default function EventDetailPage() {
         {`< Calendar`}
       </Link>
 
-      {data.image_url && (
-        <img
-          src={data.image_url}
-          alt={data.title}
-          className={s.cover}
-        />
-      )}
+      {data.image_url && <img src={data.image_url} alt={data.title} className={s.cover} />}
 
       <header className={s.header}>
         <h1 className={s.title}>{data.title}</h1>
@@ -53,20 +47,13 @@ export default function EventDetailPage() {
       <div className={s.score}>{Math.round(data.score * 100)}% match</div>
 
       {matchedBits.length > 0 && (
-        <div className={s.matched}>
-          Matched because: {matchedBits.join(', ')}
-        </div>
+        <div className={s.matched}>Matched because: {matchedBits.join(', ')}</div>
       )}
 
       {data.description && <p className={s.description}>{data.description}</p>}
 
       {data.url && (
-        <a
-          href={data.url}
-          target="_blank"
-          rel="noreferrer"
-          className={s.viewEvent}
-        >
+        <a href={data.url} target="_blank" rel="noreferrer" className={s.viewEvent}>
           View event
         </a>
       )}

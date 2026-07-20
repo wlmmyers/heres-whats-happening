@@ -53,8 +53,14 @@ export const textInput = style({
   paddingBlock: '0.375rem',
 });
 
-export const pageTitle = style({ ...fontSize['2xl'], fontWeight: fontWeight.semibold });
+export const pageTitle = style({
+  ...fontSize['2xl'],
+  fontWeight: fontWeight.semibold,
+});
 
-export const sectionTitle = style({ ...fontSize.lg, fontWeight: fontWeight.medium });
+export const sectionTitle = style({
+  ...fontSize.lg,
+  fontWeight: fontWeight.medium,
+});
 
 export const errorText = style({ ...fontSize.sm, color: color.red600 });
