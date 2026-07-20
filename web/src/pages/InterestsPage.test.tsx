@@ -130,6 +130,9 @@ describe('InterestsPage — Spotify section', () => {
 
     await waitFor(() => expect(screen.getByText('artist-0')).toBeInTheDocument());
     expect(screen.queryByText('artist-24')).not.toBeInTheDocument();
+    // Verify the 20-item cutoff: artist-19 (20th item) should be visible, artist-20 (21st) should not
+    expect(screen.getByText('artist-19')).toBeInTheDocument();
+    expect(screen.queryByText('artist-20')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /show all \(25\)/i }));
     expect(screen.getByText('artist-24')).toBeInTheDocument();
