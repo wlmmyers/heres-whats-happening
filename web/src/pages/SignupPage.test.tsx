@@ -24,7 +24,7 @@ function renderPage() {
       <AuthProvider>
         <Routes>
           <Route path="/signup" element={<SignupPage />} />
-          <Route path="/interests" element={<div>onboarding-route</div>} />
+          <Route path="/interests" element={<div>interests-route</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -32,7 +32,7 @@ function renderPage() {
 }
 
 describe('SignupPage', () => {
-  it('signs up and redirects to onboarding', async () => {
+  it('signs up and redirects to interests', async () => {
     (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('401'));
     (authApi.signup as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       id: 'u',
