@@ -1,6 +1,8 @@
 # Here's What's Happening
 
-A smart live-event calendar based on your interests. Check out the live app at [hereswhatshappening.app](https://hereswhatshappening.app/).
+A smart live-event calendar based on your interests. 
+
+Check out the live app at [hereswhatshappening.app](https://hereswhatshappening.app/).
 
 - 🎯 **A calendar built around you.** Tell us what you're into and we surface the upcoming events worth your time.
 - 🎧 **Connect Spotify in one click.** We read your top artists and genres and automatically turn them into interests that match against live events in your area.
@@ -15,6 +17,10 @@ A smart live-event calendar based on your interests. Check out the live app at [
 - **Custom day-calendar UI builder** — design your own at-a-glance view and render it onto an always-on screen, so today's plans are always in sight.
 - **Support for more cities** — expand support past Seattle to cover more major cities.
 - **Better live sports support** — never miss your team, with richer coverage of games and matchups.
+
+## Architecture Diagram
+
+<img width="1264" height="801" alt="image" src="https://github.com/user-attachments/assets/ba035e2f-bb01-49ee-89b9-b61aafcd7ad3" />
 
 ## Contributing - Prerequisites
 
