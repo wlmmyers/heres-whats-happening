@@ -1,18 +1,7 @@
-import { createContext, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import * as authApi from '../api/auth';
 import type { User } from '../api/auth';
-
-export type AuthStatus = 'loading' | 'authenticated' | 'anonymous';
-
-export interface AuthState {
-  user: User | null;
-  status: AuthStatus;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-}
-
-export const AuthContext = createContext<AuthState | undefined>(undefined);
+import { AuthContext, type AuthStatus } from './context';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

@@ -76,3 +76,11 @@ export const screen = style({
   justifyContent: 'center',
   zIndex: 2,
 });
+
+export const bodySection = style({
+  marginTop: '1rem',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  gap: '0.5rem',
+});

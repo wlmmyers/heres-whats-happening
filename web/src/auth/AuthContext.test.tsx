@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { AuthProvider } from './AuthContext';
 import { useAuth } from './useAuth';
 
@@ -64,20 +65,18 @@ describe('AuthProvider', () => {
       email: 'b@x',
     });
 
-    let auth: ReturnType<typeof useAuth>;
-    function Capture() {
-      auth = useAuth();
-      return <Probe />;
+    function LoginButton() {
+      const { login } = useAuth();
+      return <button onClick={() => login('b@x', 'pw')}>do-login</button>;
     }
     render(
       <AuthProvider>
-        <Capture />
+        <Probe />
+        <LoginButton />
       </AuthProvider>,
     );
     await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('anonymous'));
-    await act(async () => {
-      await auth!.login('b@x', 'pw');
-    });
+    await userEvent.click(screen.getByRole('button', { name: 'do-login' }));
     await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
     expect(screen.getByTestId('email').textContent).toBe('b@x');
   });

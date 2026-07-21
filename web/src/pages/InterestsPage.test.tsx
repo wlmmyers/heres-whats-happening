@@ -90,10 +90,12 @@ describe('InterestsPage', () => {
     await waitFor(() => expect(screen.getByText('theater')).toBeInTheDocument());
   });
 
-  it('Continue navigates to calendar', async () => {
+  it('Go to Calendar navigates to calendar', async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByRole('button', { name: /continue/i })).toBeEnabled());
-    await userEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /go to calendar/i })).toBeEnabled(),
+    );
+    await userEvent.click(screen.getByRole('button', { name: /go to calendar/i }));
     expect(screen.getByText(/calendar-route/)).toBeInTheDocument();
   });
 });
@@ -106,9 +108,9 @@ describe('InterestsPage — Spotify section', () => {
     ]);
     renderPage();
 
-    await waitFor(() => expect(screen.getByText('Top artists')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Spotify-derived artists/)).toBeInTheDocument());
     expect(screen.getByText('Alvvays')).toBeInTheDocument();
-    expect(screen.getByText('Top genres')).toBeInTheDocument();
+    expect(screen.getByText('Spotify-derived genre interests')).toBeInTheDocument();
     expect(screen.getByText('Shoegaze')).toBeInTheDocument();
   });
 
@@ -125,7 +127,11 @@ describe('InterestsPage — Spotify section', () => {
   it('collapses groups longer than 20 and expands on click', async () => {
     const many = Array.from({ length: 25 }, (_, i) => spotifyInterest(`artist-${i}`));
     (spotifyInterestsApi.listSpotifyInterests as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { kind: 'spotify_saved_song_artist', label: 'Artists from your saved songs', interests: many },
+      {
+        kind: 'spotify_saved_song_artist',
+        label: 'Artists from your saved songs',
+        interests: many,
+      },
     ]);
     renderPage();
 
@@ -138,22 +144,28 @@ describe('InterestsPage — Spotify section', () => {
     await userEvent.click(screen.getByRole('button', { name: /show all \(25\)/i }));
     expect(screen.getByText('artist-24')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /show less/i }));
+    await userEvent.click(screen.getByRole('button', { name: /show fewer/i }));
     expect(screen.queryByText('artist-24')).not.toBeInTheDocument();
   });
 
   it('hides the section entirely when there are no groups and Spotify is not connected', async () => {
     (spotifyInterestsApi.listSpotifyInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: false });
+    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      connected: false,
+    });
     renderPage();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /continue/i })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /go to calendar/i })).toBeEnabled(),
+    );
     expect(screen.queryByText(/from your spotify/i)).not.toBeInTheDocument();
   });
 
   it('shows a pending message when connected but nothing scraped yet', async () => {
     (spotifyInterestsApi.listSpotifyInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: true });
+    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      connected: true,
+    });
     renderPage();
 
     await waitFor(() =>
@@ -162,7 +174,9 @@ describe('InterestsPage — Spotify section', () => {
   });
 
   it('does not show the "haven\'t pulled yet" copy while spotify interests are still loading', async () => {
-    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: true });
+    (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      connected: true,
+    });
 
     let resolveInterests!: (value: SpotifyInterestGroup[]) => void;
     const deferred = new Promise<SpotifyInterestGroup[]>((resolve) => {

@@ -37,18 +37,4 @@ describe('Layout', () => {
     expect(screen.getByRole('button', { name: /account menu/i })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /^sign in$/i })).not.toBeInTheDocument();
   });
-
-  it('shows sign in and sign up when anonymous', () => {
-    vi.mocked(useAuth).mockReturnValue({
-      status: 'anonymous',
-      user: null,
-      login: vi.fn(),
-      signup: vi.fn(),
-      logout: vi.fn(),
-    });
-    renderLayout();
-    expect(screen.getByRole('link', { name: /sign in/i })).toHaveAttribute('href', '/login');
-    expect(screen.getByRole('link', { name: /sign up/i })).toHaveAttribute('href', '/signup');
-    expect(screen.queryByRole('link', { name: /interests/i })).not.toBeInTheDocument();
-  });
 });

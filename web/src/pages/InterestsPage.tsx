@@ -20,6 +20,7 @@ export default function InterestsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [spotifyInterestsExpanded, setSpotifyInterestsExpanded] = useState(false);
+  const [spotifyGenresExpanded, setSpotifyGenresExpanded] = useState(false);
 
   const { data: interests = [] } = useQuery<Interest[]>({
     queryKey: ['interests'],
@@ -28,7 +29,9 @@ export default function InterestsPage() {
 
   // Loaded independently of status: if groups arrive first we render them
   // immediately rather than blocking on the status request.
-  const { data: spotifyGroups = [] } = useQuery<SpotifyInterestGroup[]>({
+  const { data: spotifyGroups = [], isPending: spotifyGroupsPending } = useQuery<
+    SpotifyInterestGroup[]
+  >({
     queryKey: ['spotifyInterests'],
     queryFn: listSpotifyInterests,
   });
@@ -52,16 +55,18 @@ export default function InterestsPage() {
 
   const values = interests.map((i) => i.value);
 
-  function toggleExpanded() {
-    setSpotifyInterestsExpanded((prev) => !prev);
-  }
-
   // This page doubles as the signup onboarding step, so a brand-new user with
   // no Spotify connection must not see a dead-end "go connect Spotify" prompt
   // mid-signup. Show the section only when it has something to say.
   const showSpotify = spotifyGroups.length > 0 || spotifyStatus?.connected === true;
-  const spotifyAllInterests = spotifyGroups.flatMap((g) => g.interests);
-  const spotifyUniqueArtists = new Set(spotifyAllInterests.map((i) => i.value));
+  const spotifyAllArtistInterests = spotifyGroups
+    .filter((i) => i.kind !== 'spotify_top_genre')
+    .flatMap((g) => g.interests);
+  const spotifyGenreInterests = spotifyGroups
+    .filter((i) => i.kind === 'spotify_top_genre')
+    .flatMap((g) => g.interests);
+  const spotifyUniqueArtists = new Set(spotifyAllArtistInterests.map((i) => i.value));
+  const spotifyUniqueGenres = new Set(spotifyGenreInterests.map((i) => i.value));
 
   return (
     <div>
@@ -84,27 +89,58 @@ export default function InterestsPage() {
       {showSpotify && (
         <section className={c.section}>
           <h2 className={s.sectionHeading}>From your Spotify</h2>
-          {spotifyGroups.length === 0 ? (
+          {spotifyGroupsPending ? null : spotifyGroups.length === 0 ? (
             <p className={s.emptyNote}>
               We haven't pulled your listening history yet. Check back soon.
             </p>
           ) : (
             <div>
-              <p className={s.lead}>
-                Spotify-derived artists from your top artists, top tracks, and liked songs
-              </p>
-              <TagList
-                values={
-                  spotifyInterestsExpanded
-                    ? Array.from(spotifyUniqueArtists)
-                    : Array.from(spotifyUniqueArtists).slice(0, COLLAPSE_AT)
-                }
-              />
-              {spotifyUniqueArtists.size > COLLAPSE_AT && (
-                <button type="button" className={s.showAllButton} onClick={() => toggleExpanded()}>
-                  {spotifyInterestsExpanded ? 'Show fewer' : 'Show all'}
-                </button>
-              )}
+              <section className={c.bodySection}>
+                <p className={s.lead}>
+                  Spotify-derived artists from your top artists, top tracks, and liked songs
+                </p>
+                <TagList
+                  values={
+                    spotifyInterestsExpanded
+                      ? Array.from(spotifyUniqueArtists)
+                      : Array.from(spotifyUniqueArtists).slice(0, COLLAPSE_AT)
+                  }
+                />
+                {spotifyUniqueArtists.size > COLLAPSE_AT && (
+                  <button
+                    type="button"
+                    className={s.showAllButton}
+                    onClick={() => {
+                      setSpotifyInterestsExpanded((prev) => !prev);
+                    }}
+                  >
+                    {spotifyInterestsExpanded
+                      ? 'Show fewer'
+                      : `Show all (${spotifyUniqueArtists.size})`}
+                  </button>
+                )}
+              </section>
+              <section className={c.bodySection}>
+                <p className={s.lead}>Spotify-derived genre interests</p>
+                <TagList
+                  values={
+                    spotifyGenresExpanded
+                      ? Array.from(spotifyUniqueGenres)
+                      : Array.from(spotifyUniqueGenres).slice(0, COLLAPSE_AT)
+                  }
+                />
+                {spotifyUniqueGenres.size > COLLAPSE_AT && (
+                  <button
+                    type="button"
+                    className={s.showAllButton}
+                    onClick={() => {
+                      setSpotifyGenresExpanded((prev) => !prev);
+                    }}
+                  >
+                    {spotifyGenresExpanded ? 'Show fewer' : `Show all (${spotifyUniqueGenres.size})`}
+                  </button>
+                )}
+              </section>
             </div>
           )}
         </section>
