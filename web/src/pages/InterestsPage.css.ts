@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { buttonPrimary, errorText } from '../styles/common.css';
-import { color, fontSize } from '../styles/theme';
+import { color, fontSize, radius } from '../styles/theme';
 
 export const lead = style({
   color: color.gray600,
@@ -40,4 +40,16 @@ export const showAllButton = style({
 export const emptyNote = style({
   color: color.gray600,
   ...fontSize.sm,
+});
+
+export const connectButton = style({
+  backgroundColor: color.green600,
+  color: color.white,
+  borderRadius: radius.sm,
+  paddingInline: '1rem',
+  paddingBlock: '0.5rem',
+  selectors: {
+    '&:hover': { backgroundColor: color.green700 },
+    '&:disabled': { opacity: 0.6 },
+  },
 });

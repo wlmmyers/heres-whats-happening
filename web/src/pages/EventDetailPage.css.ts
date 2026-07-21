@@ -25,7 +25,7 @@ export const thumbnail = style({
 export const header = style({
   marginTop: '1rem',
   display: 'flex',
-  alignItems: 'flex-start',
+  justifyContent: 'space-between',
   gap: '1rem',
   '@media': {
     'screen and (max-width: 768px)': { flexDirection: 'column' },
@@ -46,7 +46,7 @@ export const venue = style({ color: color.gray600, marginTop: '0.25rem' });
 export const score = style({
   ...fontSize.sm,
   color: color.gray500,
-  marginTop: '1rem',
+  marginTop: '0.5rem',
 });
 
 export const matched = style({

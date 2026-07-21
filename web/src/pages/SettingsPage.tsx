@@ -6,13 +6,15 @@ import { getMe } from '../api/auth';
 import { updateMatchThreshold, MIN_THRESHOLD, MAX_THRESHOLD } from '../api/match';
 import { resetNotInterested } from '../api/notInterested';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { useAuth } from '../auth/useAuth';
 import * as s from './SettingsPage.css';
 import * as c from '../styles/common.css';
 
 export default function SettingsPage() {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const { data: spotifyStatus, isLoading: spotifyStatusLoading } = useQuery({
-    queryKey: ['spotify-status'],
+    queryKey: ['spotify-status', user?.id],
     queryFn: getSpotifyStatus,
   });
   const connectSpotifyMut = useMutation({
@@ -29,7 +31,7 @@ export default function SettingsPage() {
     },
   });
 
-  const { data: me } = useQuery({ queryKey: ['me'], queryFn: getMe });
+  const { data: me } = useQuery({ queryKey: ['me', user?.id], queryFn: getMe });
   const loadedPercent = Math.round((me?.score_threshold ?? 0.3) * 100);
   const [percent, setPercent] = useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -76,128 +78,131 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <h1 className={c.pageTitle}>Settings</h1>
-
-      {/* Match sensitivity */}
-      <section className={s.section}>
-        <h2 className={c.sectionTitle}>Match sensitivity</h2>
-        <p className={s.desc}>
-          Lower = more events; higher = stricter, fewer but more relevant events.
-        </p>
-        <div className={s.sliderRow}>
-          <input
-            type="range"
-            aria-label="Match sensitivity"
-            min={minPercent}
-            max={maxPercent}
-            step={1}
-            value={effectivePercent}
-            onChange={(e) => {
-              setPercent(Number(e.target.value));
-              setSaveError(false);
-            }}
-            className={s.slider}
-          />
-          <span className={s.percent}>{effectivePercent}%</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => setConfirmOpen(true)}
-          disabled={!dirty || saveThreshold.isPending}
-          className={s.saveButton}
-        >
-          Save threshold
-        </button>
-        {saveError && (
-          <p role="alert" className={s.error}>
-            Could not update your threshold. Please try again.
+      <div className={c.pageHeader}>
+        <h1 className={c.pageTitle}>Settings</h1>
+      </div>
+      <div>
+        {/* Match sensitivity */}
+        <section className={c.section}>
+          <h2 className={c.sectionTitle}>Match sensitivity</h2>
+          <p className={s.desc}>
+            Lower = more events; higher = stricter, fewer but more relevant events.
           </p>
-        )}
-      </section>
+          <div className={s.sliderRow}>
+            <input
+              type="range"
+              aria-label="Match sensitivity"
+              min={minPercent}
+              max={maxPercent}
+              step={1}
+              value={effectivePercent}
+              onChange={(e) => {
+                setPercent(Number(e.target.value));
+                setSaveError(false);
+              }}
+              className={s.slider}
+            />
+            <span className={s.percent}>{effectivePercent}%</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+            disabled={!dirty || saveThreshold.isPending}
+            className={s.saveButton}
+          >
+            Save threshold
+          </button>
+          {saveError && (
+            <p role="alert" className={s.error}>
+              Could not update your threshold. Please try again.
+            </p>
+          )}
+        </section>
 
-      {/* Spotify */}
-      <section className={s.section}>
-        <h2 className={c.sectionTitle}>Spotify</h2>
-        <p className={s.desc}>
-          Connect Spotify to get matches based on your top artists and genres.
-        </p>
-        {!spotifyStatusLoading && (
-          <div className={s.row}>
-            {spotifyStatus?.connected ? (
-              <>
-                <span className={s.connectedText}>Connected.</span>
+        {/* Spotify */}
+        <section className={c.section}>
+          <h2 className={c.sectionTitle}>Spotify</h2>
+          <p className={s.desc}>
+            Connect Spotify to get matches based on your top artists and genres.
+          </p>
+          {!spotifyStatusLoading && (
+            <div className={s.row}>
+              {spotifyStatus?.connected ? (
+                <>
+                  <span className={s.connectedText}>Connected.</span>
+                  <button
+                    type="button"
+                    onClick={() => disconnectSpotifyMut.mutate()}
+                    disabled={disconnectSpotifyMut.isPending}
+                    className={c.buttonSecondary}
+                  >
+                    Disconnect
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => disconnectSpotifyMut.mutate()}
-                  disabled={disconnectSpotifyMut.isPending}
-                  className={c.buttonSecondary}
+                  onClick={() => connectSpotifyMut.mutate()}
+                  disabled={connectSpotifyMut.isPending}
+                  className={s.connectButton}
                 >
-                  Disconnect
+                  Connect Spotify
                 </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => connectSpotifyMut.mutate()}
-                disabled={connectSpotifyMut.isPending}
-                className={s.connectButton}
-              >
-                Connect Spotify
-              </button>
-            )}
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* iCal */}
+        <section className={c.section}>
+          <h2 className={c.sectionTitle}>Calendar subscription</h2>
+          <p className={s.desc}>
+            Generate a URL you can paste into iOS Calendar, Google Calendar, or Fantastical to
+            subscribe to your matched events.
+          </p>
+          <div className={s.buttonRow}>
+            <button type="button" onClick={() => generateIcal.mutate()} className={c.buttonPrimary}>
+              Generate calendar URL
+            </button>
+            <button type="button" onClick={() => revokeIcal.mutate()} className={c.buttonSecondary}>
+              Revoke
+            </button>
           </div>
-        )}
-      </section>
+          {icalURL && <code className={s.codeBlock}>{icalURL}</code>}
+        </section>
 
-      {/* iCal */}
-      <section className={s.section}>
-        <h2 className={c.sectionTitle}>Calendar subscription</h2>
-        <p className={s.desc}>
-          Generate a URL you can paste into iOS Calendar, Google Calendar, or Fantastical to
-          subscribe to your matched events.
-        </p>
-        <div className={s.buttonRow}>
-          <button type="button" onClick={() => generateIcal.mutate()} className={c.buttonPrimary}>
-            Generate calendar URL
+        {/* Hidden events */}
+        <section className={c.section}>
+          <h2 className={c.sectionTitle}>Hidden events</h2>
+          <p className={s.desc}>
+            Events you marked "not interested" are hidden from your calendar. Reset to show them all
+            again.
+          </p>
+          <button
+            type="button"
+            onClick={() => setResetConfirmOpen(true)}
+            disabled={resetNotInterestedMut.isPending}
+            className={s.resetButton}
+          >
+            Reset not-interested list
           </button>
-          <button type="button" onClick={() => revokeIcal.mutate()} className={c.buttonSecondary}>
-            Revoke
-          </button>
-        </div>
-        {icalURL && <code className={s.codeBlock}>{icalURL}</code>}
-      </section>
+        </section>
 
-      {/* Hidden events */}
-      <section className={s.section}>
-        <h2 className={c.sectionTitle}>Hidden events</h2>
-        <p className={s.desc}>
-          Events you marked "not interested" are hidden from your calendar. Reset to show them all
-          again.
-        </p>
-        <button
-          type="button"
-          onClick={() => setResetConfirmOpen(true)}
-          disabled={resetNotInterestedMut.isPending}
-          className={s.resetButton}
-        >
-          Reset not-interested list
-        </button>
-      </section>
-
-      <ConfirmDialog
-        open={confirmOpen}
-        title="Update match threshold?"
-        message="Updating your match threshold will recalculate all of your recommended events. Continue?"
-        onConfirm={() => saveThreshold.mutate(effectivePercent / 100)}
-        onCancel={() => setConfirmOpen(false)}
-      />
-      <ConfirmDialog
-        open={resetConfirmOpen}
-        title="Reset not-interested list?"
-        message="This clears every event you've marked 'not interested'. They may reappear in your calendar. Continue?"
-        onConfirm={() => resetNotInterestedMut.mutate()}
-        onCancel={() => setResetConfirmOpen(false)}
-      />
+        <ConfirmDialog
+          open={confirmOpen}
+          title="Update match threshold?"
+          message="Updating your match threshold will recalculate all of your recommended events. Continue?"
+          onConfirm={() => saveThreshold.mutate(effectivePercent / 100)}
+          onCancel={() => setConfirmOpen(false)}
+        />
+        <ConfirmDialog
+          open={resetConfirmOpen}
+          title="Reset not-interested list?"
+          message="This clears every event you've marked 'not interested'. They may reappear in your calendar. Continue?"
+          onConfirm={() => resetNotInterestedMut.mutate()}
+          onCancel={() => setResetConfirmOpen(false)}
+        />
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { exchangeSpotifyCode } from '../api/spotify';
 import * as s from './SpotifyCallbackPage.css';
+import * as c from '../styles/common.css';
 
 type Status = 'exchanging' | 'success' | 'error';
 
@@ -48,7 +49,7 @@ export default function SpotifyCallbackPage() {
 
   if (status === 'error') {
     return (
-      <div className={s.container}>
+      <div className={c.pageHeader}>
         <h1 className={s.title}>Spotify connection failed</h1>
         <p className={s.message}>{errorMsg}</p>
         <button
@@ -64,7 +65,7 @@ export default function SpotifyCallbackPage() {
 
   if (status === 'success') {
     return (
-      <div className={s.container}>
+      <div className={c.pageHeader}>
         <h1 className={s.title}>Spotify connected ✓</h1>
         <p className={s.message}>Redirecting you to your calendar…</p>
       </div>
@@ -72,7 +73,7 @@ export default function SpotifyCallbackPage() {
   }
 
   return (
-    <div className={s.container}>
+    <div className={c.pageHeader}>
       <h1 className={s.title}>Connecting Spotify…</h1>
       <p className={s.message}>Hang on a sec.</p>
     </div>

@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
+import RotatingLogo from './RotatingLogo';
 import * as s from './LoginForm.css';
 import * as c from '../styles/common.css';
 
@@ -11,7 +12,7 @@ export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
   const [submitting, setSubmitting] = useState(false);
   const { login } = useAuth();
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
@@ -32,8 +33,8 @@ export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
 
   return (
     <div className={s.loginCard}>
-      <img src="/titleGraphic1.png" alt="Logo" style={{ width: '320px' }} className={s.logo} />
-      <p className={s.subtitle}>A smart live-event calendar based on your interests</p>
+      <RotatingLogo />
+      <p className={s.subtitle}>A live-event calendar based on your interests</p>
       <form onSubmit={onSubmit} className={s.form}>
         <h1 className={s.title}>Sign in</h1>
 

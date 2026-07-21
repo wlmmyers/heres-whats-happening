@@ -26,12 +26,14 @@ vi.mock('../api/notInterested', () => ({
   markNotInterested: vi.fn(),
   resetNotInterested: vi.fn(),
 }));
+vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
 
 import * as icalApi from '../api/ical';
 import * as spotifyApi from '../api/spotify';
 import * as authApi from '../api/auth';
 import * as matchApi from '../api/match';
 import * as niApi from '../api/notInterested';
+import { useAuth } from '../auth/useAuth';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -48,6 +50,13 @@ function renderPage() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(useAuth).mockReturnValue({
+    status: 'authenticated',
+    user: { id: 'u1', email: 'a@x' },
+    login: vi.fn(),
+    signup: vi.fn(),
+    logout: vi.fn(),
+  });
   (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
     connected: false,
   });

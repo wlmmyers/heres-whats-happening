@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { getCalendar, type CalendarEvent } from '../api/calendar';
 import { markNotInterested } from '../api/notInterested';
-import { useAuth } from '../auth/useAuth';
 import EventCard from '../components/EventCard';
-import LoginDialog from '../components/LoginDialog';
 import Spinner from '../components/Spinner';
 import clsx from 'clsx';
 import * as s from './CalendarPage.css';
 import * as c from '../styles/common.css';
+import { getSpotifyStatus, startSpotifyConnect } from '../api/spotify';
+import { useAuth } from '../auth/useAuth';
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -22,8 +22,7 @@ const RANGE_OPTIONS = [
 
 export default function CalendarPage() {
   const qc = useQueryClient();
-  const { status } = useAuth();
-  const loggedOut = status === 'anonymous';
+  const { user } = useAuth();
   const [months, setMonths] = useState(3);
 
   const today = new Date();
@@ -31,12 +30,23 @@ export default function CalendarPage() {
   const from = isoDate(today);
   const to = isoDate(end);
 
-  const calendarKey = ['calendar', from, to, loggedOut] as const;
+  const calendarKey = ['calendar', user?.id, from, to] as const;
+
+  const { data: spotifyStatus } = useQuery({
+    queryKey: ['spotify-status', user?.id],
+    queryFn: getSpotifyStatus,
+  });
+
+  const connectSpotifyMut = useMutation({
+    mutationFn: startSpotifyConnect,
+    onSuccess: (authorizeURL) => {
+      window.location.assign(authorizeURL);
+    },
+  });
 
   const { data, isLoading, isError } = useQuery<CalendarEvent[]>({
     queryKey: calendarKey,
-    queryFn: () => getCalendar(from, to, loggedOut),
-    enabled: status !== 'loading',
+    queryFn: () => getCalendar(from, to),
     placeholderData: keepPreviousData,
   });
 
@@ -60,39 +70,33 @@ export default function CalendarPage() {
     },
   });
 
-  if (status === 'loading') {
-    return <Spinner />;
-  }
-
   return (
     <div>
-      <header className={s.header}>
+      <div className={c.pageHeader}>
         <h1 className={c.pageTitle}>Your matched calendar</h1>
-        {!loggedOut && (
-          <div className={s.controls}>
-            <span className={s.controlLabel}>Show events for next:</span>
-            <div className={s.segment}>
-              {RANGE_OPTIONS.map((opt) => {
-                const active = opt.months === months;
-                return (
-                  <button
-                    key={opt.months}
-                    type="button"
-                    onClick={() => setMonths(opt.months)}
-                    aria-pressed={active}
-                    className={clsx(
-                      s.rangeButton,
-                      active ? s.rangeButtonActive : s.rangeButtonInactive,
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
+        <div className={s.controls}>
+          <span className={s.controlLabel}>Show events for next:</span>
+          <div className={s.segment}>
+            {RANGE_OPTIONS.map((opt) => {
+              const active = opt.months === months;
+              return (
+                <button
+                  key={opt.months}
+                  type="button"
+                  onClick={() => setMonths(opt.months)}
+                  aria-pressed={active}
+                  className={clsx(
+                    s.rangeButton,
+                    active ? s.rangeButtonActive : s.rangeButtonInactive,
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
-        )}
-      </header>
+        </div>
+      </div>
 
       {isLoading ? (
         <Spinner />
@@ -100,30 +104,35 @@ export default function CalendarPage() {
         <div className={s.errorBox}>Couldn't load your calendar.</div>
       ) : events.length === 0 ? (
         <div className={s.emptyState}>
-          No upcoming matches yet. Add some interests on the{' '}
+          No upcoming matches yet. <br /> Try{' '}
+          {spotifyStatus && !spotifyStatus.connected && (
+            <>
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  connectSpotifyMut.mutate();
+                }}
+                className={s.inlineLink}
+              >
+                connecting your Spotify
+              </a>{' '}
+              to supercharge your matches or{' '}
+            </>
+          )}
           <a href="/interests" className={s.inlineLink}>
-            Interests
+            adding some interests
           </a>{' '}
-          page or wait for the next match run.
+          manually.
         </div>
       ) : (
         <ul className={s.list}>
-          {events.map((e, i) => (
-            <li key={e.id} className={i > 0 ? s.listItem : undefined}>
-              <EventCard
-                event={e}
-                interactive={!loggedOut}
-                onNotInterested={loggedOut ? undefined : (id) => notInterested.mutate(id)}
-              />
+          {events.map((e) => (
+            <li key={e.id} className={s.listItem}>
+              <EventCard event={e} interactive onNotInterested={(id) => notInterested.mutate(id)} />
             </li>
           ))}
         </ul>
-      )}
-
-      {loggedOut && (
-        <div className={c.screen}>
-          <LoginDialog />
-        </div>
       )}
     </div>
   );
