@@ -1,6 +1,6 @@
 # Here's What's Happening
 
-A smart live-event calendar based on your interests. 
+A smart live-event calendar based on your interests, currently focused on Seattle area events 
 
 Check out the live app at [hereswhatshappening.app](https://hereswhatshappening.app/).
 
