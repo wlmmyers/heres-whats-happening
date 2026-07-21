@@ -66,3 +66,13 @@ export const sectionTitle = style({
 export const section = style([card, { padding: '1rem', marginTop: '1.5rem' }]);
 
 export const errorText = style({ ...fontSize.sm, color: color.red600 });
+
+export const screen = style({
+  position: 'fixed',
+  inset: 0,
+  backgroundColor: color.blackA40,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 2,
+});

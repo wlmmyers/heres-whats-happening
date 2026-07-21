@@ -48,4 +48,14 @@ describe('EventCard', () => {
     fireEvent.click(screen.getByRole('button', { name: /not interested/i }));
     expect(onNotInterested).toHaveBeenCalledWith('e1');
   });
+
+  it('renders no link when not interactive', () => {
+    render(
+      <MemoryRouter>
+        <EventCard event={event} interactive={false} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText('PB Live')).toBeInTheDocument();
+  });
 });

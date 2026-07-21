@@ -65,7 +65,15 @@ export const notInterestedRow = style({
 });
 
 export const notInterestedButton = style({
-  ...fontSize.sm,
+  ...fontSize.xs,
+  fontWeight: fontWeight.medium,
+  border: '1px solid',
+  borderColor: color.gray200,
+  borderRadius: radius.sm,
+  paddingInline: '0.5rem',
+  paddingBlock: '0.25rem',
+  backgroundColor: color.white,
+  ...transition,
   color: color.gray500,
-  ':hover': { color: color.red600 },
+  ':hover': { color: color.red600, borderColor: color.red600 },
 });

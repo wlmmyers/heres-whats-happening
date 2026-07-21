@@ -102,7 +102,7 @@ export default function InterestsPage() {
               />
               {spotifyUniqueArtists.size > COLLAPSE_AT && (
                 <button type="button" className={s.showAllButton} onClick={() => toggleExpanded()}>
-                  {spotifyInterestsExpanded ? 'Show less' : 'Show all'}
+                  {spotifyInterestsExpanded ? 'Show fewer' : 'Show all'}
                 </button>
               )}
             </div>

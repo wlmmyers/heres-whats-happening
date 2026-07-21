@@ -154,7 +154,7 @@ export default function SettingsPage() {
         <h2 className={c.sectionTitle}>Calendar subscription</h2>
         <p className={s.desc}>
           Generate a URL you can paste into iOS Calendar, Google Calendar, or Fantastical to
-          subscribe to your matched events. The URL is shown once — store it somewhere safe.
+          subscribe to your matched events.
         </p>
         <div className={s.buttonRow}>
           <button type="button" onClick={() => generateIcal.mutate()} className={c.buttonPrimary}>

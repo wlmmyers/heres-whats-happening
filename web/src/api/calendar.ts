@@ -1,4 +1,5 @@
 import { apiFetch } from './client';
+import loggedOutData from './logged-out-calendar-data.json';
 
 export interface MatchedBecause {
   performers: string[];
@@ -18,7 +19,14 @@ export interface CalendarEvent {
   matched_because: MatchedBecause;
 }
 
-export async function getCalendar(from: string, to: string): Promise<CalendarEvent[]> {
+export async function getCalendar(
+  from: string,
+  to: string,
+  loggedOut = false,
+): Promise<CalendarEvent[]> {
+  if (loggedOut) {
+    return (loggedOutData as { events: CalendarEvent[] }).events;
+  }
   const params = new URLSearchParams({ from, to });
   const out = await apiFetch<{ events: CalendarEvent[] }>(`/me/calendar?${params.toString()}`);
   return out.events;

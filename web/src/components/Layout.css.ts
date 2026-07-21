@@ -9,11 +9,16 @@ export const page = style({
 export const header = style({
   backgroundColor: color.white,
   borderBottomWidth: '1px',
-  paddingInline: '1rem',
-  paddingBlock: '0.75rem',
+  padding: '0 1rem',
   display: 'flex',
   alignItems: 'center',
   gap: '0.5rem',
+  position: 'fixed',
+  top: 0,
+  right: 0,
+  left: 0,
+  zIndex: 1,
+  height: '4rem',
 });
 
 // backgroundImage stays inline (set in JSX)
@@ -26,6 +31,7 @@ export const logo = style({
 export const main = style({
   maxWidth: '60rem',
   marginInline: 'auto',
+  marginTop: '4rem',
   paddingInline: '1rem',
   paddingBlock: '1.5rem',
 });
@@ -44,4 +50,10 @@ export const navLinkActive = style({
 export const navLinkInactive = style({
   color: color.gray700,
   ':hover': { backgroundColor: color.gray100 },
+});
+
+export const authActions = style({
+  marginLeft: 'auto',
+  display: 'flex',
+  gap: '0.5rem',
 });

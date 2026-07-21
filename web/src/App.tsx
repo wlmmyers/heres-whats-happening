@@ -14,20 +14,41 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
-      <Route
-        path="/"
-        element={
-          <RequireAuth>
-            <Layout />
-          </RequireAuth>
-        }
-      >
+      <Route path="/" element={<Layout />}>
         <Route index element={<Navigate to="/calendar" replace />} />
-        <Route path="interests" element={<InterestsPage />} />
         <Route path="calendar" element={<CalendarPage />} />
-        <Route path="events/:id" element={<EventDetailPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="integrations/spotify/callback" element={<SpotifyCallbackPage />} />
+        <Route
+          path="interests"
+          element={
+            <RequireAuth>
+              <InterestsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="events/:id"
+          element={
+            <RequireAuth>
+              <EventDetailPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="settings"
+          element={
+            <RequireAuth>
+              <SettingsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="integrations/spotify/callback"
+          element={
+            <RequireAuth>
+              <SpotifyCallbackPage />
+            </RequireAuth>
+          }
+        />
       </Route>
     </Routes>
   );

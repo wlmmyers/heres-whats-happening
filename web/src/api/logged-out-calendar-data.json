@@ -1,0 +1,293 @@
+{
+  "events": [
+    {
+      "id": "4a2687ec-98b9-4cb5-bc87-b24e686fb4c4",
+      "title": "Of Monsters and Men - The Mouse Parade Tour",
+      "description": "The Paramount Theatre is located in downtown Seattle at 911 Pine Street, Seattle, WA 98101 There is an 8 ticket limit per patron for this event. Accounts found in violation of the posted ticket limit may be cancelled with out notice. TM+ Resale is disabled. Ticket transferring is delayed until 7 days to show. Mobile barcodes delayed until 4 days to show. This event is Main Floor- General Admission Flat Floor / Balcony- Reserved The ADA section on the seating map does not represent a specific seat location. All sales are final. No refunds or exchanges. Venue reserves the right to change delivery methods. Unless otherwise noted, each person must have a ticket regardless of age. No babies in arms. There is no elevator. Stairs only to the balcony level. .",
+      "starts_at": "2026-07-29T03:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/513/ab5f6d9d-4068-45ba-912e-1423477a0513_EVENT_DETAIL_PAGE_16_9.jpg",
+      "url": "https://www.ticketmaster.com/of-monsters-and-men-the-mouse-seattle-washington-07-28-2026/event/0F006483B0B4E824",
+      "venue": {
+        "name": "Paramount Theatre",
+        "address": "911 Pine St"
+      },
+      "score": 0.347004464501325,
+      "matched_because": {
+        "performers": [],
+        "genres": ["folk"]
+      }
+    },
+    {
+      "id": "6f725ec8-5670-4014-9e28-a3f2d9235da9",
+      "title": "Benson Boone: Wanted Man Tour",
+      "description": "Please visit our website to view the Arena Guide with Bag Policy and Prohibited Items list.",
+      "starts_at": "2026-08-05T03:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/0e7/8bbe8a01-a752-48ea-84d9-78fa979cf0e7_TABLET_LANDSCAPE_3_2.jpg",
+      "url": "https://www.ticketmaster.com/benson-boone-wanted-man-tour-seattle-washington-08-04-2026/event/0F00647926C50CF3",
+      "venue": {
+        "name": "Climate Pledge Arena",
+        "address": "334 1st Ave N"
+      },
+      "score": 0.35384910156408805,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "1be04896-0210-4cf7-ac80-bb3064f8c9e7",
+      "title": "Acid Bath",
+      "description": "The Paramount Theatre is located at 911 Pine Street in Downtown Seattle. There is a ticket limit of 8 tickets per person and per credit card on this event. Patrons exceeding the ticket limit will have their orders canceled at the venue's discretion. All sales are final. No refunds or exchanges. Mobile barcodes delayed until 4 days prior to event. Venue reserves the right to change delivery methods. Unless otherwise noted, each person must have a ticket regardless of age. No babies in arms. There is no elevator. Stairs only to the balcony level.",
+      "starts_at": "2026-08-09T02:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/887/02d93316-06dd-4e49-97e8-908fc1ad9887_TABLET_LANDSCAPE_LARGE_16_9.jpg",
+      "url": "https://www.ticketmaster.com/acid-bath-seattle-washington-08-08-2026/event/0F006477B8B3B55F",
+      "venue": {
+        "name": "Paramount Theatre",
+        "address": "911 Pine St"
+      },
+      "score": 0.3622992091580563,
+      "matched_because": {
+        "performers": [],
+        "genres": ["metal"]
+      }
+    },
+    {
+      "id": "c8a1df5c-83b9-4123-966d-729d4e5c5988",
+      "title": "Goose",
+      "description": "In partnership with Goose, $1 per ticket will be contributed by STG to benefit Western Sun Foundation. No portion of the ticket purchase is tax deductible. Western Sun Foundation is a volunteer-run 501(c)3 nonprofit organization that provides charitable support in the form of financial gifts to small-midsized nonprofits in the communities? fans of Goose travel through. For more information, please visit https://westernsunfoundation.org/. Looking to upgrade your experience? Amplified Access is here! Add-on Amplified Access for expedited entry, dedicated bar access with exclusive drink options, mobile merch ordering, complimentary WAMU Theater Welcome Gift, complimentary coat check (seasonally), and more! Please note that WAMU Theater Amplified Access is an add-on experience, NOT an event ticket. Tickets to attend the show must be purchased separately. You can find more information online by going to this event's details page on WAMUTheater.com to secure your upgrade!",
+      "starts_at": "2026-08-20T01:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/ff9/230bc504-e335-44b6-9d57-24509c477ff9_SOURCE",
+      "url": "https://www.ticketmaster.com/goose-seattle-washington-08-19-2026/event/0F006435B11FBE03",
+      "venue": {
+        "name": "WAMU Theater",
+        "address": "800 Occidental Ave S"
+      },
+      "score": 0.4836772563752278,
+      "matched_because": {
+        "performers": ["Goose"],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "a0fe377f-d088-402a-b6fa-f31777964122",
+      "title": "Tame Impala - The Deadbeat Tour ",
+      "description": "Please visit our website to view the Arena Guide with Bag Policy and Prohibited Items list.",
+      "starts_at": "2026-09-02T02:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/cd0/d26204db-9477-43df-965b-ee262dc05cd0_SOURCE",
+      "url": "https://www.ticketmaster.com/tame-impala-the-deadbeat-tour-seattle-washington-09-01-2026/event/0F006431E0CCB2E3",
+      "venue": {
+        "name": "Climate Pledge Arena",
+        "address": "334 1st Ave N"
+      },
+      "score": 0.5665597778829266,
+      "matched_because": {
+        "performers": ["Tame Impala"],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "32c69e8c-3db6-48a2-bd3e-2a732c68148f",
+      "title": "WEEZER: The Gathering",
+      "description": "Please visit our website to view the Arena Guide with Bag Policy and Prohibited Items list.",
+      "starts_at": "2026-09-14T02:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/a2e/4990f811-a315-4173-adcf-405a96de3a2e_ARTIST_PAGE_3_2.jpg",
+      "url": "https://www.ticketmaster.com/weezer-the-gathering-seattle-washington-09-13-2026/event/0F00646EEFA3BE60",
+      "venue": {
+        "name": "Climate Pledge Arena",
+        "address": "334 1st Ave N"
+      },
+      "score": 0.3686503215608031,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "4443ebce-e614-4afd-a4fa-5fcbafb5329a",
+      "title": "Boz Scaggs Rhythm Review 2026",
+      "description": "The Paramount Theatre is located at 911 Pine Street in Downtown Seattle. There is a ticket limit of 8 tickets per person and per credit card on this event. Patrons exceeding the ticket limit will have their orders canceled at the venue's discretion. All sales are final. No refunds or exchanges. Mobile barcodes delayed until 4 days prior to event. Venue reserves the right to change delivery methods. Unless otherwise noted, each person must have a ticket regardless of age. No babies in arms. There is no elevator. Stairs only to the balcony level.",
+      "starts_at": "2026-09-16T02:30:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/c20/609fc235-8849-40ef-86ff-38b231705c20_RETINA_PORTRAIT_3_2.jpg",
+      "url": "https://www.ticketmaster.com/boz-scaggs-rhythm-review-2026-seattle-washington-09-15-2026/event/0F00649CA6029E39",
+      "venue": {
+        "name": "Paramount Theatre",
+        "address": "911 Pine St"
+      },
+      "score": 0.36283779028286095,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "c54692dc-327a-48cb-bfaf-9f9c6a3f6706",
+      "title": "Stephen Wilson Jr. - Gary The Torch Tour",
+      "description": "The Paramount Theatre is located at 911 Pine Street in Downtown Seattle. There is a ticket limit of 6 tickets per person and per credit card on this event. Patrons exceeding the ticket limit will have their orders canceled at the venue's discretion. All sales are final. No refunds or exchanges. Mobile barcodes delayed until 4 days prior to event. Venue reserves the right to change delivery methods. Unless otherwise noted, each person must have a ticket regardless of age. No babies in arms. There is no elevator. Stairs only to the balcony level.",
+      "starts_at": "2026-09-18T02:30:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/5ad/90f536e4-3d67-4a3a-b3b7-3e0ada72a5ad_SOURCE",
+      "url": "https://www.ticketmaster.com/stephen-wilson-jr-gary-the-torch-seattle-washington-09-17-2026/event/0F00646DD8A7B52F",
+      "venue": {
+        "name": "Paramount Theatre",
+        "address": "911 Pine St"
+      },
+      "score": 0.3606294814884727,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "61283785-0c99-486e-b9d1-6a44006123bf",
+      "title": "Johnny Blue Skies \u0026 the Dark Clouds - Mutiny for the Masses 2026 Tour",
+      "description": "Please visit our website to view the Arena Guide with Bag Policy and Prohibited Items list. No Resale Over Face Value: Johnny Blue Skies (Sturgill Simpson) is using Ticketmaster's Face Value Exchange to help fans get tickets at the original price. Tickets can only be resold on Ticketmaster at face value. States Blocking Artist Resale Terms: New York, Illinois, Colorado, Virginia, Utah and Connecticut have state laws that prevent resale restrictions. In those states, Ticketmaster will still honor Johnny Blue Skies (Sturgill Simpson)'s terms by keeping resale prices at face value on its site.",
+      "starts_at": "2026-09-19T03:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/2ef/d5c4f5ac-28a7-4d1e-8f5c-011555afc2ef_CUSTOM.jpg",
+      "url": "https://www.ticketmaster.com/johnny-blue-skies-the-dark-clouds-seattle-washington-09-18-2026/event/0F00647ED717ABC3",
+      "venue": {
+        "name": "Climate Pledge Arena",
+        "address": "334 1st Ave N"
+      },
+      "score": 0.37083672390655253,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "54e8bbca-52f6-4f59-8f27-d4553de0ca5e",
+      "title": "JOURNEY - Final Frontier Tour (An Evening With)",
+      "description": "Please visit our website to view the Arena Guide with Bag Policy and Prohibited Items list.",
+      "starts_at": "2026-09-22T02:30:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/f9d/80e7f1f1-5db4-4a72-8cfa-7e36d66b4f9d_RETINA_PORTRAIT_3_2.jpg",
+      "url": "https://www.ticketmaster.com/journey-final-frontier-tour-an-evening-seattle-washington-09-21-2026/event/0F0064A5D6D516EE",
+      "venue": {
+        "name": "Climate Pledge Arena",
+        "address": "334 1st Ave N"
+      },
+      "score": 0.36559472955492706,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "70028e08-7dab-4dc3-82ac-7291772497e9",
+      "title": "The Rock Orchestra By Candlelight",
+      "description": "The Paramount Theatre is located at 911 Pine Street in Downtown Seattle. There is a ticket limit of 8 tickets per person and per credit card on this event. Patrons exceeding the ticket limit will have their orders canceled at the venue's discretion. All sales are final. No refunds or exchanges. Mobile barcodes delayed until 4 days prior to event. Venue reserves the right to change delivery methods. Unless otherwise noted, each person must have a ticket regardless of age. No babies in arms. There is no elevator. Stairs only to the balcony level.",
+      "starts_at": "2026-09-24T03:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/353/193f61ae-3476-426d-87e1-028c967a7353_TABLET_LANDSCAPE_LARGE_16_9.jpg",
+      "url": "https://www.ticketmaster.com/the-rock-orchestra-by-candlelight-seattle-washington-09-23-2026/event/0F006491CAB0B67E",
+      "venue": {
+        "name": "Paramount Theatre",
+        "address": "911 Pine St"
+      },
+      "score": 0.36328128018010764,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "bc190ee4-ca13-49fe-8756-b1f1b23ecc4a",
+      "title": "Lily Allen Performs West End Girl",
+      "description": "The Paramount Theatre is located at 911 Pine Street in Downtown Seattle. There is a ticket limit of 4 tickets per person and per credit card on this event. Patrons exceeding the ticket limit will have their orders canceled at the venue's discretion. All sales are final. No refunds or exchanges. Mobile barcodes delayed until 4 days prior to event. Venue reserves the right to change delivery methods. Unless otherwise noted, each person must have a ticket regardless of age. No babies in arms. There is no elevator. Stairs only to the balcony level.",
+      "starts_at": "2026-09-25T03:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/78b/e73d29f4-b17c-497d-ac4a-0a8c7503c78b_ARTIST_PAGE_3_2.jpg",
+      "url": "https://www.ticketmaster.com/lily-allen-performs-west-end-girl-seattle-washington-09-24-2026/event/0F0064E7E844AE45",
+      "venue": {
+        "name": "Paramount Theatre",
+        "address": "911 Pine St"
+      },
+      "score": 0.35995798152819336,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "fd0d0162-ebf6-4593-9af5-aee59318519f",
+      "title": "THE B-52s * DEVO:  COSMIC DE-EVOLUTION TOUR",
+      "description": "Please visit our website to view the Arena Guide with Bag Policy and Prohibited Items list.",
+      "starts_at": "2026-09-26T02:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/fc1/7e21a72a-89cb-4107-92cf-017b17c49fc1_RETINA_PORTRAIT_3_2.jpg",
+      "url": "https://www.ticketmaster.com/the-b52s-devo-cosmic-deevolution-tour-seattle-washington-09-25-2026/event/0F0064D0C86ECCBA",
+      "venue": {
+        "name": "Climate Pledge Arena",
+        "address": "334 1st Ave N"
+      },
+      "score": 0.36083172584687356,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "dfa4f1a5-fa39-4273-8b76-10b971a0a80c",
+      "title": "Bilmuri - Kinda Hard Tour",
+      "description": "The Paramount Theatre is located at 911 Pine Street in Downtown Seattle. There is a ticket limit of 4 tickets per person and per credit card on this event. Patrons exceeding the ticket limit will have their orders canceled at the venue's discretion. All sales are final. No refunds or exchanges. Mobile barcodes delayed until 4 days prior to event. Venue reserves the right to change delivery methods. Unless otherwise noted, each person must have a ticket regardless of age. No babies in arms. There is no elevator. Stairs only to the balcony level.",
+      "starts_at": "2026-10-01T02:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/4f6/59d763b4-53ac-4ffd-be3f-a33345d7f4f6_EVENT_DETAIL_PAGE_16_9.jpg",
+      "url": "https://www.ticketmaster.com/bilmuri-kinda-hard-tour-seattle-washington-09-30-2026/event/0F0064469EC363B4",
+      "venue": {
+        "name": "Paramount Theatre",
+        "address": "911 Pine St"
+      },
+      "score": 0.3518986040603137,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    },
+    {
+      "id": "fc6faff5-9cbb-4ff8-930d-8ebc9823bec2",
+      "title": "Tyler Childers - Snipe Hunt",
+      "description": "Please visit our website to view the Arena Guide with Bag Policy and Prohibited Items list.",
+      "starts_at": "2026-10-03T01:30:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/4c9/ca906904-03da-454c-a6c9-86c874e6a4c9_RETINA_LANDSCAPE_16_9.jpg",
+      "url": "https://www.ticketmaster.com/tyler-childers-snipe-hunt-seattle-washington-10-02-2026/event/0F00637A77EA31DD",
+      "venue": {
+        "name": "Climate Pledge Arena",
+        "address": "334 1st Ave N"
+      },
+      "score": 0.40959095572787835,
+      "matched_because": {
+        "performers": ["Wednesday"],
+        "genres": []
+      }
+    },
+    {
+      "id": "09c09772-99bb-4a4a-b419-5cece1d0d86e",
+      "title": "JUNGLE - World Tour 2026",
+      "description": "Please visit our website to view the Arena Guide with Bag Policy and Prohibited Items list.",
+      "starts_at": "2026-10-04T03:00:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/01a/78748f8a-6030-4e0a-8b97-4c0ebb7fa01a_TABLET_LANDSCAPE_LARGE_16_9.jpg",
+      "url": "https://www.ticketmaster.com/jungle-world-tour-2026-seattle-washington-10-03-2026/event/0F006472DC10A896",
+      "venue": {
+        "name": "Climate Pledge Arena",
+        "address": "334 1st Ave N"
+      },
+      "score": 0.42874495197392537,
+      "matched_because": {
+        "performers": ["RIO KOSTA"],
+        "genres": []
+      }
+    },
+    {
+      "id": "16425668-e89a-426e-8f1b-8397347130d9",
+      "title": "RUSH: Fifty Something",
+      "description": "Please visit our website to view the Arena Guide with Bag Policy and Prohibited Items list.",
+      "starts_at": "2026-10-11T02:30:00Z",
+      "image_url": "https://s1.ticketm.net/dam/a/6bd/c02199ad-8d22-4668-8973-f400d85826bd_TABLET_LANDSCAPE_16_9.jpg",
+      "url": "https://www.ticketmaster.com/rush-fifty-something-seattle-washington-10-10-2026/event/0F00634F0E7368B0",
+      "venue": {
+        "name": "Climate Pledge Arena",
+        "address": "334 1st Ave N"
+      },
+      "score": 0.3627154168139474,
+      "matched_because": {
+        "performers": [],
+        "genres": ["rock"]
+      }
+    }
+  ]
+}

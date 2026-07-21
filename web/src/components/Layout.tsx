@@ -1,5 +1,6 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Link, Outlet } from 'react-router-dom';
 import clsx from 'clsx';
+import { useAuth } from '../auth/useAuth';
 import UserMenu from './UserMenu';
 import * as s from './Layout.css';
 
@@ -7,6 +8,9 @@ const link = ({ isActive }: { isActive: boolean }) =>
   clsx(s.navLink, isActive ? s.navLinkActive : s.navLinkInactive);
 
 export default function Layout() {
+  const { status } = useAuth();
+  const authed = status === 'authenticated';
+
   return (
     <div className={s.page}>
       <header className={s.header}>
@@ -14,20 +18,25 @@ export default function Layout() {
           style={{
             backgroundImage: `url('/titleGraphic1.png')`,
             width: '280px',
-            height: '40px',
+            height: '45px',
+            transform: 'translateY(2px)',
           }}
           className={s.logo}
         />
-        <NavLink to="/calendar" className={link}>
-          Calendar
-        </NavLink>
-        <NavLink to="/interests" className={link}>
-          Interests
-        </NavLink>
-        <NavLink to="/settings" className={link}>
-          Settings
-        </NavLink>
-        <UserMenu />
+        {authed && (
+          <>
+            <NavLink to="/calendar" className={link}>
+              Calendar
+            </NavLink>
+            <NavLink to="/interests" className={link}>
+              Interests
+            </NavLink>
+            <NavLink to="/settings" className={link}>
+              Settings
+            </NavLink>
+            <UserMenu />
+          </>
+        )}
       </header>
       <main className={s.main}>
         <Outlet />

@@ -14,8 +14,11 @@ vi.mock('../api/notInterested', () => ({
   resetNotInterested: vi.fn(),
 }));
 
+vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
+
 import * as calApi from '../api/calendar';
 import * as niApi from '../api/notInterested';
+import { useAuth } from '../auth/useAuth';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -32,6 +35,13 @@ function renderPage() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(useAuth).mockReturnValue({
+    status: 'authenticated',
+    user: null,
+    login: vi.fn(),
+    signup: vi.fn(),
+    logout: vi.fn(),
+  });
 });
 
 describe('CalendarPage', () => {
@@ -117,5 +127,33 @@ describe('CalendarPage', () => {
 
     await waitFor(() => expect(niApi.markNotInterested).toHaveBeenCalledWith('e1'));
     await waitFor(() => expect(screen.queryByText('PB Live')).not.toBeInTheDocument());
+  });
+
+  it('shows the login dialog and non-interactive events when logged out', async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      status: 'anonymous',
+      user: null,
+      login: vi.fn(),
+      signup: vi.fn(),
+      logout: vi.fn(),
+    });
+    (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: 'e1',
+        title: 'PB Live',
+        starts_at: '2026-06-15T20:00:00Z',
+        venue: { name: 'The Bowl' },
+        score: 0.82,
+        matched_because: { performers: ['Phoebe Bridgers'], genres: ['indie'] },
+      },
+    ]);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
+    expect(screen.getByRole('dialog', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /PB Live/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /not interested/i })).not.toBeInTheDocument();
+    expect((calApi.getCalendar as ReturnType<typeof vi.fn>).mock.calls[0][2]).toBe(true);
   });
 });

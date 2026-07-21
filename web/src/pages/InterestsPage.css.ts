@@ -2,7 +2,12 @@ import { style } from '@vanilla-extract/css';
 import { buttonPrimary, errorText } from '../styles/common.css';
 import { color, fontSize } from '../styles/theme';
 
-export const lead = style({ color: color.gray600, marginTop: '0.5rem', marginBottom: '1rem' });
+export const lead = style({
+  color: color.gray600,
+  marginTop: '0.5rem',
+  marginBottom: '1rem',
+  fontSize: fontSize.sm.fontSize,
+});
 
 export const inlineLink = style({
   color: color.blue600,
