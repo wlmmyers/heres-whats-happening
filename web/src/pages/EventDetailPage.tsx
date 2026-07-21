@@ -2,13 +2,15 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { getEvent, type CalendarEvent } from '../api/calendar';
 import Spinner from '../components/Spinner';
+import { useAuth } from '../auth/useAuth';
 import * as s from './EventDetailPage.css';
 import * as c from '../styles/common.css';
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const { data, isLoading, isError } = useQuery<CalendarEvent>({
-    queryKey: ['event', id],
+    queryKey: ['event', user?.id, id],
     queryFn: () => getEvent(id!),
     enabled: !!id,
   });
@@ -34,7 +36,7 @@ export default function EventDetailPage() {
         {`< Calendar`}
       </Link>
 
-      <header className={s.header}>
+      <div className={s.header}>
         {data.image_url && <img src={data.image_url} alt="" className={s.thumbnail} />}
         <div className={s.headerText}>
           <h1 className={s.title}>{data.title}</h1>
@@ -43,18 +45,19 @@ export default function EventDetailPage() {
             {data.venue.name}
             {data.venue.address && <> · {data.venue.address}</>}
           </div>
+          <div className={s.score}>{Math.round(data.score * 100)}% match</div>
         </div>
-      </header>
-
-      <div className={s.score}>{Math.round(data.score * 100)}% match</div>
+      </div>
 
       {matchedBits.length > 0 && (
         <div className={s.matched}>Matched because: {matchedBits.join(', ')}</div>
       )}
-      <section className={c.section}>
-        <h2 className={c.sectionTitle}>From the venue</h2>
-        {data.description && <p className={s.description}>{data.description}</p>}
-      </section>
+      {data.description && (
+        <section className={c.section}>
+          <h2 className={c.sectionTitle}>From the venue</h2>
+          <p className={s.description}>{data.description}</p>
+        </section>
+      )}
       {data.url && (
         <a href={data.url} target="_blank" rel="noreferrer" className={s.viewEvent}>
           View event

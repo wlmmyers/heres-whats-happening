@@ -58,12 +58,23 @@ export const pageTitle = style({
   fontWeight: fontWeight.semibold,
 });
 
+export const pageHeader = style({
+  marginTop: '1rem',
+  marginBottom: '2rem',
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: '1rem',
+  '@media': {
+    'screen and (max-width: 768px)': { flexDirection: 'column' },
+  },
+});
+
 export const sectionTitle = style({
   ...fontSize.base,
   fontWeight: fontWeight.medium,
 });
 
-export const section = style([card, { padding: '1rem', marginTop: '1.5rem' }]);
+export const section = style([card, { padding: '1rem', margin: '1rem 0' }]);
 
 export const errorText = style({ ...fontSize.sm, color: color.red600 });
 

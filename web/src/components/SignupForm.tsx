@@ -1,24 +1,24 @@
-import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
-import * as s from './SignupPage.css';
+import RotatingLogo from './RotatingLogo';
+import * as s from './SignupForm.css';
 import * as c from '../styles/common.css';
 
-export default function SignupPage() {
+export default function SignupForm({ onSuccess }: { onSuccess?: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const { signup } = useAuth();
-  const navigate = useNavigate();
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
       await signup(email, password);
-      navigate('/interests', { replace: true });
+      onSuccess?.();
     } catch (err) {
       const code = (err as { code?: string }).code;
       if (code === 'email_taken') {
@@ -34,7 +34,9 @@ export default function SignupPage() {
   }
 
   return (
-    <div className={s.page}>
+    <div className={s.signupCard}>
+      <RotatingLogo />
+      <p className={s.subtitle}>A live-event calendar based on your interests</p>
       <form onSubmit={onSubmit} className={s.form}>
         <h1 className={s.title}>Create your account</h1>
 

@@ -2,14 +2,6 @@ import { style } from '@vanilla-extract/css';
 import { card } from '../styles/common.css';
 import { color, radius, shadow, fontSize, fontWeight, transition } from '../styles/theme';
 
-export const header = style({
-  display: 'flex',
-  flexWrap: 'wrap',
-  alignItems: 'baseline',
-  justifyContent: 'space-between',
-  gap: '0.75rem',
-});
-
 export const controls = style({
   display: 'flex',
   alignItems: 'center',
@@ -60,4 +52,4 @@ export const inlineLink = style({
 
 export const list = style({ marginTop: '1rem' });
 
-export const listItem = style({ marginTop: '0.75rem' });
+export const listItem = style({ marginBottom: '0.75rem' });

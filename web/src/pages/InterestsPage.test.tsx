@@ -17,10 +17,12 @@ vi.mock('../api/spotifyInterests', () => ({
 vi.mock('../api/spotify', () => ({
   getSpotifyStatus: vi.fn(),
 }));
+vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
 
 import * as interestsApi from '../api/manualInterests';
 import * as spotifyInterestsApi from '../api/spotifyInterests';
 import * as spotifyApi from '../api/spotify';
+import { useAuth } from '../auth/useAuth';
 
 function spotifyInterest(value: string) {
   return { id: value, value, normalized_value: value, weight: 1, created_at: '' };
@@ -42,6 +44,13 @@ function renderPage() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(useAuth).mockReturnValue({
+    status: 'authenticated',
+    user: { id: 'u1', email: 'a@x' },
+    login: vi.fn(),
+    signup: vi.fn(),
+    logout: vi.fn(),
+  });
   (interestsApi.listManualInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   (spotifyInterestsApi.listSpotifyInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ connected: false });

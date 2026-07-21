@@ -6,6 +6,7 @@ export const eventCard = style([
   card,
   {
     padding: '1rem',
+    minHeight: '150px',
     ...transition,
     ':hover': { boxShadow: shadow.md },
   },

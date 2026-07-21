@@ -14,12 +14,6 @@ export const loginCard = style([
   },
 ]);
 
-export const logo = style({
-  '@media': {
-    'screen and (max-width: 768px)': { marginBottom: '2rem' },
-  },
-});
-
 export const form = style({
   width: '100%',
 });

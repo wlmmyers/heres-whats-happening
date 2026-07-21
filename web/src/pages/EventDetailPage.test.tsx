@@ -3,13 +3,16 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import EventDetailPage from './EventDetailPage';
+import * as s from './EventDetailPage.css';
 
 vi.mock('../api/calendar', () => ({
   getCalendar: vi.fn(),
   getEvent: vi.fn(),
 }));
+vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
 
 import * as calApi from '../api/calendar';
+import { useAuth } from '../auth/useAuth';
 
 function renderAt(path: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -26,6 +29,13 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(useAuth).mockReturnValue({
+    status: 'authenticated',
+    user: { id: 'u1', email: 'a@x' },
+    login: vi.fn(),
+    signup: vi.fn(),
+    logout: vi.fn(),
+  });
 });
 
 describe('EventDetailPage', () => {
@@ -63,7 +73,7 @@ describe('EventDetailPage', () => {
     });
     const { container } = renderAt('/events/e1');
     await waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
-    const img = container.querySelector('header img');
+    const img = container.querySelector(`.${s.header} img`);
     expect(img).toHaveAttribute('src', 'https://cdn.test/pb.jpg');
   });
 

@@ -13,7 +13,7 @@ export default function Layout() {
 
   return (
     <div className={s.page}>
-      <header className={s.header}>
+      <header className={clsx(s.header, { [s.headerLoggedOut]: !authed })}>
         <div
           style={{
             backgroundImage: `url('/titleGraphic1.png')`,
@@ -38,7 +38,7 @@ export default function Layout() {
           </>
         )}
       </header>
-      <main className={s.main}>
+      <main className={clsx(s.main, { [s.mainLoggedOut]: !authed })}>
         <Outlet />
       </main>
     </div>

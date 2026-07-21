@@ -10,7 +10,8 @@ import {
   type Interest,
 } from '../api/manualInterests';
 import { listSpotifyInterests, type SpotifyInterestGroup } from '../api/spotifyInterests';
-import { getSpotifyStatus } from '../api/spotify';
+import { getSpotifyStatus, startSpotifyConnect } from '../api/spotify';
+import { useAuth } from '../auth/useAuth';
 import * as s from './InterestsPage.css';
 import * as c from '../styles/common.css';
 
@@ -19,12 +20,24 @@ const COLLAPSE_AT = 20;
 export default function InterestsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [spotifyInterestsExpanded, setSpotifyInterestsExpanded] = useState(false);
   const [spotifyGenresExpanded, setSpotifyGenresExpanded] = useState(false);
 
   const { data: interests = [] } = useQuery<Interest[]>({
-    queryKey: ['interests'],
+    queryKey: ['interests', user?.id],
     queryFn: listManualInterests,
+  });
+
+  const { data: spotifyStatus } = useQuery({
+    queryKey: ['spotify-status', user?.id],
+    queryFn: getSpotifyStatus,
+  });
+  const connectSpotifyMut = useMutation({
+    mutationFn: startSpotifyConnect,
+    onSuccess: (authorizeURL) => {
+      window.location.assign(authorizeURL);
+    },
   });
 
   // Loaded independently of status: if groups arrive first we render them
@@ -32,12 +45,8 @@ export default function InterestsPage() {
   const { data: spotifyGroups = [], isPending: spotifyGroupsPending } = useQuery<
     SpotifyInterestGroup[]
   >({
-    queryKey: ['spotifyInterests'],
+    queryKey: ['spotifyInterests', user?.id],
     queryFn: listSpotifyInterests,
-  });
-  const { data: spotifyStatus } = useQuery({
-    queryKey: ['spotifyStatus'],
-    queryFn: getSpotifyStatus,
   });
 
   const addMut = useMutation({
@@ -58,7 +67,7 @@ export default function InterestsPage() {
   // This page doubles as the signup onboarding step, so a brand-new user with
   // no Spotify connection must not see a dead-end "go connect Spotify" prompt
   // mid-signup. Show the section only when it has something to say.
-  const showSpotify = spotifyGroups.length > 0 || spotifyStatus?.connected === true;
+  const showSpotifyInterests = spotifyGroups.length > 0 || spotifyStatus?.connected === true;
   const spotifyAllArtistInterests = spotifyGroups
     .filter((i) => i.kind !== 'spotify_top_genre')
     .flatMap((g) => g.interests);
@@ -70,9 +79,9 @@ export default function InterestsPage() {
 
   return (
     <div>
-      <header>
+      <div className={c.pageHeader}>
         <h1 className={c.pageTitle}>Your interests</h1>
-      </header>
+      </div>
 
       <section className={c.section}>
         <h2 className={s.sectionHeading}>Tell us what you're into</h2>
@@ -86,7 +95,7 @@ export default function InterestsPage() {
         {addMut.isError && <div className={s.error}>Couldn't save that tag.</div>}
       </section>
 
-      {showSpotify && (
+      {showSpotifyInterests ? (
         <section className={c.section}>
           <h2 className={s.sectionHeading}>From your Spotify</h2>
           {spotifyGroupsPending ? null : spotifyGroups.length === 0 ? (
@@ -137,13 +146,31 @@ export default function InterestsPage() {
                       setSpotifyGenresExpanded((prev) => !prev);
                     }}
                   >
-                    {spotifyGenresExpanded ? 'Show fewer' : `Show all (${spotifyUniqueGenres.size})`}
+                    {spotifyGenresExpanded
+                      ? 'Show fewer'
+                      : `Show all (${spotifyUniqueGenres.size})`}
                   </button>
                 )}
               </section>
             </div>
           )}
         </section>
+      ) : (
+        spotifyStatus?.connected !== true && (
+          <section className={c.section}>
+            <h2 className={c.sectionTitle}>Spotify</h2>
+            <p className={s.lead}>Connect Spotify to see your Spotify-derived interests.</p>
+
+            <button
+              type="button"
+              onClick={() => connectSpotifyMut.mutate()}
+              disabled={connectSpotifyMut.isPending}
+              className={s.connectButton}
+            >
+              Connect Spotify
+            </button>
+          </section>
+        )
       )}
 
       <button type="button" onClick={() => navigate('/calendar')} className={s.continueButton}>

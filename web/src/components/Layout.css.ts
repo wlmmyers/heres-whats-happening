@@ -21,6 +21,15 @@ export const header = style({
   height: '4rem',
 });
 
+export const headerLoggedOut = style([
+  header,
+  {
+    '@media': {
+      'screen and (max-width: 768px)': { display: 'none' },
+    },
+  },
+]);
+
 // backgroundImage stays inline (set in JSX)
 export const logo = style({
   backgroundSize: 'cover',
@@ -35,6 +44,15 @@ export const main = style({
   paddingInline: '1rem',
   paddingBlock: '1.5rem',
 });
+
+export const mainLoggedOut = style([
+  main,
+  {
+    '@media': {
+      'screen and (max-width: 768px)': { marginTop: 0 },
+    },
+  },
+]);
 
 export const navLink = style({
   paddingInline: '0.75rem',
