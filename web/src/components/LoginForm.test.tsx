@@ -57,4 +57,29 @@ describe('LoginForm', () => {
       expect(screen.getByText(/email or password is wrong/i)).toBeInTheDocument(),
     );
   });
+
+  it('shows a friendly message when rate limited', async () => {
+    const err = Object.assign(new Error('too many requests, please try again later'), {
+      code: 'rate_limited',
+    });
+    const login = vi.fn().mockRejectedValueOnce(err);
+    vi.mocked(useAuth).mockReturnValue({
+      status: 'anonymous',
+      user: null,
+      login,
+      signup: vi.fn(),
+      logout: vi.fn(),
+    });
+    render(
+      <MemoryRouter>
+        <LoginForm />
+      </MemoryRouter>,
+    );
+    await userEvent.type(screen.getByLabelText(/email/i), 'a@x');
+    await userEvent.type(screen.getByLabelText(/password/i), 'hunter22');
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() =>
+      expect(screen.getByText(/too many login attempts/i)).toBeInTheDocument(),
+    );
+  });
 });

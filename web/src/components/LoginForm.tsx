@@ -23,6 +23,8 @@ export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
       const code = (err as { code?: string }).code;
       if (code === 'invalid_credentials') {
         setError('Email or password is wrong');
+      } else if (code === 'rate_limited') {
+        setError('Too many login attempts. Please wait a moment and try again.');
       } else {
         setError(err instanceof Error ? err.message : 'Login failed');
       }

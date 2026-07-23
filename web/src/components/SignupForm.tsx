@@ -25,6 +25,8 @@ export default function SignupForm({ onSuccess }: { onSuccess?: () => void }) {
         setError('An account with that email already exists.');
       } else if (code === 'weak_password') {
         setError('Password must be at least 8 characters.');
+      } else if (code === 'rate_limited') {
+        setError('Too many sign-ups from your network. Please try again later.');
       } else {
         setError(err instanceof Error ? err.message : 'Signup failed');
       }
