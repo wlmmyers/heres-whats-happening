@@ -16,6 +16,7 @@ vi.mock('../api/spotifyInterests', () => ({
 }));
 vi.mock('../api/spotify', () => ({
   getSpotifyStatus: vi.fn(),
+  startSpotifyConnect: vi.fn(),
 }));
 vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
 
