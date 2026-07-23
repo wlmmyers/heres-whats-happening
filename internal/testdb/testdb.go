@@ -150,27 +150,50 @@ func runMigrations(dsn string) error {
 	return nil
 }
 
+// truncateTables lists every table that accumulates rows written by app or
+// test code and so must be emptied between tests. It is a manually maintained
+// list, not derived from the schema — TestTruncateAllCoversEveryTable in
+// truncate_test.go checks it against the live database on every run so an
+// omission (this has happened twice: artist_genre_cache, then
+// rate_limit_events) fails loudly instead of leaking rows across tests.
+//
+// Order matters: children before parents to avoid FK violations on TRUNCATE CASCADE.
+var truncateTables = []string{
+	"rate_limit_events",
+	"user_event_not_interested",
+	"user_event_match",
+	"event_genres",
+	"event_performers",
+	"events",
+	"venues",
+	"user_interests",
+	"user_spotify_tokens",
+	"ical_tokens",
+	"refresh_tokens",
+	"users",
+	"artist_genre_cache",
+}
+
+// referenceTables lists public-schema tables deliberately absent from
+// truncateTables: golang-migrate's own bookkeeping table, plus tables holding
+// fixed reference/seed data inserted by migrations (sql/migrations 0001,
+// 0005, 0009) that neither app nor test code ever writes to. Nothing
+// accumulates in them, so nothing needs truncating — and truncating cities
+// would delete the seeded "v1-city" row that other tests depend on via
+// foreign key (see internal/store/users.sql.go).
+var referenceTables = map[string]bool{
+	"schema_migrations": true, // golang-migrate/v4 database/postgres.DefaultMigrationsTable
+	"cities":            true,
+	"event_sources":     true,
+	"genres":            true,
+	"match_config":      true,
+}
+
 func truncateAll(t *testing.T, p *pgxpool.Pool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	// Order matters: children before parents to avoid FK violations on TRUNCATE CASCADE.
-	tables := []string{
-		"rate_limit_events",
-		"user_event_not_interested",
-		"user_event_match",
-		"event_genres",
-		"event_performers",
-		"events",
-		"venues",
-		"user_interests",
-		"user_spotify_tokens",
-		"ical_tokens",
-		"refresh_tokens",
-		"users",
-		"artist_genre_cache",
-	}
-	for _, tbl := range tables {
+	for _, tbl := range truncateTables {
 		_, err := p.Exec(ctx, "TRUNCATE TABLE "+tbl+" CASCADE")
 		if err != nil {
 			// Tables not yet created in earlier-task tests are fine; ignore "does not exist".

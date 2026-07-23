@@ -63,7 +63,14 @@ func (p *Postgres) Allow(ctx context.Context, key string) (Decision, error) {
 		Key:    key,
 		Since:  since,
 	})
-	if err == nil && oldest.Valid {
+	if err != nil {
+		// The decision doesn't change: the caller is already over the limit, so
+		// Allowed stays false and RetryAfter keeps its safe full-window default.
+		// The error still needs to surface so a genuine database fault here
+		// isn't silently swallowed.
+		return Decision{Allowed: false, RetryAfter: retryAfter}, fmt.Errorf("oldest rate limit event: %w", err)
+	}
+	if oldest.Valid {
 		if d := oldest.Time.Add(p.window).Sub(now); d > 0 && d < retryAfter {
 			retryAfter = d
 		}

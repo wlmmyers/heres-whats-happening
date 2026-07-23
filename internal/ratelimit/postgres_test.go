@@ -2,9 +2,12 @@ package ratelimit_test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/ratelimit"
@@ -115,4 +118,48 @@ func TestPostgres_FailsOpenOnQueryError(t *testing.T) {
 	d, err := l.Allow(ctx, "1.1.1.1")
 	require.Error(t, err, "the error must surface so the caller can log it")
 	require.True(t, d.Allowed, "but the request must still proceed")
+}
+
+// A cancelled context (used above) fails every query, so it can't isolate a
+// failure in the oldest-event lookup from the count query that runs first.
+// failingQueryRowDBTX does that: it wraps a real DBTX and forces QueryRow to
+// fail only for statements containing a chosen substring, delegating
+// everything else untouched.
+type failingQueryRowDBTX struct {
+	store.DBTX
+	failOn string
+}
+
+var errSimulatedQuery = errors.New("simulated query failure")
+
+func (f *failingQueryRowDBTX) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	if strings.Contains(sql, f.failOn) {
+		return failingRow{}
+	}
+	return f.DBTX.QueryRow(ctx, sql, args...)
+}
+
+type failingRow struct{}
+
+func (failingRow) Scan(dest ...any) error { return errSimulatedQuery }
+
+// Over the limit, the count query already has the answer needed to decide
+// Allowed; the oldest-event lookup only refines RetryAfter. A fault there must
+// still surface to the caller rather than be silently discarded, without
+// changing the decision itself.
+func TestPostgres_ReturnsErrorWhenOldestEventQueryFails(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	// "ORDER BY created_at ASC" appears only in OldestRateLimitEvent's SQL, not
+	// CountRateLimitEvents's, so only the oldest-event lookup is made to fail.
+	q := store.New(&failingQueryRowDBTX{DBTX: pool, failOn: "ORDER BY created_at ASC"})
+	l := ratelimit.NewPostgres(q, "signup", 1, time.Hour)
+	ctx := context.Background()
+
+	require.NoError(t, l.Record(ctx, "1.1.1.1"))
+
+	d, err := l.Allow(ctx, "1.1.1.1")
+	require.Error(t, err, "a fault in the oldest-event query must surface")
+	require.ErrorIs(t, err, errSimulatedQuery)
+	require.False(t, d.Allowed, "the caller was already over the limit per the count query")
+	require.Equal(t, time.Hour, d.RetryAfter, "falls back to the full window when the oldest-event lookup fails")
 }
