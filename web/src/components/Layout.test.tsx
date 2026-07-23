@@ -9,10 +9,10 @@ import Layout from './Layout';
 
 function renderLayout() {
   return render(
-    <MemoryRouter initialEntries={['/calendar']}>
+    <MemoryRouter initialEntries={['/calendar/seattle']}>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route path="calendar" element={<div>cal</div>} />
+          <Route path="calendar/seattle" element={<div>cal</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,

@@ -77,12 +77,15 @@ export default function LandingPage({ children }: { children?: React.ReactNode }
     };
   }, []);
 
-  // A logged-in visitor to the bare landing page belongs on their calendar.
-  // When a login/signup dialog is mounted we defer to that dialog's own
-  // post-auth navigation (login → calendar, signup → interests onboarding),
-  // so we don't race it with a redirect here.
-  if (status === 'authenticated' && !children) {
-    return <Navigate to="/calendar" replace />;
+  // The index path of the site renders this component with no children. In this case, redirect to
+  // either the calendar or login page. The status === 'loading' case hits first and falls through to
+  // the render, rendering the skeleton cards while the auth status is being determined.
+  if (!children) {
+    if (status === 'authenticated') {
+      return <Navigate to="/calendar" replace />;
+    } else if (status === 'anonymous') {
+      return <Navigate to="/login" replace />;
+    }
   }
 
   return (

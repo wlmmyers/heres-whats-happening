@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import RequireAuth from './auth/RequireAuth';
 import Layout from './components/Layout';
 import InterestsPage from './pages/InterestsPage';
@@ -14,6 +14,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
+        <Route index element={<LandingPage />} />
         <Route
           path="login"
           element={
@@ -30,15 +31,15 @@ export default function App() {
             </LandingPage>
           }
         />
-        <Route index element={<LandingPage />} />
         <Route
-          path="calendar"
+          path="calendar/seattle"
           element={
             <RequireAuth>
               <CalendarPage />
             </RequireAuth>
           }
         />
+        <Route path="calendar" element={<Navigate to="/calendar/seattle" replace />} />
         <Route
           path="interests"
           element={

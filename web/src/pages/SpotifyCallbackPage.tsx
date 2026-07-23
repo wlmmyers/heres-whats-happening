@@ -39,7 +39,7 @@ export default function SpotifyCallbackPage() {
     exchangeSpotifyCode(code, state)
       .then(() => {
         setStatus('success');
-        setTimeout(() => navigate('/calendar', { replace: true }), 1500);
+        setTimeout(() => navigate('/calendar/seattle', { replace: true }), 1500);
       })
       .catch((err: Error) => {
         setStatus('error');
@@ -75,7 +75,7 @@ export default function SpotifyCallbackPage() {
   return (
     <div className={c.pageHeader}>
       <h1 className={s.title}>Connecting Spotify…</h1>
-      <p className={s.message}>Hang on a sec.</p>
+      <p className={s.message}>And creating your matches! Hang on a sec.</p>
     </div>
   );
 }

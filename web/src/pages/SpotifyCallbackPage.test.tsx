@@ -14,7 +14,7 @@ function renderAt(url: string) {
     <MemoryRouter initialEntries={[url]}>
       <Routes>
         <Route path="/integrations/spotify/callback" element={<SpotifyCallbackPage />} />
-        <Route path="/calendar" element={<div>calendar-route</div>} />
+        <Route path="/calendar/seattle" element={<div>calendar-route</div>} />
         <Route path="/settings" element={<div>settings-route</div>} />
       </Routes>
     </MemoryRouter>,

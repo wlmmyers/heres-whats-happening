@@ -73,7 +73,7 @@ export default function CalendarPage() {
   return (
     <div>
       <div className={c.pageHeader}>
-        <h1 className={c.pageTitle}>Your matched calendar</h1>
+        <h1 className={c.pageTitle}>Your Seattle calendar</h1>
         <div className={s.controls}>
           <span className={s.controlLabel}>Show events for next:</span>
           <div className={s.segment}>

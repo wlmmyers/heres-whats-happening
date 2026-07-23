@@ -36,7 +36,10 @@ export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
   return (
     <div className={s.loginCard}>
       <RotatingLogo />
-      <p className={s.subtitle}>A live-event calendar based on your interests</p>
+      <p className={s.subtitle}>
+        A live-event calendar based on your interests
+        <aside className={s.aside}>Note: only supporting the Seattle area currently</aside>
+      </p>
       <form onSubmit={onSubmit} className={s.form}>
         <h1 className={s.title}>Sign in</h1>
 
