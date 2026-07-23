@@ -309,7 +309,7 @@ In `terraform/prod/ecs_api.tf`, add to the environment list after line 28:
     { name = "TRUST_PROXY", value = "true" },
 ```
 
-Note the file's existing comment (lines 5-7): Terraform sets these once and ongoing changes go through `taskdef-edit.sh`, so this file is expected to drift. Adding a **new** variable here is correct, but confirm with the repo owner whether the running task definition also needs updating via `taskdef-edit.sh` for this to take effect before the next full apply.
+This is the **only** infrastructure change in this task. Do not run Terraform, `taskdef-edit.sh`, or any deploy command — the repo owner handles rollout. Until the variable is live in the running task definition, prod falls back to `RemoteAddr` (the ALB's address), which buckets all callers together; that is a safe-but-blunt failure mode, not a security regression.
 
 - [ ] **Step 9: Run the full suite**
 
@@ -1441,19 +1441,93 @@ Without this, `rate_limit_events` grows forever.
 
 **Files:**
 - Modify: `internal/http/server.go:96-120` (`Run`)
+- Create: `internal/http/cleanup_internal_test.go`
 
 **Interfaces:**
-- Consumes: `store.DeleteRateLimitEventsBefore` (Task 3).
+- Consumes: `store.DeleteRateLimitEventsBefore`, `store.InsertRateLimitEventParams`, `store.CountRateLimitEventsParams` (Task 3).
 - Produces: nothing downstream.
 
-- [ ] **Step 1: Add the cleanup loop**
+The deletion itself is split out from the ticker loop so it can be tested directly. The `select`/`time.Ticker` scaffolding around it is not worth injecting a clock for; the query it runs is.
 
-In `internal/http/server.go`, add this method below `Run`:
+- [ ] **Step 1: Write the failing test**
+
+Create `internal/http/cleanup_internal_test.go`. This is `package http` (not `http_test`) because it exercises an unexported method — Go permits both test packages in one directory, and `server_test.go` stays external:
+
+```go
+package http
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/stretchr/testify/require"
+
+	"github.com/wmyers/heres-whats-happening/internal/store"
+	"github.com/wmyers/heres-whats-happening/internal/testdb"
+)
+
+func TestDeleteExpiredRateLimitEvents(t *testing.T) {
+	q := store.New(testdb.MustOpen(t))
+	s := &Server{Queries: q}
+	ctx := context.Background()
+	now := time.Now()
+
+	insert := func(key string, at time.Time) {
+		t.Helper()
+		require.NoError(t, q.InsertRateLimitEvent(ctx, store.InsertRateLimitEventParams{
+			Bucket:    "signup",
+			Key:       key,
+			CreatedAt: pgtype.Timestamptz{Time: at, Valid: true},
+		}))
+	}
+	count := func(key string, since time.Time) int64 {
+		t.Helper()
+		n, err := q.CountRateLimitEvents(ctx, store.CountRateLimitEventsParams{
+			Bucket: "signup",
+			Key:    key,
+			Since:  pgtype.Timestamptz{Time: since, Valid: true},
+		})
+		require.NoError(t, err)
+		return n
+	}
+
+	insert("1.1.1.1", now)                      // fresh
+	insert("2.2.2.2", now.Add(-48*time.Hour))   // past the 24h retention
+
+	require.NoError(t, s.deleteExpiredRateLimitEvents(ctx, now))
+
+	require.Equal(t, int64(1), count("1.1.1.1", now.Add(-time.Hour)),
+		"a row inside the retention window must survive")
+	require.Equal(t, int64(0), count("2.2.2.2", now.Add(-72*time.Hour)),
+		"a row past retention must be deleted")
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+go test ./internal/http/ -run TestDeleteExpiredRateLimitEvents -v
+```
+
+Expected: compile failure — `s.deleteExpiredRateLimitEvents` undefined.
+
+- [ ] **Step 3: Add the cleanup code**
+
+In `internal/http/server.go`, add below `Run`:
 
 ```go
 // rateLimitRetention is how long rate limit rows are kept. Comfortably longer
 // than the widest window (1h) so cleanup can never delete a live row.
 const rateLimitRetention = 24 * time.Hour
+
+// deleteExpiredRateLimitEvents removes rate limit rows past the retention
+// window, measured from now.
+func (s *Server) deleteExpiredRateLimitEvents(ctx context.Context, now time.Time) error {
+	cutoff := pgtype.Timestamptz{Time: now.Add(-rateLimitRetention), Valid: true}
+	return s.Queries.DeleteRateLimitEventsBefore(ctx, cutoff)
+}
 
 // runRateLimitCleanup deletes expired rate limit rows until ctx is cancelled.
 func (s *Server) runRateLimitCleanup(ctx context.Context) {
@@ -1464,9 +1538,8 @@ func (s *Server) runRateLimitCleanup(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			cutoff := pgtype.Timestamptz{Time: time.Now().Add(-rateLimitRetention), Valid: true}
 			delCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			err := s.Queries.DeleteRateLimitEventsBefore(delCtx, cutoff)
+			err := s.deleteExpiredRateLimitEvents(delCtx, time.Now())
 			cancel()
 			if err != nil {
 				log.Printf("rate limit cleanup: %v", err)
@@ -1486,18 +1559,19 @@ Start it in `Run`, after the consumer goroutines (after line 110). It does not w
 	}
 ```
 
-- [ ] **Step 2: Verify it builds and the suite passes**
+- [ ] **Step 4: Run the test to verify it passes**
 
 ```bash
+go test ./internal/http/ -run TestDeleteExpiredRateLimitEvents -v
 go build ./... && make test
 ```
 
-Expected: PASS. The loop is time-driven and ctx-cancelled; it is covered by the existing `Run` lifecycle rather than a dedicated test.
+Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add internal/http/server.go
+git add internal/http/server.go internal/http/cleanup_internal_test.go
 git commit -m "feat: expire rate limit rows older than 24h"
 ```
 
