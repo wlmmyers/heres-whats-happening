@@ -125,6 +125,25 @@ func TestLoad_DBSecretARN(t *testing.T) {
 	require.Equal(t, "arn:aws:secretsmanager:us-east-1:1:secret:rds!db-x", cfg.DBSecretARN)
 }
 
+func TestLoad_TrustProxy(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+
+	t.Setenv("TRUST_PROXY", "")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.False(t, cfg.TrustProxy, "must default to false so local dev never trusts XFF")
+
+	t.Setenv("TRUST_PROXY", "true")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.True(t, cfg.TrustProxy)
+
+	t.Setenv("TRUST_PROXY", "banana")
+	_, err = Load()
+	require.Error(t, err)
+}
+
 // setRequiredDB sets the DB_* component vars every Load() call now needs.
 func setRequiredDB(t *testing.T) {
 	t.Helper()

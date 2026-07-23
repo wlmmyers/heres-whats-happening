@@ -41,12 +41,16 @@ type Server struct {
 
 	// Plan 6 addition — list of Origin values to allow CORS for. If empty, CORS is disabled.
 	CORSAllowedOrigins []string
+
+	// Plan 7 addition — when true, derive the client IP from the rightmost
+	// X-Forwarded-For entry. Set only when running behind our ALB.
+	TrustProxy bool
 }
 
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(middleware.ClientIPResolver(s.TrustProxy))
 	if len(s.CORSAllowedOrigins) > 0 {
 		r.Use(middleware.CORS(s.CORSAllowedOrigins))
 	}
