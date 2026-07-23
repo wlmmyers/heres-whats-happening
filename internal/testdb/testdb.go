@@ -156,6 +156,7 @@ func truncateAll(t *testing.T, p *pgxpool.Pool) {
 	defer cancel()
 	// Order matters: children before parents to avoid FK violations on TRUNCATE CASCADE.
 	tables := []string{
+		"rate_limit_events",
 		"user_event_not_interested",
 		"user_event_match",
 		"event_genres",

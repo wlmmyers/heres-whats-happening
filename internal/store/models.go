@@ -81,6 +81,13 @@ type MatchConfig struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type RateLimitEvent struct {
+	ID        int64              `json:"id"`
+	Bucket    string             `json:"bucket"`
+	Key       string             `json:"key"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type RefreshToken struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
