@@ -44,7 +44,10 @@ func RateLimitOnSuccess(l ratelimit.Limiter, name string) func(http.Handler) htt
 
 			status := ww.Status()
 			if status == 0 {
-				status = http.StatusOK // handler wrote a body without WriteHeader
+				// The handler wrote nothing at all — no WriteHeader, no Write — so
+				// the wrapper never observed a status. net/http still sends an
+				// implicit 200 once the response completes, so treat it as one.
+				status = http.StatusOK
 			}
 			if status < 200 || status > 299 {
 				return

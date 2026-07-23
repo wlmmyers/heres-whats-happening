@@ -98,6 +98,31 @@ func TestRateLimit_FailsOpenOnLimiterError(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+// An error accompanying a denial must never be mistaken for permission:
+// Postgres.Allow can return Allowed=false with a non-nil error when the
+// caller is genuinely over the limit but the secondary oldest-event lookup
+// failed. The request must still be rejected, not let through.
+func TestRateLimit_RejectsWhenDeniedWithError(t *testing.T) {
+	l := &stubLimiter{
+		decision: ratelimit.Decision{Allowed: false, RetryAfter: 45 * time.Second},
+		allowErr: context.DeadlineExceeded,
+	}
+	reached := false
+	h := middleware.RateLimit(l, "signup")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+	}))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/auth/signup", nil))
+
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	require.False(t, reached, "a denial accompanied by an error must still reject, never fail open")
+
+	secs, err := strconv.Atoi(rec.Header().Get("Retry-After"))
+	require.NoError(t, err)
+	require.Equal(t, 45, secs)
+}
+
 func TestRateLimitOnSuccess_RecordsOn201(t *testing.T) {
 	l := &stubLimiter{decision: ratelimit.Decision{Allowed: true}}
 	h := middleware.RateLimitOnSuccess(l, "signup")(okHandler(http.StatusCreated))
@@ -139,11 +164,47 @@ func TestRateLimitOnSuccess_DoesNotRecordWhenDenied(t *testing.T) {
 	require.Empty(t, l.recorded)
 }
 
-// A handler that writes a body without an explicit WriteHeader implies 200.
+// Same as TestRateLimit_RejectsWhenDeniedWithError for the success-conditional
+// middleware: an error accompanying a denial must still reject the request
+// and must not be treated as a success worth recording.
+func TestRateLimitOnSuccess_RejectsAndDoesNotRecordWhenDeniedWithError(t *testing.T) {
+	l := &stubLimiter{
+		decision: ratelimit.Decision{Allowed: false, RetryAfter: 45 * time.Second},
+		allowErr: context.DeadlineExceeded,
+	}
+	h := middleware.RateLimitOnSuccess(l, "signup")(okHandler(http.StatusCreated))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/auth/signup", nil))
+
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	require.Empty(t, l.recorded, "a denial accompanied by an error must not be recorded as a success")
+}
+
+// A handler that writes a body without an explicit WriteHeader still gets
+// Status()==200 straight from chi's WrapResponseWriter, so this does not
+// exercise the ratelimit.go status==0 fallback — see
+// TestRateLimitOnSuccess_RecordsWhenHandlerWritesNothing for the case that
+// fallback actually covers.
 func TestRateLimitOnSuccess_RecordsOnImplicit200(t *testing.T) {
 	l := &stubLimiter{decision: ratelimit.Decision{Allowed: true}}
 	h := middleware.RateLimitOnSuccess(l, "signup")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
+	}))
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/auth/signup", nil))
+
+	require.Len(t, l.recorded, 1)
+}
+
+// The status==0 fallback exists for a handler that writes nothing at all: no
+// WriteHeader, no Write. WrapResponseWriter never observes a status, but
+// net/http still sends an implicit 200 once the response completes, so this
+// must still be recorded as a success.
+func TestRateLimitOnSuccess_RecordsWhenHandlerWritesNothing(t *testing.T) {
+	l := &stubLimiter{decision: ratelimit.Decision{Allowed: true}}
+	h := middleware.RateLimitOnSuccess(l, "signup")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Intentionally does nothing.
 	}))
 
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/auth/signup", nil))
