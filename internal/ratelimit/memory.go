@@ -2,14 +2,20 @@ package ratelimit
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
 )
 
-// maxBucketsBeforeSweep bounds map growth between opportunistic sweeps.
+// maxBucketsBeforeSweep is the size at which we start sweeping idle buckets,
+// at most once per window.
 const maxBucketsBeforeSweep = 10_000
+
+// hardBucketCap bounds the map even under a flood of unique keys, where no
+// bucket is ever idle enough for sweepLocked to reclaim it.
+const hardBucketCap = 50_000
 
 type bucket struct {
 	lim      *rate.Limiter
@@ -29,6 +35,8 @@ type Memory struct {
 	burst  int
 	window time.Duration
 	now    func() time.Time
+
+	lastSweep time.Time
 }
 
 // NewMemory returns a limiter permitting limit requests per window, per key.
@@ -54,7 +62,16 @@ func (m *Memory) Allow(_ context.Context, key string) (Decision, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if len(m.buckets) >= maxBucketsBeforeSweep {
+	if len(m.buckets) >= hardBucketCap {
+		m.sweepLocked(now)
+		if len(m.buckets) >= hardBucketCap {
+			// Nothing idle enough to reclaim — an attack is already underway.
+			// Evicting the least-recently-seen buckets hands those keys a
+			// fresh allowance, which is acceptable: it's the least-harmful
+			// choice available once the hard cap is hit.
+			m.evictOldestLocked(len(m.buckets) / 4)
+		}
+	} else if len(m.buckets) >= maxBucketsBeforeSweep && now.Sub(m.lastSweep) >= m.window {
 		m.sweepLocked(now)
 	}
 
@@ -92,6 +109,7 @@ func (m *Memory) Sweep(now time.Time) int {
 }
 
 func (m *Memory) sweepLocked(now time.Time) int {
+	m.lastSweep = now
 	cutoff := now.Add(-2 * m.window)
 	n := 0
 	for k, b := range m.buckets {
@@ -101,6 +119,33 @@ func (m *Memory) sweepLocked(now time.Time) int {
 		}
 	}
 	return n
+}
+
+// evictOldestLocked deletes the n buckets with the oldest lastSeen. It is
+// called only once the hard cap is hit and sweepLocked found nothing idle to
+// reclaim, so evicting a batch (rather than one entry per call) amortizes the
+// sort across the many requests before the cap is reached again.
+func (m *Memory) evictOldestLocked(n int) {
+	if n <= 0 {
+		return
+	}
+	type entry struct {
+		key      string
+		lastSeen time.Time
+	}
+	entries := make([]entry, 0, len(m.buckets))
+	for k, b := range m.buckets {
+		entries = append(entries, entry{key: k, lastSeen: b.lastSeen})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].lastSeen.Before(entries[j].lastSeen)
+	})
+	if n > len(entries) {
+		n = len(entries)
+	}
+	for _, e := range entries[:n] {
+		delete(m.buckets, e.key)
+	}
 }
 
 var _ Limiter = (*Memory)(nil)
