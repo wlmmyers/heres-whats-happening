@@ -39,6 +39,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+        <Route path="calendar" element={<Navigate to="/calendar/seattle" replace />} />
         <Route
           path="interests"
           element={
