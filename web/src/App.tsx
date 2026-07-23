@@ -14,6 +14,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
+        <Route index element={<LandingPage />} />
         <Route
           path="login"
           element={
@@ -30,9 +31,8 @@ export default function App() {
             </LandingPage>
           }
         />
-        <Route index element={<LandingPage />} />
         <Route
-          path="calendar"
+          path="calendar/seattle"
           element={
             <RequireAuth>
               <CalendarPage />

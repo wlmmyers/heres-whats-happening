@@ -31,7 +31,7 @@ function renderPage(children: React.ReactNode) {
         <AuthProvider>
           <Routes>
             <Route path="/" element={<LandingPage>{children}</LandingPage>} />
-            <Route path="/calendar" element={<div>calendar-route</div>} />
+            <Route path="/calendar/seattle" element={<div>calendar-route</div>} />
             <Route path="/interests" element={<div>interests-route</div>} />
           </Routes>
         </AuthProvider>

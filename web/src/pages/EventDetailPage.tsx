@@ -32,7 +32,7 @@ export default function EventDetailPage() {
 
   return (
     <article>
-      <Link to="/calendar" className={s.backLink}>
+      <Link to="/calendar/seattle" className={s.backLink}>
         {`< Calendar`}
       </Link>
 
