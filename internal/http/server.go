@@ -14,6 +14,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
+	"github.com/wmyers/heres-whats-happening/internal/ratelimit"
 	"github.com/wmyers/heres-whats-happening/internal/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
@@ -58,6 +59,13 @@ func (s *Server) Router() http.Handler {
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Timeout(30 * time.Second))
 
+	// Rate limiters for the public auth surface. Signup is Postgres-backed so
+	// the ceiling survives restarts; login and refresh are in-process, which is
+	// accurate enough for limits this loose.
+	signupLimiter := ratelimit.NewPostgres(s.Queries, "signup", 3, time.Hour)
+	loginLimiter := ratelimit.NewMemory(10, time.Minute)
+	refreshLimiter := ratelimit.NewMemory(30, time.Minute)
+
 	// Public
 	r.Get("/healthz", handlers.Healthz())
 	r.Get("/readyz", handlers.Readyz(s.DB))
@@ -65,9 +73,12 @@ func (s *Server) Router() http.Handler {
 	r.Get("/ical/{token}", handlers.GetIcalFeed(s.Queries))
 
 	// Auth (public)
-	r.Post("/auth/signup", handlers.Signup(s.Queries, s.JWTSigner, s.RefreshTTL, s.DefaultCityID))
-	r.Post("/auth/login", handlers.Login(s.Queries, s.JWTSigner, s.RefreshTTL))
-	r.Post("/auth/refresh", handlers.Refresh(s.Queries, s.JWTSigner))
+	r.With(middleware.RateLimitOnSuccess(signupLimiter, "signup")).
+		Post("/auth/signup", handlers.Signup(s.Queries, s.JWTSigner, s.RefreshTTL, s.DefaultCityID))
+	r.With(middleware.RateLimit(loginLimiter, "login")).
+		Post("/auth/login", handlers.Login(s.Queries, s.JWTSigner, s.RefreshTTL))
+	r.With(middleware.RateLimit(refreshLimiter, "refresh")).
+		Post("/auth/refresh", handlers.Refresh(s.Queries, s.JWTSigner))
 	r.Post("/auth/logout", handlers.Logout(s.Queries))
 
 	// Authenticated

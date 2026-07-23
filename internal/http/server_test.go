@@ -63,3 +63,27 @@ func TestServer_EndToEnd_SignupLoginMe(t *testing.T) {
 	resp2.Body.Close()
 	require.Equal(t, "e2e@example.com", me.Email)
 }
+
+func TestServer_RefreshIsRateLimited(t *testing.T) {
+	s := &hs.Server{
+		JWTSigner:  auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute),
+		RefreshTTL: time.Hour,
+	}
+	srv := httptest.NewServer(s.Router())
+	defer srv.Close()
+
+	// The refresh limit is 30/min. Without a cookie each call short-circuits to
+	// 401 without a DB round trip.
+	for i := range 30 {
+		resp, err := http.Post(srv.URL+"/auth/refresh", "application/json", nil)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "request %d", i+1)
+	}
+
+	resp, err := http.Post(srv.URL+"/auth/refresh", "application/json", nil)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	require.NotEmpty(t, resp.Header.Get("Retry-After"))
+}
