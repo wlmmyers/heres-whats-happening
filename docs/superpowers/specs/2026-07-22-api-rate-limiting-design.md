@@ -1,7 +1,32 @@
 # API Rate Limiting
 
 **Date:** 2026-07-22
-**Status:** Approved, ready for implementation planning
+**Status:** Implemented and reviewed
+
+## Deployment runbook (read before shipping)
+
+Rate limiting is active the moment the new image runs — the routes are wired
+unconditionally. Whether it keys on a trustworthy client IP depends on the
+`TRUST_PROXY` env var, and that var does **not** propagate through the normal
+deploy flow:
+
+- `terraform/prod/ecs_api.tf` sets `TRUST_PROXY=true`, but the task definition has
+  `ignore_changes = [container_definitions]`, so `terraform apply` never pushes it.
+- The app pipeline re-registers the currently-live task definition with only the
+  image swapped, so it copies whatever env is already live — it won't introduce a
+  new var either.
+
+**Required step:** before (or together with) the first image that ships rate
+limiting, set the var on the running task with
+`scripts/taskdef-edit.sh --set-env TRUST_PROXY=true --deploy`.
+
+If the limiting image runs while `TRUST_PROXY` is unset, `resolveClientIP` falls
+back to `RemoteAddr`, which behind the ALB is the load balancer's own IP — a
+single shared value. Every caller then lands in one bucket and the limits apply
+**site-wide** (signup 3/hour, login 10/min, refresh 30/min for the entire user
+base). This is an availability regression, not a security hole, and it self-heals
+once the var is set. The app logs a startup `WARNING` whenever it boots with
+`TRUST_PROXY` unset, so a misconfigured task is visible in CloudWatch.
 
 ## Problem
 

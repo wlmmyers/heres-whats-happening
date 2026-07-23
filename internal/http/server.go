@@ -111,6 +111,10 @@ func (s *Server) Router() http.Handler {
 }
 
 func (s *Server) Run(ctx context.Context) error {
+	if w := s.trustProxyWarning(); w != "" {
+		log.Print(w)
+	}
+
 	httpSrv := &http.Server{
 		Addr:              s.Addr,
 		Handler:           s.Router(),
@@ -137,6 +141,27 @@ func (s *Server) Run(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+// trustProxyWarning returns a startup warning when rate limiting is active but
+// the client IP is NOT being taken from the proxy's X-Forwarded-For header. In
+// that mode every request keys on r.RemoteAddr; behind a proxy or load balancer
+// that is a single shared address, so all callers collapse into one rate-limit
+// bucket and the limits apply site-wide. It returns "" when TrustProxy is set.
+//
+// This is deliberately loud: the env var that enables trust (TRUST_PROXY) reaches
+// the running ECS task only via a manual taskdef-edit.sh step, so a deploy that
+// forgets it would silently throttle every user. The warning is a false alarm in
+// local development (direct connections, where RemoteAddr is the real client) —
+// there it just states the keying mode.
+func (s *Server) trustProxyWarning() string {
+	if s.TrustProxy {
+		return ""
+	}
+	return "WARNING: TRUST_PROXY is not set — rate limiting will key on RemoteAddr. " +
+		"This is correct for direct connections but WRONG behind a proxy/ALB, where all " +
+		"clients share one address and the rate limits apply site-wide. Set TRUST_PROXY=true " +
+		"when running behind the load balancer."
 }
 
 // rateLimitRetention is how long rate limit rows are kept. Comfortably longer
