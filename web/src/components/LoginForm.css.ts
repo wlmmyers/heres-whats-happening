@@ -47,3 +47,10 @@ export const switchLink = style({
   color: color.blue600,
   ':hover': { textDecorationLine: 'underline' },
 });
+
+export const aside = style({
+  ...fontSize.xs,
+  color: color.gray500,
+  display: 'block',
+  marginTop: '0.5rem',
+});

@@ -25,7 +25,7 @@ export default function Layout() {
         />
         {authed && (
           <>
-            <NavLink to="/calendar" className={link}>
+            <NavLink to="/calendar/seattle" className={link}>
               Calendar
             </NavLink>
             <NavLink to="/interests" className={link}>

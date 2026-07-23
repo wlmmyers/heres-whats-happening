@@ -53,3 +53,8 @@ export const connectButton = style({
     '&:disabled': { opacity: 0.6 },
   },
 });
+
+export const continueSection = style({
+  marginTop: '2rem',
+  textAlign: 'center',
+});

@@ -6,7 +6,7 @@ export default function LoginDialog() {
   const navigate = useNavigate();
   return (
     <div role="dialog" aria-label="Sign in" className={s.wrapper}>
-      <LoginForm onSuccess={() => navigate('/calendar')} />
+      <LoginForm onSuccess={() => navigate('/calendar/seattle')} />
     </div>
   );
 }

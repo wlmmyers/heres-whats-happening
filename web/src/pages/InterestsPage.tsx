@@ -92,7 +92,9 @@ export default function InterestsPage() {
           onRemove={(v) => removeMut.mutate(v)}
           placeholder="Add an interest and press Enter"
         />
-        {addMut.isError && <div className={s.error}>Couldn't save that tag.</div>}
+        {addMut.isError && (
+          <div className={s.error}>Couldn't save that tag. Did you already add it?</div>
+        )}
       </section>
 
       {showSpotifyInterests ? (
@@ -172,10 +174,15 @@ export default function InterestsPage() {
           </section>
         )
       )}
-
-      <button type="button" onClick={() => navigate('/calendar')} className={s.continueButton}>
-        Go to Calendar
-      </button>
+      <p className={s.continueSection}>
+        <button
+          type="button"
+          onClick={() => navigate('/calendar/seattle')}
+          className={s.continueButton}
+        >
+          Go to Calendar
+        </button>
+      </p>
     </div>
   );
 }

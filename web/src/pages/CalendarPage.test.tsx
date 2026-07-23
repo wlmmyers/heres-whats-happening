@@ -24,9 +24,9 @@ function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/calendar']}>
+      <MemoryRouter initialEntries={['/calendar/seattle']}>
         <Routes>
-          <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/calendar/seattle" element={<CalendarPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,

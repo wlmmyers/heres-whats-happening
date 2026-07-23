@@ -35,7 +35,7 @@ function renderPage() {
       <MemoryRouter initialEntries={['/interests']}>
         <Routes>
           <Route path="/interests" element={<InterestsPage />} />
-          <Route path="/calendar" element={<div>calendar-route</div>} />
+          <Route path="/calendar/seattle" element={<div>calendar-route</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
