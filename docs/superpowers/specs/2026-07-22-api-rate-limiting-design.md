@@ -109,9 +109,17 @@ CREATE INDEX rate_limit_events_lookup
 `bucket` namespaces the limit ("signup"), `key` holds the client IP. Queries live in
 `sql/queries/rate_limit.sql`:
 
-- `CountRateLimitEvents` — `WHERE bucket = $1 AND key = $2 AND created_at > now() - $3::interval`
-- `InsertRateLimitEvent`
+- `CountRateLimitEvents` — `WHERE bucket = ... AND key = ... AND created_at > since`
+- `OldestRateLimitEvent` — the earliest event still inside the window, for an accurate
+  `Retry-After`
+- `InsertRateLimitEvent` — takes `created_at` explicitly
 - `DeleteRateLimitEventsBefore` — for cleanup
+
+The window boundary is passed as a `timestamptz` computed in Go rather than as a SQL interval,
+and inserts carry an explicit `created_at` rather than relying on the column default. Both exist
+so the limiter's clock is the single authority on time: a limiter comparing against an injected
+test clock while rows were stamped by the database's `NOW()` would make every window test
+meaningless.
 
 Running `sqlc generate` regenerates `internal/store/models.go` alongside the new
 `rate_limit.sql.go`; both are committed.
