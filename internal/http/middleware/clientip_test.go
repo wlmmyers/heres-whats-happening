@@ -72,3 +72,23 @@ func TestClientIP_UnparseableXFFFallsBack(t *testing.T) {
 	})
 	require.Equal(t, "203.0.113.9", got)
 }
+
+// Repeated X-Forwarded-For header lines are exposed by Go as a []string; the
+// resolve helper's Set-based map can't express that, so this test builds the
+// request directly. If a proxy fails to coalesce multiple header lines into
+// one, r.Header.Get would silently return only the first line — the
+// attacker's untouched value. The resolver must instead use the rightmost
+// entry of the LAST header line, so the forged first line never wins.
+func TestClientIP_RepeatedXFFHeadersUsesLastLine(t *testing.T) {
+	var got string
+	h := middleware.ClientIPResolver(true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = middleware.ClientIP(r)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", nil)
+	req.RemoteAddr = "10.0.0.5:443"
+	req.Header.Add("X-Forwarded-For", "1.2.3.4")
+	req.Header.Add("X-Forwarded-For", "203.0.113.9")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	require.Equal(t, "203.0.113.9", got)
+	require.NotEqual(t, "1.2.3.4", got)
+}

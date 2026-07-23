@@ -10,10 +10,18 @@ import (
 // client IP address, replacing chi's RealIP.
 //
 // When trustProxy is true the address is taken from the RIGHTMOST entry of
-// X-Forwarded-For — the hop our ALB appended. Every entry to its left was
-// supplied by the caller and is forgeable. True-Client-IP and X-Real-IP are
-// ignored entirely: nothing in our request path sets them, so honoring them
-// would let any caller choose their own rate-limit bucket.
+// the LAST X-Forwarded-For header — the hop our ALB appended. Every entry to
+// its left, in every header line, was supplied by the caller and is
+// forgeable. Go exposes repeated headers as a []string (one entry per header
+// line), and r.Header.Get only ever returns the first line; a client can
+// send two X-Forwarded-For header lines and rely on Get to hand back their
+// untouched first line, whose rightmost entry is attacker-controlled. Reading
+// r.Header.Values and using the LAST line's rightmost entry is correct
+// regardless of whether the proxy coalesces multiple header lines into one
+// comma-joined value or appends its own line — the appended hop is always at
+// the end of the last line. True-Client-IP and X-Real-IP are ignored
+// entirely: nothing in our request path sets them, so honoring them would
+// let any caller choose their own rate-limit bucket.
 //
 // When trustProxy is false (local development, tests) the host portion of
 // r.RemoteAddr is used as-is.
@@ -28,8 +36,9 @@ func ClientIPResolver(trustProxy bool) func(http.Handler) http.Handler {
 
 func resolveClientIP(r *http.Request, trustProxy bool) string {
 	if trustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			parts := strings.Split(xff, ",")
+		if lines := r.Header.Values("X-Forwarded-For"); len(lines) > 0 {
+			lastLine := lines[len(lines)-1]
+			parts := strings.Split(lastLine, ",")
 			candidate := strings.TrimSpace(parts[len(parts)-1])
 			if net.ParseIP(candidate) != nil {
 				return candidate
