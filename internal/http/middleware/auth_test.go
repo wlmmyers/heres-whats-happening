@@ -15,7 +15,7 @@ import (
 func TestRequireAuth_AllowsValidToken(t *testing.T) {
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
 	uid := uuid.New()
-	tok, err := signer.SignAccess(uid)
+	tok, err := signer.SignAccess(uid, true)
 	require.NoError(t, err)
 
 	called := false
@@ -56,4 +56,29 @@ func TestRequireAuth_BadTokenRejected(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestRequireAuth_PutsConfirmedInContext(t *testing.T) {
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+
+	for _, confirmed := range []bool{true, false} {
+		tok, err := signer.SignAccess(uuid.New(), confirmed)
+		require.NoError(t, err)
+
+		called := false
+		h := RequireAuth(signer)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got, ok := ConfirmedFromContext(r.Context())
+			require.True(t, ok)
+			require.Equal(t, confirmed, got)
+			called = true
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.True(t, called)
+	}
 }

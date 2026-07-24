@@ -59,7 +59,7 @@ func TestGetMyCalendar_ReturnsMatchedEvents(t *testing.T) {
 	ctx := context.Background()
 	userID, _ := seedCalendarFixture(t, q, ctx)
 
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
 
 	from := time.Now().Add(-time.Hour).UTC().Format("2006-01-02")
 	to := time.Now().Add(7 * 24 * time.Hour).UTC().Format("2006-01-02")
@@ -101,7 +101,7 @@ func TestGetMyCalendar_DateRangeFiltering(t *testing.T) {
 	ctx := context.Background()
 	userID, _ := seedCalendarFixture(t, q, ctx)
 
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
 
 	from := time.Now().Add(7 * 24 * time.Hour).UTC().Format("2006-01-02")
 	to := time.Now().Add(14 * 24 * time.Hour).UTC().Format("2006-01-02")
@@ -126,7 +126,7 @@ func TestGetMyCalendar_MissingDates_Returns400(t *testing.T) {
 	ctx := context.Background()
 	userID, _ := seedCalendarFixture(t, q, ctx)
 
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
 
 	req := httptest.NewRequest(http.MethodGet, "/me/calendar", nil)
 	req.Header.Set("Authorization", "Bearer "+accessTok)
@@ -143,7 +143,7 @@ func TestGetEventByID_MatchedEvent(t *testing.T) {
 	ctx := context.Background()
 	userID, eventID := seedCalendarFixture(t, q, ctx)
 
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
 
 	r := chi.NewRouter()
 	mw := middleware.RequireAuth(signer)
@@ -187,7 +187,7 @@ func TestGetEventByID_UnmatchedEvent_ScoreIsZero(t *testing.T) {
 		VenueID:       venueID,
 	})
 
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID), true)
 	r := chi.NewRouter()
 	mw := middleware.RequireAuth(signer)
 	r.With(mw).Get("/events/{id}", handlers.GetEventByIDForUser(q))
@@ -216,7 +216,7 @@ func TestGetEventByID_NotFound(t *testing.T) {
 	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
 		Email: "nf@example.com", PasswordHash: "stub", CityID: city.ID,
 	})
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID), true)
 
 	r := chi.NewRouter()
 	mw := middleware.RequireAuth(signer)
@@ -241,7 +241,7 @@ func TestGetMyCalendar_ExcludesNotInterested(t *testing.T) {
 		EventID: eventID,
 	}))
 
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
 	from := time.Now().Add(-time.Hour).UTC().Format("2006-01-02")
 	to := time.Now().Add(7 * 24 * time.Hour).UTC().Format("2006-01-02")
 	req := httptest.NewRequest(http.MethodGet, "/me/calendar?from="+from+"&to="+to, nil)
@@ -272,7 +272,7 @@ func TestGetMyCalendar_ResetRestoresEvents(t *testing.T) {
 	}))
 	require.NoError(t, q.ClearNotInterested(ctx, userID))
 
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
 	from := time.Now().Add(-time.Hour).UTC().Format("2006-01-02")
 	to := time.Now().Add(7 * 24 * time.Hour).UTC().Format("2006-01-02")
 	req := httptest.NewRequest(http.MethodGet, "/me/calendar?from="+from+"&to="+to, nil)

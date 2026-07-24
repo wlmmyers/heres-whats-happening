@@ -25,7 +25,7 @@ import (
 func TestSpotifyConnect_ReturnsAuthorizeURLWithPKCE(t *testing.T) {
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
 	client := spotify.New("cid", "csec", "http://localhost:8080/integrations/spotify/callback", "")
-	access, err := signer.SignAccess(uuid.New())
+	access, err := signer.SignAccess(uuid.New(), true)
 	require.NoError(t, err)
 
 	mw := middleware.RequireAuth(signer)
@@ -69,7 +69,7 @@ func TestSpotifyExchange_HappyPath(t *testing.T) {
 		CityID:       city.ID,
 	})
 	require.NoError(t, err)
-	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes))
+	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes), true)
 
 	// Mock Spotify token + top-artists endpoints
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +128,7 @@ func TestSpotifyExchange_HappyPath(t *testing.T) {
 
 func TestSpotifyExchange_StateMismatch(t *testing.T) {
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
-	access, _ := signer.SignAccess(uuid.New())
+	access, _ := signer.SignAccess(uuid.New(), true)
 
 	hmacKey := []byte("test-key-test-key-test-key-32xx")
 	cookieValue, _ := spotify.SealOAuthState(hmacKey, "EXPECTED", "verifier", time.Minute)
@@ -170,7 +170,7 @@ func TestSpotifyDisconnect_RemovesTokensAndInterests(t *testing.T) {
 		Value: "Phoebe Bridgers", NormalizedValue: "phoebe bridgers", Weight: 1.0,
 	})
 
-	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes))
+	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes), true)
 	h := middleware.RequireAuth(signer)(handlers.SpotifyDisconnect(q))
 
 	req := httptest.NewRequest(http.MethodDelete, "/integrations/spotify", nil)
@@ -217,7 +217,7 @@ func TestSpotifyStatus_Connected(t *testing.T) {
 		Scope:           "user-top-read",
 	})
 
-	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes))
+	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes), true)
 	h := middleware.RequireAuth(signer)(handlers.SpotifyStatus(q))
 
 	req := httptest.NewRequest(http.MethodGet, "/integrations/spotify/status", nil)
@@ -243,7 +243,7 @@ func TestSpotifyStatus_NotConnected(t *testing.T) {
 		Email: "spotify-status-disconnected@example.com", PasswordHash: "stub", CityID: city.ID,
 	})
 
-	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes))
+	access, _ := signer.SignAccess(uuid.UUID(userRow.ID.Bytes), true)
 	h := middleware.RequireAuth(signer)(handlers.SpotifyStatus(q))
 
 	req := httptest.NewRequest(http.MethodGet, "/integrations/spotify/status", nil)

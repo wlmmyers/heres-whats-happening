@@ -35,7 +35,7 @@ func TestAddNotInterested_Idempotent(t *testing.T) {
 	q := store.New(pool)
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
 	userID, eventID := seedCalendarFixture(t, q, context.Background())
-	access, _ := signer.SignAccess(uuidFromPgCal(userID))
+	access, _ := signer.SignAccess(uuidFromPgCal(userID), true)
 
 	evStr := uuidFromPgCal(eventID).String()
 	require.Equal(t, http.StatusNoContent, postNotInterested(t, q, signer, access, evStr).Code)
@@ -47,7 +47,7 @@ func TestAddNotInterested_BadUUID(t *testing.T) {
 	q := store.New(pool)
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
 	userID, _ := seedCalendarFixture(t, q, context.Background())
-	access, _ := signer.SignAccess(uuidFromPgCal(userID))
+	access, _ := signer.SignAccess(uuidFromPgCal(userID), true)
 
 	require.Equal(t, http.StatusBadRequest, postNotInterested(t, q, signer, access, "not-a-uuid").Code)
 }
@@ -57,7 +57,7 @@ func TestAddNotInterested_UnknownEvent(t *testing.T) {
 	q := store.New(pool)
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
 	userID, _ := seedCalendarFixture(t, q, context.Background())
-	access, _ := signer.SignAccess(uuidFromPgCal(userID))
+	access, _ := signer.SignAccess(uuidFromPgCal(userID), true)
 
 	require.Equal(t, http.StatusBadRequest, postNotInterested(t, q, signer, access, uuid.NewString()).Code)
 }
@@ -67,7 +67,7 @@ func TestResetNotInterested_Returns204(t *testing.T) {
 	q := store.New(pool)
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
 	userID, eventID := seedCalendarFixture(t, q, context.Background())
-	access, _ := signer.SignAccess(uuidFromPgCal(userID))
+	access, _ := signer.SignAccess(uuidFromPgCal(userID), true)
 
 	require.Equal(t, http.StatusNoContent,
 		postNotInterested(t, q, signer, access, uuidFromPgCal(eventID).String()).Code)

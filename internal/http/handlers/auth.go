@@ -72,6 +72,7 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 			Email:        req.Email,
 			PasswordHash: hash,
 			CityID:       pgtype.UUID{Bytes: cityUUID, Valid: true},
+			Confirmed:    true,
 		})
 		if err != nil {
 			var pgErr *pgconn.PgError
@@ -84,7 +85,7 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 		}
 
 		userUUID := uuid.UUID(row.ID.Bytes)
-		access, err := signer.SignAccess(userUUID)
+		access, err := signer.SignAccess(userUUID, row.Confirmed)
 		if err != nil {
 			httperr.WriteErr(w, r, http.StatusInternalServerError, "sign_failed", "could not sign access token", err)
 			return
@@ -145,7 +146,7 @@ func Login(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration) h
 		}
 
 		userUUID := uuid.UUID(row.ID.Bytes)
-		access, err := signer.SignAccess(userUUID)
+		access, err := signer.SignAccess(userUUID, row.Confirmed)
 		if err != nil {
 			httperr.WriteErr(w, r, http.StatusInternalServerError, "sign_failed", "could not sign access token", err)
 			return
@@ -188,7 +189,7 @@ func Refresh(q *store.Queries, signer *auth.JWTSigner) http.HandlerFunc {
 			httperr.Write(w, http.StatusUnauthorized, "invalid_refresh", "refresh token is not valid")
 			return
 		}
-		access, err := signer.SignAccess(uuid.UUID(row.UserID.Bytes))
+		access, err := signer.SignAccess(uuid.UUID(row.UserID.Bytes), row.Confirmed)
 		if err != nil {
 			httperr.WriteErr(w, r, http.StatusInternalServerError, "sign_failed", "could not sign access token", err)
 			return
