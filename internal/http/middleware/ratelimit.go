@@ -23,9 +23,9 @@ const (
 	EndpointSignup  = "signup"
 	EndpointLogin   = "login"
 	EndpointRefresh = "refresh"
-	EndpointAuthed  = "authed"
 
 	// Authenticated (user-keyed)
+	EndpointAuthed          = "authed"
 	EndpointAuthedWrite     = "authed_write"
 	EndpointManualInterests = "manual_interests"
 	EndpointSpotifyExchange = "spotify_exchange"

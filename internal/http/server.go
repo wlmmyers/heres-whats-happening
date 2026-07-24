@@ -107,6 +107,10 @@ func (s *Server) Router() http.Handler {
 		r.Use(middleware.RequireAuth(s.JWTSigner))
 		// Safety net across the whole group. Installed with Use, not With, so a
 		// route added later is covered by default rather than silently unlimited.
+		// This line must stay above every nested r.Group below: chi copies the
+		// middleware stack by value at Group()/With() time, so a group inserted
+		// above it would snapshot an incomplete stack and its routes would be
+		// silently unlimited.
 		r.Use(middleware.RateLimitByUser(authedLimiter, middleware.EndpointAuthed))
 
 		// Reads — covered by the net alone.

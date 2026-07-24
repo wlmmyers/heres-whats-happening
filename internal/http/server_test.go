@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -214,6 +215,7 @@ func doAuthed(t *testing.T, srv *httptest.Server, method, path, token string) in
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
+	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	return resp.StatusCode
 }
@@ -248,8 +250,10 @@ func TestServer_AuthedNetIsRateLimited(t *testing.T) {
 func TestServer_AuthedLimitIsPerUser(t *testing.T) {
 	srv, alice := authedTestServer(t, "alice-limit@example.com")
 
-	for range 30 {
-		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", alice)
+	for i := range 30 {
+		require.Equal(t, http.StatusNoContent,
+			doAuthed(t, srv, http.MethodDelete, "/me/not-interested", alice),
+			"request %d", i+1)
 	}
 	require.Equal(t, http.StatusTooManyRequests,
 		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", alice))
