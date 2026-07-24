@@ -6,6 +6,7 @@ domain_name = "hereswhatshappening.app"
 # Optional overrides:
 aws_region               = "us-east-1"
 app_name_prefix          = "hwh"
+alert_email              = "wlmmyers@gmail.com"
 ticketmaster_city        = "Seattle"
 db_instance_class        = "db.t4g.small"
 db_backup_retention_days = 7

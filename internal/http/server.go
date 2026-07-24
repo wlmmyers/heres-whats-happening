@@ -2,11 +2,13 @@ package http
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
@@ -14,6 +16,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
+	"github.com/wmyers/heres-whats-happening/internal/ratelimit"
 	"github.com/wmyers/heres-whats-happening/internal/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
@@ -41,18 +44,29 @@ type Server struct {
 
 	// Plan 6 addition — list of Origin values to allow CORS for. If empty, CORS is disabled.
 	CORSAllowedOrigins []string
+
+	// Plan 7 addition — when true, derive the client IP from the rightmost
+	// X-Forwarded-For entry. Set only when running behind our ALB.
+	TrustProxy bool
 }
 
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(middleware.ClientIPResolver(s.TrustProxy))
 	if len(s.CORSAllowedOrigins) > 0 {
 		r.Use(middleware.CORS(s.CORSAllowedOrigins))
 	}
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Timeout(30 * time.Second))
+
+	// Rate limiters for the public auth surface. Signup is Postgres-backed so
+	// the ceiling survives restarts; login and refresh are in-process, which is
+	// accurate enough for limits this loose.
+	signupLimiter := ratelimit.NewPostgres(s.Queries, "signup", 3, time.Hour)
+	loginLimiter := ratelimit.NewMemory(10, time.Minute)
+	refreshLimiter := ratelimit.NewMemory(30, time.Minute)
 
 	// Public
 	r.Get("/healthz", handlers.Healthz())
@@ -61,9 +75,12 @@ func (s *Server) Router() http.Handler {
 	r.Get("/ical/{token}", handlers.GetIcalFeed(s.Queries))
 
 	// Auth (public)
-	r.Post("/auth/signup", handlers.Signup(s.Queries, s.JWTSigner, s.RefreshTTL, s.DefaultCityID))
-	r.Post("/auth/login", handlers.Login(s.Queries, s.JWTSigner, s.RefreshTTL))
-	r.Post("/auth/refresh", handlers.Refresh(s.Queries, s.JWTSigner))
+	r.With(middleware.RateLimitOnSuccess(signupLimiter, middleware.EndpointSignup)).
+		Post("/auth/signup", handlers.Signup(s.Queries, s.JWTSigner, s.RefreshTTL, s.DefaultCityID))
+	r.With(middleware.RateLimit(loginLimiter, middleware.EndpointLogin)).
+		Post("/auth/login", handlers.Login(s.Queries, s.JWTSigner, s.RefreshTTL))
+	r.With(middleware.RateLimit(refreshLimiter, middleware.EndpointRefresh)).
+		Post("/auth/refresh", handlers.Refresh(s.Queries, s.JWTSigner))
 	r.Post("/auth/logout", handlers.Logout(s.Queries))
 
 	// Authenticated
@@ -94,6 +111,10 @@ func (s *Server) Router() http.Handler {
 }
 
 func (s *Server) Run(ctx context.Context) error {
+	if w := s.trustProxyWarning(); w != "" {
+		log.Print(w)
+	}
+
 	httpSrv := &http.Server{
 		Addr:              s.Addr,
 		Handler:           s.Router(),
@@ -108,6 +129,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.InterestConsumer != nil {
 		go func() { errCh <- s.InterestConsumer.Run(ctx) }()
 	}
+	if s.Queries != nil {
+		go s.runRateLimitCleanup(ctx)
+	}
 
 	select {
 	case <-ctx.Done():
@@ -116,5 +140,56 @@ func (s *Server) Run(ctx context.Context) error {
 		return httpSrv.Shutdown(shutdownCtx)
 	case err := <-errCh:
 		return err
+	}
+}
+
+// trustProxyWarning returns a startup warning when rate limiting is active but
+// the client IP is NOT being taken from the proxy's X-Forwarded-For header. In
+// that mode every request keys on r.RemoteAddr; behind a proxy or load balancer
+// that is a single shared address, so all callers collapse into one rate-limit
+// bucket and the limits apply site-wide. It returns "" when TrustProxy is set.
+//
+// This is deliberately loud: the env var that enables trust (TRUST_PROXY) reaches
+// the running ECS task only via a manual taskdef-edit.sh step, so a deploy that
+// forgets it would silently throttle every user. The warning is a false alarm in
+// local development (direct connections, where RemoteAddr is the real client) —
+// there it just states the keying mode.
+func (s *Server) trustProxyWarning() string {
+	if s.TrustProxy {
+		return ""
+	}
+	return "WARNING: TRUST_PROXY is not set — rate limiting will key on RemoteAddr. " +
+		"This is correct for direct connections but WRONG behind a proxy/ALB, where all " +
+		"clients share one address and the rate limits apply site-wide. Set TRUST_PROXY=true " +
+		"when running behind the load balancer."
+}
+
+// rateLimitRetention is how long rate limit rows are kept. Comfortably longer
+// than the widest window (1h) so cleanup can never delete a live row.
+const rateLimitRetention = 24 * time.Hour
+
+// deleteExpiredRateLimitEvents removes rate limit rows past the retention
+// window, measured from now.
+func (s *Server) deleteExpiredRateLimitEvents(ctx context.Context, now time.Time) error {
+	cutoff := pgtype.Timestamptz{Time: now.Add(-rateLimitRetention), Valid: true}
+	return s.Queries.DeleteRateLimitEventsBefore(ctx, cutoff)
+}
+
+// runRateLimitCleanup deletes expired rate limit rows until ctx is cancelled.
+func (s *Server) runRateLimitCleanup(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			delCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			err := s.deleteExpiredRateLimitEvents(delCtx, time.Now())
+			cancel()
+			if err != nil {
+				log.Printf("rate limit cleanup: %v", err)
+			}
+		}
 	}
 }

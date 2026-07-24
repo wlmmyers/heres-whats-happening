@@ -44,6 +44,9 @@ type Config struct {
 
 	// Plan 6 additions
 	CORSAllowedOrigins []string
+
+	// Plan 7 additions
+	TrustProxy bool
 }
 
 func Load() (*Config, error) {
@@ -103,6 +106,15 @@ func Load() (*Config, error) {
 		}
 	}
 
+	trustProxy := false
+	if v := os.Getenv("TRUST_PROXY"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid TRUST_PROXY=%q: %w", v, err)
+		}
+		trustProxy = b
+	}
+
 	cfg := &Config{
 		DatabaseURL:         dbURL,
 		HTTPAddr:            addr,
@@ -125,6 +137,7 @@ func Load() (*Config, error) {
 		TEIEndpoint:         os.Getenv("TEI_ENDPOINT"),
 		IcalBaseURL:         os.Getenv("ICAL_BASE_URL"),
 		CORSAllowedOrigins:  corsOrigins,
+		TrustProxy:          trustProxy,
 	}
 	return cfg, nil
 }

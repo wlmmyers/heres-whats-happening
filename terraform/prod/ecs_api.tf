@@ -27,6 +27,15 @@ locals {
     { name = "ICAL_BASE_URL", value = "https://api.${var.domain_name}" },
     { name = "CORS_ALLOWED_ORIGINS", value = "https://${var.domain_name},https://www.${var.domain_name}" },
     { name = "SPOTIFY_REDIRECT_URI", value = "https://${var.domain_name}/integrations/spotify/callback" },
+    # ROLLOUT ORDER MATTERS. This value is NOT auto-applied: the task def has
+    # ignore_changes = [container_definitions], and the app pipeline re-registers
+    # the live task def with only the image swapped. So TRUST_PROXY reaches the
+    # running task only via a manual `scripts/taskdef-edit.sh --set-env
+    # TRUST_PROXY=true --deploy`. Do that BEFORE (or together with) the first
+    # image that ships rate limiting. If the limiting image runs while this is
+    # unset, the app keys every request on the ALB's IP and the rate limits apply
+    # site-wide — the app logs a startup WARNING in that state.
+    { name = "TRUST_PROXY", value = "true" },
   ]
 
   # Secret env vars — pulled from Secrets Manager.

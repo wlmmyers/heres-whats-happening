@@ -171,6 +171,7 @@ func serve() error {
 		QueuePublisher:     qClient,
 		IcalBaseURL:        cfg.IcalBaseURL,
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
+		TrustProxy:         cfg.TrustProxy,
 	}
 	fmt.Printf("listening on %s (ingest workers=%d)\n", cfg.HTTPAddr, cfg.IngestWorkers)
 	return s.Run(ctx)

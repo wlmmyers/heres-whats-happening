@@ -15,6 +15,11 @@ variable "app_name_prefix" {
   default     = "hwh"
 }
 
+variable "alert_email" {
+  description = "Email address that receives operational alerts (rate-limit rejections, DLQ depth). The SNS subscription must be confirmed via the link AWS emails after apply."
+  type        = string
+}
+
 variable "domain_name" {
   description = "Apex domain. The SPA is served from this; the API from api.<domain>. Override in terraform.tfvars."
   type        = string
