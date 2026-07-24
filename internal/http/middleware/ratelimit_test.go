@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
@@ -133,7 +134,7 @@ func TestRateLimitOnSuccess_RecordsOn201(t *testing.T) {
 	req.RemoteAddr = "203.0.113.9:1234"
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
-	require.Equal(t, []string{"203.0.113.9"}, l.recorded)
+	require.Equal(t, []string{"ip:203.0.113.9"}, l.recorded)
 }
 
 // The core of the successes-only policy: a mistyped password must cost nothing.
@@ -297,4 +298,89 @@ func TestEndpointConstants(t *testing.T) {
 	require.Equal(t, "signup", middleware.EndpointSignup)
 	require.Equal(t, "login", middleware.EndpointLogin)
 	require.Equal(t, "refresh", middleware.EndpointRefresh)
+}
+
+// keyRecordingLimiter captures the key each call was made with, so tests can
+// assert on the key strategy rather than only on the status code.
+type keyRecordingLimiter struct {
+	allowedKeys  []string
+	recordedKeys []string
+}
+
+func (k *keyRecordingLimiter) Allow(_ context.Context, key string) (ratelimit.Decision, error) {
+	k.allowedKeys = append(k.allowedKeys, key)
+	return ratelimit.Decision{Allowed: true}, nil
+}
+
+func (k *keyRecordingLimiter) Record(_ context.Context, key string) error {
+	k.recordedKeys = append(k.recordedKeys, key)
+	return nil
+}
+
+func TestRateLimitByUser_KeysOnUserID(t *testing.T) {
+	uid := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	l := &keyRecordingLimiter{}
+	h := middleware.RateLimitByUser(l, middleware.EndpointAuthed)(okHandler(http.StatusOK))
+
+	req := httptest.NewRequest(http.MethodGet, "/me", nil)
+	req = req.WithContext(middleware.ContextWithUserID(req.Context(), uid))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []string{"u:" + uid.String()}, l.allowedKeys)
+	require.Equal(t, []string{"u:" + uid.String()}, l.recordedKeys,
+		"an allowed request must spend its token")
+}
+
+func TestRateLimitByUser_TwoUsersHaveIndependentBudgets(t *testing.T) {
+	alice := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	bob := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+
+	l := ratelimit.NewMemory(1, time.Minute)
+	h := middleware.RateLimitByUser(l, middleware.EndpointAuthed)(okHandler(http.StatusOK))
+
+	do := func(uid uuid.UUID) int {
+		req := httptest.NewRequest(http.MethodGet, "/me", nil)
+		req = req.WithContext(middleware.ContextWithUserID(req.Context(), uid))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	require.Equal(t, http.StatusOK, do(alice))
+	require.Equal(t, http.StatusTooManyRequests, do(alice), "alice is out of budget")
+	require.Equal(t, http.StatusOK, do(bob), "bob has his own budget")
+}
+
+// RequireAuth 401s before this middleware runs, so a missing user ID means a
+// middleware-ordering bug. Falling back to the IP degrades to the old behavior
+// instead of collapsing every such request into one shared empty-string bucket.
+func TestRateLimitByUser_FallsBackToIPWhenNoUser(t *testing.T) {
+	l := &keyRecordingLimiter{}
+	h := middleware.RateLimitByUser(l, middleware.EndpointAuthed)(okHandler(http.StatusOK))
+
+	req := httptest.NewRequest(http.MethodGet, "/me", nil)
+	req.RemoteAddr = "203.0.113.9:5555"
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []string{"ip:203.0.113.9"}, l.allowedKeys)
+}
+
+func TestRateLimit_KeysOnIPAndSpendsToken(t *testing.T) {
+	l := &keyRecordingLimiter{}
+	h := middleware.RateLimit(l, middleware.EndpointLogin)(okHandler(http.StatusOK))
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	req.RemoteAddr = "198.51.100.4:1234"
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, []string{"ip:198.51.100.4"}, l.allowedKeys)
+	require.Equal(t, []string{"ip:198.51.100.4"}, l.recordedKeys)
 }
