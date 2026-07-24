@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
+	"github.com/wmyers/heres-whats-happening/internal/observability"
 	"github.com/wmyers/heres-whats-happening/internal/ratelimit"
 )
 
@@ -210,4 +212,89 @@ func TestRateLimitOnSuccess_RecordsWhenHandlerWritesNothing(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/auth/signup", nil))
 
 	require.Len(t, l.recorded, 1)
+}
+
+func TestRateLimit_EmitsMetricOnRejection(t *testing.T) {
+	var buf bytes.Buffer
+	old := observability.Default
+	observability.Default = observability.NewEmitter(&buf)
+	defer func() { observability.Default = old }()
+
+	l := &stubLimiter{decision: ratelimit.Decision{Allowed: false, RetryAfter: time.Minute}}
+	h := middleware.RateLimit(l, "login")(okHandler(http.StatusOK))
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	req.RemoteAddr = "203.0.113.9:1234"
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	out := buf.String()
+	require.Contains(t, out, `"endpoint":"login"`, "metric must carry the endpoint dimension")
+	require.Contains(t, out, `"ip":"203.0.113.9"`, "metric must carry the client ip property")
+	require.Contains(t, out, "RateLimitRejections")
+}
+
+func TestRateLimit_NoMetricWhenAllowed(t *testing.T) {
+	var buf bytes.Buffer
+	old := observability.Default
+	observability.Default = observability.NewEmitter(&buf)
+	defer func() { observability.Default = old }()
+
+	l := &stubLimiter{decision: ratelimit.Decision{Allowed: true}}
+	h := middleware.RateLimit(l, "login")(okHandler(http.StatusOK))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/auth/login", nil))
+
+	require.Empty(t, buf.String(), "an allowed request must emit no rejection metric")
+}
+
+// A fail-open request (Allowed:true WITH an error) succeeded; it must not
+// emit a rejection metric.
+func TestRateLimit_NoEmitOnFailOpen(t *testing.T) {
+	var buf bytes.Buffer
+	old := observability.Default
+	observability.Default = observability.NewEmitter(&buf)
+	defer func() { observability.Default = old }()
+
+	l := &stubLimiter{
+		decision: ratelimit.Decision{Allowed: true},
+		allowErr: context.DeadlineExceeded,
+	}
+	h := middleware.RateLimit(l, middleware.EndpointLogin)(okHandler(http.StatusOK))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/auth/login", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, buf.String(), "a fail-open request must emit no rejection metric")
+}
+
+// Genuinely over the limit but a secondary lookup errored (Allowed:false WITH
+// an error): the request must still be rejected and the rejection still
+// emitted.
+func TestRateLimit_EmitsOnDeniedWithError(t *testing.T) {
+	var buf bytes.Buffer
+	old := observability.Default
+	observability.Default = observability.NewEmitter(&buf)
+	defer func() { observability.Default = old }()
+
+	l := &stubLimiter{
+		decision: ratelimit.Decision{Allowed: false, RetryAfter: time.Minute},
+		allowErr: context.DeadlineExceeded,
+	}
+	h := middleware.RateLimit(l, middleware.EndpointLogin)(okHandler(http.StatusOK))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/auth/login", nil))
+
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	out := buf.String()
+	require.Contains(t, out, `"endpoint":"login"`, "metric must carry the endpoint dimension")
+	require.Contains(t, out, "RateLimitRejections")
+}
+
+// These endpoint values are the metric `endpoint` dimension the CloudWatch
+// alarms in terraform/prod/observability.tf key on. If you change one, update
+// that file's ratelimit_alarms map keys or the matching alarm goes blind.
+func TestEndpointConstants(t *testing.T) {
+	require.Equal(t, "signup", middleware.EndpointSignup)
+	require.Equal(t, "login", middleware.EndpointLogin)
+	require.Equal(t, "refresh", middleware.EndpointRefresh)
 }

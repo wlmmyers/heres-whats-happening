@@ -118,4 +118,5 @@ resource "aws_cloudwatch_metric_alarm" "email_parser_dlq_depth" {
   threshold           = 1
   dimensions          = { QueueName = aws_sqs_queue.email_parser_dlq.name }
   alarm_description   = "Emails failed parsing and landed in the email-parser DLQ. Check Lambda logs."
+  alarm_actions       = [aws_sns_topic.alerts.arn]
 }

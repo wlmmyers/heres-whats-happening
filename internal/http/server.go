@@ -75,11 +75,11 @@ func (s *Server) Router() http.Handler {
 	r.Get("/ical/{token}", handlers.GetIcalFeed(s.Queries))
 
 	// Auth (public)
-	r.With(middleware.RateLimitOnSuccess(signupLimiter, "signup")).
+	r.With(middleware.RateLimitOnSuccess(signupLimiter, middleware.EndpointSignup)).
 		Post("/auth/signup", handlers.Signup(s.Queries, s.JWTSigner, s.RefreshTTL, s.DefaultCityID))
-	r.With(middleware.RateLimit(loginLimiter, "login")).
+	r.With(middleware.RateLimit(loginLimiter, middleware.EndpointLogin)).
 		Post("/auth/login", handlers.Login(s.Queries, s.JWTSigner, s.RefreshTTL))
-	r.With(middleware.RateLimit(refreshLimiter, "refresh")).
+	r.With(middleware.RateLimit(refreshLimiter, middleware.EndpointRefresh)).
 		Post("/auth/refresh", handlers.Refresh(s.Queries, s.JWTSigner))
 	r.Post("/auth/logout", handlers.Logout(s.Queries))
 
