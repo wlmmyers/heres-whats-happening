@@ -1101,7 +1101,7 @@ func TestServer_AuthedWriteIsRateLimited(t *testing.T) {
 
 	for i := range 30 {
 		code := doAuthed(t, srv, http.MethodDelete, "/me/not-interested", token)
-		require.NotEqual(t, http.StatusTooManyRequests, code, "request %d", i+1)
+		require.Equal(t, http.StatusNoContent, code, "request %d", i+1)
 	}
 
 	require.Equal(t, http.StatusTooManyRequests,
@@ -1114,7 +1114,7 @@ func TestServer_AuthedNetIsRateLimited(t *testing.T) {
 
 	for i := range 120 {
 		code := doAuthed(t, srv, http.MethodGet, "/me", token)
-		require.NotEqual(t, http.StatusTooManyRequests, code, "request %d", i+1)
+		require.Equal(t, http.StatusOK, code, "request %d", i+1)
 	}
 
 	require.Equal(t, http.StatusTooManyRequests,
@@ -1125,8 +1125,10 @@ func TestServer_AuthedNetIsRateLimited(t *testing.T) {
 func TestServer_AuthedLimitIsPerUser(t *testing.T) {
 	srv, alice := authedTestServer(t, "alice-limit@example.com")
 
-	for range 30 {
-		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", alice)
+	for i := range 30 {
+		require.Equal(t, http.StatusNoContent,
+			doAuthed(t, srv, http.MethodDelete, "/me/not-interested", alice),
+			"request %d", i+1)
 	}
 	require.Equal(t, http.StatusTooManyRequests,
 		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", alice))
@@ -1134,7 +1136,7 @@ func TestServer_AuthedLimitIsPerUser(t *testing.T) {
 	// A second user on the same server and the same source IP.
 	bob := signupFor(t, srv, "bob-limit@example.com")
 
-	require.NotEqual(t, http.StatusTooManyRequests,
+	require.Equal(t, http.StatusNoContent,
 		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", bob),
 		"bob must have his own budget despite sharing alice's IP")
 }
@@ -1145,7 +1147,7 @@ func TestServer_IcalTokenMintingIsRateLimited(t *testing.T) {
 
 	for i := range 10 {
 		code := doAuthed(t, srv, http.MethodPost, "/me/ical-token", token)
-		require.NotEqual(t, http.StatusTooManyRequests, code, "request %d", i+1)
+		require.Equal(t, http.StatusCreated, code, "request %d", i+1)
 	}
 
 	require.Equal(t, http.StatusTooManyRequests,
