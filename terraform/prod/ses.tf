@@ -59,3 +59,50 @@ resource "aws_ses_receipt_rule" "store_to_s3" {
 
   depends_on = [aws_s3_bucket_policy.inbound_email]
 }
+
+# ---------------------------------------------------------------------------
+# Outbound sending identity for the apex domain.
+#
+# Distinct from the inbound.<domain> identity above: that one receives
+# newsletter mail, this one is the From: domain for transactional mail
+# (email confirmation). Verifying the apex + DKIM is also what makes the
+# SES production-access request credible.
+# ---------------------------------------------------------------------------
+resource "aws_ses_domain_identity" "apex" {
+  domain = var.domain_name
+}
+
+resource "aws_ses_domain_dkim" "apex" {
+  domain = aws_ses_domain_identity.apex.domain
+}
+
+resource "aws_route53_record" "apex_dkim" {
+  count   = 3
+  zone_id = data.aws_route53_zone.primary.zone_id
+  name    = "${aws_ses_domain_dkim.apex.dkim_tokens[count.index]}._domainkey.${var.domain_name}"
+  type    = "CNAME"
+  ttl     = 600
+  records = ["${aws_ses_domain_dkim.apex.dkim_tokens[count.index]}.dkim.amazonses.com"]
+}
+
+# SPF. NOTE: only ONE TXT record may carry v=spf1 for a name — a second one is
+# a permanent error that fails SPF entirely. Verified before creating this that
+# the zone has no apex TXT record; if one appears later, merge the mechanisms
+# into it rather than adding another resource.
+resource "aws_route53_record" "spf" {
+  zone_id = data.aws_route53_zone.primary.zone_id
+  name    = var.domain_name
+  type    = "TXT"
+  ttl     = 600
+  records = ["v=spf1 include:amazonses.com ~all"]
+}
+
+# DMARC in monitor mode (p=none): report-only, so a misaligned message is
+# never rejected while we establish a sending reputation.
+resource "aws_route53_record" "dmarc" {
+  zone_id = data.aws_route53_zone.primary.zone_id
+  name    = "_dmarc.${var.domain_name}"
+  type    = "TXT"
+  ttl     = 600
+  records = ["v=DMARC1; p=none; rua=mailto:dmarc@${var.domain_name}"]
+}

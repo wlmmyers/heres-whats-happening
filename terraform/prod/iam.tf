@@ -75,6 +75,20 @@ data "aws_iam_policy_document" "task" {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = [aws_db_instance.main.master_user_secret[0].secret_arn]
   }
+
+  # Outbound transactional mail (email confirmation). This is the *task* role —
+  # the running container calls SES itself. The execution role only injects
+  # secrets at task start and never sends mail.
+  #
+  # Scoped to the apex identity: the task can send as an address on
+  # <domain>, nothing else.
+  statement {
+    sid     = "SendTransactionalEmail"
+    actions = ["ses:SendEmail"]
+    resources = [
+      "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/${var.domain_name}",
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "task" {
