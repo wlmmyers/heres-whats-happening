@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
@@ -128,9 +127,6 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.InterestConsumer != nil {
 		go func() { errCh <- s.InterestConsumer.Run(ctx) }()
 	}
-	if s.Queries != nil {
-		go s.runRateLimitCleanup(ctx)
-	}
 
 	select {
 	case <-ctx.Done():
@@ -161,34 +157,4 @@ func (s *Server) trustProxyWarning() string {
 		"This is correct for direct connections but WRONG behind a proxy/ALB, where all " +
 		"clients share one address and the rate limits apply site-wide. Set TRUST_PROXY=true " +
 		"when running behind the load balancer."
-}
-
-// rateLimitRetention is how long rate limit rows are kept. Comfortably longer
-// than the widest window (1h) so cleanup can never delete a live row.
-const rateLimitRetention = 24 * time.Hour
-
-// deleteExpiredRateLimitEvents removes rate limit rows past the retention
-// window, measured from now.
-func (s *Server) deleteExpiredRateLimitEvents(ctx context.Context, now time.Time) error {
-	cutoff := pgtype.Timestamptz{Time: now.Add(-rateLimitRetention), Valid: true}
-	return s.Queries.DeleteRateLimitEventsBefore(ctx, cutoff)
-}
-
-// runRateLimitCleanup deletes expired rate limit rows until ctx is cancelled.
-func (s *Server) runRateLimitCleanup(ctx context.Context) {
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			delCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			err := s.deleteExpiredRateLimitEvents(delCtx, time.Now())
-			cancel()
-			if err != nil {
-				log.Printf("rate limit cleanup: %v", err)
-			}
-		}
-	}
 }

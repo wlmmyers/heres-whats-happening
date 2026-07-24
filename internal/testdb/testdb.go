@@ -154,12 +154,11 @@ func runMigrations(dsn string) error {
 // test code and so must be emptied between tests. It is a manually maintained
 // list, not derived from the schema — TestTruncateAllCoversEveryTable in
 // truncate_test.go checks it against the live database on every run so an
-// omission (this has happened twice: artist_genre_cache, then
-// rate_limit_events) fails loudly instead of leaking rows across tests.
+// omission (this has happened twice) fails loudly instead of leaking rows
+// across tests.
 //
 // Order matters: children before parents to avoid FK violations on TRUNCATE CASCADE.
 var truncateTables = []string{
-	"rate_limit_events",
 	"user_event_not_interested",
 	"user_event_match",
 	"event_genres",
