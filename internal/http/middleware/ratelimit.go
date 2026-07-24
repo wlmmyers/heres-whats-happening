@@ -14,14 +14,22 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/ratelimit"
 )
 
-// Rate-limit endpoint identifiers. These are the metric `endpoint` dimension
-// VALUES emitted on a 429 and are mirrored as the alarm map keys in
-// terraform/prod/observability.tf — keep the two in sync.
+// Rate-limit endpoint identifiers. Each is emitted as the `endpoint` metric
+// dimension VALUE on a 429. A subset — signup, login, refresh, authed,
+// manual_interests, spotify_exchange, ical_feed — is also mirrored as alarm map
+// keys in terraform/prod/observability.tf; keep those in sync. The rest are
+// emitted only, and are queryable in CloudWatch Logs Insights without an alarm.
 const (
 	EndpointSignup  = "signup"
 	EndpointLogin   = "login"
 	EndpointRefresh = "refresh"
 	EndpointAuthed  = "authed"
+
+	// Authenticated (user-keyed)
+	EndpointAuthedWrite     = "authed_write"
+	EndpointManualInterests = "manual_interests"
+	EndpointSpotifyExchange = "spotify_exchange"
+	EndpointIcalToken       = "ical_token"
 
 	// Public (IP-keyed)
 	EndpointLogout   = "logout"

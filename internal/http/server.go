@@ -69,6 +69,14 @@ func (s *Server) Router() http.Handler {
 	icalFeedLimiter := ratelimit.NewMemory(60, time.Minute)
 	readyzLimiter := ratelimit.NewMemory(30, time.Minute)
 
+	// Authenticated, keyed on user ID. The net covers every route in the group,
+	// including ones added later; the rest stack on top of it.
+	authedLimiter := ratelimit.NewMemory(120, time.Minute)
+	authedWriteLimiter := ratelimit.NewMemory(30, time.Minute)
+	manualInterestsLimiter := ratelimit.NewMemory(60, time.Hour)
+	spotifyExchangeLimiter := ratelimit.NewMemory(10, time.Hour)
+	icalTokenLimiter := ratelimit.NewMemory(10, time.Hour)
+
 	// Public
 	//
 	// /healthz is deliberately NOT rate limited: it is the ALB health check
@@ -97,25 +105,49 @@ func (s *Server) Router() http.Handler {
 	// Authenticated
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(s.JWTSigner))
+		// Safety net across the whole group. Installed with Use, not With, so a
+		// route added later is covered by default rather than silently unlimited.
+		r.Use(middleware.RateLimitByUser(authedLimiter, middleware.EndpointAuthed))
+
+		// Reads — covered by the net alone.
 		r.Get("/me", handlers.GetMe(s.Queries))
-		r.Delete("/me", handlers.DeleteMe(s.Queries))
-		r.Patch("/me/match-threshold", handlers.UpdateMatchThreshold(s.Queries))
 		r.Get("/me/manual-interests", handlers.ListManualInterests(s.Queries))
-		r.Post("/me/manual-interests", handlers.CreateManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
-		r.Delete("/me/manual-interests/{id}", handlers.DeleteManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
 		r.Get("/me/spotify-interests", handlers.SpotifyInterests(s.Queries))
 		r.Get("/integrations/spotify/connect", handlers.SpotifyConnect(s.SpotifyClient, s.OAuthHMACKey))
 		r.Get("/integrations/spotify/status", handlers.SpotifyStatus(s.Queries))
-		r.Post("/integrations/spotify/exchange", handlers.SpotifyExchange(
-			s.Queries, s.SpotifyClient, s.SpotifyCipher, s.OAuthHMACKey,
-			s.QueuePublisher, s.InterestsQueueURL))
-		r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
 		r.Get("/me/calendar", handlers.GetMyCalendar(s.Queries))
-		r.Post("/me/not-interested", handlers.AddNotInterested(s.Queries))
-		r.Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))
 		r.Get("/events/{id}", handlers.GetEventByIDForUser(s.Queries))
-		r.Post("/me/ical-token", handlers.CreateIcalToken(s.Queries, s.IcalBaseURL))
-		r.Delete("/me/ical-token", handlers.DeleteIcalToken(s.Queries))
+
+		// Writes. A nested group states the limiter once; chi composes it with
+		// the outer net, so these routes pass through both.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite))
+			r.Delete("/me", handlers.DeleteMe(s.Queries))
+			r.Patch("/me/match-threshold", handlers.UpdateMatchThreshold(s.Queries))
+			r.Post("/me/not-interested", handlers.AddNotInterested(s.Queries))
+			r.Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))
+			r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
+			r.Delete("/me/ical-token", handlers.DeleteIcalToken(s.Queries))
+		})
+
+		// Both publish to the interests queue, so both cost downstream compute.
+		// One shared budget, so exhausting adds never blocks deletes.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RateLimitByUser(manualInterestsLimiter, middleware.EndpointManualInterests))
+			r.Post("/me/manual-interests", handlers.CreateManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
+			r.Delete("/me/manual-interests/{id}", handlers.DeleteManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
+		})
+
+		// Spends Spotify API quota that is shared across all users, so one
+		// abusive account can break the integration for everyone.
+		r.With(middleware.RateLimitByUser(spotifyExchangeLimiter, middleware.EndpointSpotifyExchange)).
+			Post("/integrations/spotify/exchange", handlers.SpotifyExchange(
+				s.Queries, s.SpotifyClient, s.SpotifyCipher, s.OAuthHMACKey,
+				s.QueuePublisher, s.InterestsQueueURL))
+
+		// Mints a fresh token on every call.
+		r.With(middleware.RateLimitByUser(icalTokenLimiter, middleware.EndpointIcalToken)).
+			Post("/me/ical-token", handlers.CreateIcalToken(s.Queries, s.IcalBaseURL))
 	})
 
 	return r

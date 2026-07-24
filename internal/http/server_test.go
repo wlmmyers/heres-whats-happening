@@ -182,3 +182,95 @@ func TestServer_RefreshIsRateLimited(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 	require.NotEmpty(t, resp.Header.Get("Retry-After"))
 }
+
+// signupFor creates a user on srv and returns its access token.
+func signupFor(t *testing.T, srv *httptest.Server, email string) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"email": email, "password": "hunter22"})
+	resp, err := http.Post(srv.URL+"/auth/signup", "application/json", bytes.NewReader(body))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	var su struct {
+		AccessToken string `json:"access_token"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&su))
+	resp.Body.Close()
+	require.NotEmpty(t, su.AccessToken)
+	return su.AccessToken
+}
+
+// authedTestServer returns a running server plus an access token for a fresh
+// user. newTestServer is defined in Task 5.
+func authedTestServer(t *testing.T, email string) (*httptest.Server, string) {
+	t.Helper()
+	srv := newTestServer(t)
+	return srv, signupFor(t, srv, email)
+}
+
+func doAuthed(t *testing.T, srv *httptest.Server, method, path, token string) int {
+	t.Helper()
+	req, err := http.NewRequest(method, srv.URL+path, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+// authed_write is 30/min and stacks on the 120/min authed net, so it trips first.
+func TestServer_AuthedWriteIsRateLimited(t *testing.T) {
+	srv, token := authedTestServer(t, "write-limit@example.com")
+
+	for i := range 30 {
+		code := doAuthed(t, srv, http.MethodDelete, "/me/not-interested", token)
+		require.Equal(t, http.StatusNoContent, code, "request %d", i+1)
+	}
+
+	require.Equal(t, http.StatusTooManyRequests,
+		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", token))
+}
+
+// The group-wide net covers routes with no bucket of their own, like GET /me.
+func TestServer_AuthedNetIsRateLimited(t *testing.T) {
+	srv, token := authedTestServer(t, "net-limit@example.com")
+
+	for i := range 120 {
+		code := doAuthed(t, srv, http.MethodGet, "/me", token)
+		require.Equal(t, http.StatusOK, code, "request %d", i+1)
+	}
+
+	require.Equal(t, http.StatusTooManyRequests,
+		doAuthed(t, srv, http.MethodGet, "/me", token))
+}
+
+// Two users must not share a budget — this is the whole point of user keying.
+func TestServer_AuthedLimitIsPerUser(t *testing.T) {
+	srv, alice := authedTestServer(t, "alice-limit@example.com")
+
+	for range 30 {
+		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", alice)
+	}
+	require.Equal(t, http.StatusTooManyRequests,
+		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", alice))
+
+	// A second user on the same server and the same source IP.
+	bob := signupFor(t, srv, "bob-limit@example.com")
+
+	require.Equal(t, http.StatusNoContent,
+		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", bob),
+		"bob must have his own budget despite sharing alice's IP")
+}
+
+// ical_token is 10/hour and stacks on the net, so it trips well before it.
+func TestServer_IcalTokenMintingIsRateLimited(t *testing.T) {
+	srv, token := authedTestServer(t, "ical-token-limit@example.com")
+
+	for i := range 10 {
+		code := doAuthed(t, srv, http.MethodPost, "/me/ical-token", token)
+		require.Equal(t, http.StatusCreated, code, "request %d", i+1)
+	}
+
+	require.Equal(t, http.StatusTooManyRequests,
+		doAuthed(t, srv, http.MethodPost, "/me/ical-token", token))
+}

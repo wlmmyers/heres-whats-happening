@@ -291,9 +291,11 @@ func TestRateLimit_EmitsOnDeniedWithError(t *testing.T) {
 	require.Contains(t, out, "RateLimitRejections")
 }
 
-// These endpoint values are the metric `endpoint` dimension the CloudWatch
-// alarms in terraform/prod/observability.tf key on. If you change one, update
-// that file's ratelimit_alarms map keys or the matching alarm goes blind.
+// These endpoint values are the metric `endpoint` dimension emitted on a 429.
+// A subset is also keyed on by the CloudWatch alarms in
+// terraform/prod/observability.tf — if you change one of those, update that
+// file's ratelimit_alarms map or the matching alarm goes blind. The rest are
+// emitted only and have no alarm to keep in sync.
 func TestEndpointConstants(t *testing.T) {
 	require.Equal(t, "signup", middleware.EndpointSignup)
 	require.Equal(t, "login", middleware.EndpointLogin)
@@ -301,6 +303,11 @@ func TestEndpointConstants(t *testing.T) {
 	require.Equal(t, "logout", middleware.EndpointLogout)
 	require.Equal(t, "ical_feed", middleware.EndpointIcalFeed)
 	require.Equal(t, "readyz", middleware.EndpointReadyz)
+	require.Equal(t, "authed", middleware.EndpointAuthed)
+	require.Equal(t, "authed_write", middleware.EndpointAuthedWrite)
+	require.Equal(t, "manual_interests", middleware.EndpointManualInterests)
+	require.Equal(t, "spotify_exchange", middleware.EndpointSpotifyExchange)
+	require.Equal(t, "ical_token", middleware.EndpointIcalToken)
 }
 
 // keyRecordingLimiter captures the key each call was made with, so tests can
