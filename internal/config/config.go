@@ -12,6 +12,22 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/dsn"
 )
 
+// ConfirmationMode governs email-confirmation enforcement. It is a tri-state
+// rather than two booleans because "enforce without send" is a total signup
+// outage and must not be expressible.
+//
+//	off     — user marked confirmed, no mail, no gate. Today's behavior.
+//	send    — user marked confirmed, mail sent, no gate. Exercises the whole
+//	          flow against real signups while nobody can be locked out.
+//	enforce — user marked unconfirmed, mail sent, gate installed.
+type ConfirmationMode string
+
+const (
+	ConfirmationOff     ConfirmationMode = "off"
+	ConfirmationSend    ConfirmationMode = "send"
+	ConfirmationEnforce ConfirmationMode = "enforce"
+)
+
 type Config struct {
 	DatabaseURL   string
 	HTTPAddr      string
@@ -47,6 +63,13 @@ type Config struct {
 
 	// Plan 7 additions
 	TrustProxy bool
+
+	// Plan 8 additions
+	EmailConfirmationMode ConfirmationMode
+	EmailSender           string
+	EmailFromAddress      string
+	AppBaseURL            string
+	APIBaseURL            string
 }
 
 func Load() (*Config, error) {
@@ -115,6 +138,50 @@ func Load() (*Config, error) {
 		trustProxy = b
 	}
 
+	// Default to off because off is *safe* — it is current behavior. Everything
+	// else is validated eagerly.
+	mode := ConfirmationMode(os.Getenv("EMAIL_CONFIRMATION_MODE"))
+	if mode == "" {
+		mode = ConfirmationOff
+	}
+	switch mode {
+	case ConfirmationOff, ConfirmationSend, ConfirmationEnforce:
+	default:
+		return nil, fmt.Errorf("invalid EMAIL_CONFIRMATION_MODE=%q (want off, send, or enforce)", mode)
+	}
+
+	emailSender := os.Getenv("EMAIL_SENDER")
+	emailFrom := os.Getenv("EMAIL_FROM_ADDRESS")
+	appBaseURL := os.Getenv("APP_BASE_URL")
+	apiBaseURL := os.Getenv("API_BASE_URL")
+
+	// Fail fast rather than warn (the TRUST_PROXY precedent does not fit): a
+	// misconfigured rate limiter degrades availability and self-heals, but a
+	// half-configured mailer strands users with no signal. A crashlooping task
+	// fails the ECS rolling deploy and leaves the previous version serving,
+	// which is the louder and safer failure.
+	if mode != ConfirmationOff {
+		var missing []string
+		for _, v := range []struct {
+			name, val string
+		}{
+			{"EMAIL_SENDER", emailSender},
+			{"EMAIL_FROM_ADDRESS", emailFrom},
+			{"APP_BASE_URL", appBaseURL},
+			{"API_BASE_URL", apiBaseURL},
+		} {
+			if v.val == "" {
+				missing = append(missing, v.name)
+			}
+		}
+		if len(missing) > 0 {
+			return nil, fmt.Errorf("EMAIL_CONFIRMATION_MODE=%s requires %s", mode, strings.Join(missing, ", "))
+		}
+		if emailSender != "ses" && emailSender != "log" {
+			return nil, fmt.Errorf("invalid EMAIL_SENDER=%q (want ses or log)", emailSender)
+		}
+	}
+
 	cfg := &Config{
 		DatabaseURL:         dbURL,
 		HTTPAddr:            addr,
@@ -138,6 +205,12 @@ func Load() (*Config, error) {
 		IcalBaseURL:         os.Getenv("ICAL_BASE_URL"),
 		CORSAllowedOrigins:  corsOrigins,
 		TrustProxy:          trustProxy,
+
+		EmailConfirmationMode: mode,
+		EmailSender:           emailSender,
+		EmailFromAddress:      emailFrom,
+		AppBaseURL:            appBaseURL,
+		APIBaseURL:            apiBaseURL,
 	}
 	return cfg, nil
 }

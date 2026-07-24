@@ -154,3 +154,98 @@ func setRequiredDB(t *testing.T) {
 	t.Setenv("DB_NAME", "appdb")
 	t.Setenv("DB_SSLMODE", "disable")
 }
+
+// setMinimalEnv sets everything Load() needs to succeed with the confirmation
+// feature off, clearing the mail vars so a stray value in the environment
+// cannot mask a validation bug.
+func setMinimalEnv(t *testing.T) {
+	t.Helper()
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "test-key-test-key-test-key-32xx")
+	t.Setenv("EMAIL_CONFIRMATION_MODE", "")
+	t.Setenv("EMAIL_SENDER", "")
+	t.Setenv("EMAIL_FROM_ADDRESS", "")
+	t.Setenv("APP_BASE_URL", "")
+	t.Setenv("API_BASE_URL", "")
+}
+
+func TestLoad_ConfirmationModeDefaultsToOff(t *testing.T) {
+	setMinimalEnv(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, ConfirmationOff, cfg.EmailConfirmationMode)
+}
+
+func TestLoad_RejectsUnknownConfirmationMode(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("EMAIL_CONFIRMATION_MODE", "on")
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "EMAIL_CONFIRMATION_MODE")
+}
+
+func TestLoad_NonOffModeRequiresEveryMailVar(t *testing.T) {
+	for _, mode := range []string{"send", "enforce"} {
+		t.Run(mode, func(t *testing.T) {
+			setMinimalEnv(t)
+			t.Setenv("EMAIL_CONFIRMATION_MODE", mode)
+			_, err := Load()
+			require.Error(t, err)
+			for _, want := range []string{"EMAIL_SENDER", "EMAIL_FROM_ADDRESS", "APP_BASE_URL", "API_BASE_URL"} {
+				require.Contains(t, err.Error(), want)
+			}
+		})
+	}
+}
+
+func TestLoad_NonOffModeNamesOnlyTheMissingVars(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("EMAIL_CONFIRMATION_MODE", "enforce")
+	t.Setenv("EMAIL_SENDER", "log")
+	t.Setenv("EMAIL_FROM_ADDRESS", "dev@localhost")
+	t.Setenv("APP_BASE_URL", "http://localhost:5173")
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "API_BASE_URL")
+	require.NotContains(t, err.Error(), "EMAIL_SENDER")
+}
+
+func TestLoad_RejectsUnknownEmailSender(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("EMAIL_CONFIRMATION_MODE", "send")
+	t.Setenv("EMAIL_SENDER", "sendgrid")
+	t.Setenv("EMAIL_FROM_ADDRESS", "dev@localhost")
+	t.Setenv("APP_BASE_URL", "http://localhost:5173")
+	t.Setenv("API_BASE_URL", "http://localhost:8080")
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "EMAIL_SENDER")
+}
+
+// An unset EMAIL_SENDER must stay legal while the mode is off — that is what
+// keeps the app merge a genuine no-op before SES production access lands.
+func TestLoad_OffModeIgnoresMissingMailVars(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("EMAIL_CONFIRMATION_MODE", "off")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, ConfirmationOff, cfg.EmailConfirmationMode)
+	require.Empty(t, cfg.EmailSender)
+}
+
+func TestLoad_FullyConfiguredEnforceSucceeds(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("EMAIL_CONFIRMATION_MODE", "enforce")
+	t.Setenv("EMAIL_SENDER", "log")
+	t.Setenv("EMAIL_FROM_ADDRESS", "dev@localhost")
+	t.Setenv("APP_BASE_URL", "http://localhost:5173")
+	t.Setenv("API_BASE_URL", "http://localhost:8080")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, ConfirmationEnforce, cfg.EmailConfirmationMode)
+	require.Equal(t, "log", cfg.EmailSender)
+	require.Equal(t, "dev@localhost", cfg.EmailFromAddress)
+	require.Equal(t, "http://localhost:5173", cfg.AppBaseURL)
+	require.Equal(t, "http://localhost:8080", cfg.APIBaseURL)
+}
