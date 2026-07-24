@@ -3,38 +3,70 @@
 **Date:** 2026-07-24
 **Status:** Design approved, not yet implemented
 
-## Deployment runbook (read before shipping)
+## Rollout
 
-Three things must land **before** the app image that ships this feature, in this
-order. Getting the order wrong locks every new signup out of the product.
+The hard constraint: **SES production access must be granted before any merge
+changes signup behavior.** New AWS accounts are in the SES sandbox, where
+outbound mail reaches only verified addresses, and lifting it is a support
+request in the SES console that typically takes ~24h. Terraform cannot do it. If
+enforcement went live while sandboxed, every real signup would create an account
+that is gated out of the product and cannot receive the mail that would fix it.
 
-### 1. Terraform (auto-applies on merge)
+So the feature ships dark and turns on by config, not by merge. Enforcement is
+governed by `EMAIL_CONFIRMATION_MODE`, a tri-state:
 
-`terraform/prod` adds the apex SES sending identity, DKIM records, SPF/DMARC, and
-`ses:SendEmail` on the ECS **task** role. DKIM verification depends on DNS
-propagation and is not instant; confirm with:
+| Mode | Signup marks user | Sends mail | Gate installed |
+|---|---|---|---|
+| `off` | `confirmed = true` | no | no |
+| `send` | `confirmed = true` | yes | no |
+| `enforce` | `confirmed = false` | yes | yes |
+
+`off` is byte-for-byte today's behavior. `send` exercises the entire flow — nonce,
+mail, confirm link, redirect, welcome modal — against real signups while nobody
+can be locked out, because the user is already confirmed when the mail goes out.
+A tri-state rather than two booleans because "enforce without send" is a total
+signup outage and should not be expressible.
+
+### Phase 0 — terraform only (safe to merge now)
+
+Apex SES identity, DKIM CNAMEs, SPF/DMARC, `ses:SendEmail` on the task role.
+**Touches no app behavior**, so it can merge and auto-apply immediately. Verify:
 
 ```bash
 AWS_PROFILE=servant aws ses get-identity-verification-attributes \
   --identities hereswhatshappening.app
 ```
 
-### 2. SES production access — MANUAL, and the long pole
+### Phase 1 — request SES production access (manual, the long pole)
 
-New AWS accounts are in the SES sandbox, where outbound mail is deliverable
-**only to verified addresses**. Terraform cannot lift this; it is a support
-request in the SES console and typically takes ~24h to approve. Until it is
-granted, real user signups will create unconfirmable accounts in prod.
+File it as soon as phase 0's DKIM verifies. Production access is account-level,
+so it can technically be requested earlier, but a verified domain with DKIM makes
+the request credible and is required to test anything.
 
-### 3. Env vars — MANUAL, they do NOT auto-apply
+While still sandboxed, verify your own address as an identity and run the full
+signup → mail → confirm → welcome loop against it end to end.
 
-Same trap as `TRUST_PROXY`: `aws_ecs_task_definition.api` has
-`ignore_changes = [container_definitions]` (`terraform/prod/ecs_api.tf:92`), and
-the app pipeline re-registers the live task def with only the image swapped. So
-values added to `local.api_env_vars` never reach the running task on their own.
+### Phase 2 — merge the app code
+
+Ships with `EMAIL_CONFIRMATION_MODE` unset, which defaults to `off`. Signup
+behaves exactly as today and no mail is sent, so this merge cannot break the
+signup flow no matter how long phase 1 takes. The migration runs automatically —
+`ci/buildspec-app.yml:97-116` runs `migrate` as a one-off task before the service
+updates — and backfills every existing user as confirmed.
+
+No env vars are required for this phase, which sidesteps the `TRUST_PROXY` trap
+entirely: nothing needs to reach the task for the deploy to be correct.
+
+### Phase 3 — turn on sending (after production access is granted)
+
+Env vars do **not** auto-apply. `aws_ecs_task_definition.api` has
+`ignore_changes = [container_definitions]` (`terraform/prod/ecs_api.tf:92`) and
+the app pipeline re-registers the live task def with only the image swapped, so
+values added to `local.api_env_vars` never reach the running task on their own:
 
 ```bash
 AWS_PROFILE=servant scripts/taskdef-edit.sh \
+  --set-env EMAIL_CONFIRMATION_MODE=send \
   --set-env EMAIL_SENDER=ses \
   --set-env EMAIL_FROM_ADDRESS=noreply@hereswhatshappening.app \
   --set-env APP_BASE_URL=https://hereswhatshappening.app \
@@ -42,19 +74,35 @@ AWS_PROFILE=servant scripts/taskdef-edit.sh \
   --deploy
 ```
 
-Running this against the current (pre-feature) image is safe — `config.Load()`
-ignores env vars it does not know about.
+Real signups now receive mail while remaining confirmed. Soak here long enough to
+watch SES bounce and complaint rates and to confirm delivery to the major inbox
+providers — deliverability to Gmail and Outlook is the thing you cannot test from
+the sandbox, and it is the thing that makes the gate load-bearing.
 
-**`config.Load()` fails fast when these are missing**, rather than warning like
-`TRUST_PROXY` does. The precedent does not fit: a misconfigured rate limiter
-degrades availability and self-heals, whereas a misconfigured mailer means every
-new account is created unconfirmed, gated out of the product, and unable to
-receive the mail that would fix it — with no signal to anyone. A crashlooping
-task fails the ECS rolling deploy and leaves the previous version serving, which
-is the louder and safer failure.
+### Phase 4 — enforce
 
-The database migration needs no manual step: `ci/buildspec-app.yml:97-116` runs
-`migrate` as a one-off task before the service updates.
+```bash
+AWS_PROFILE=servant scripts/taskdef-edit.sh \
+  --set-env EMAIL_CONFIRMATION_MODE=enforce --deploy
+```
+
+**Rollback at every phase after 2 is a single flip back**, with no code revert and
+no migration rollback. Users created unconfirmed during an enforce window stay
+unconfirmed after a rollback to `send`, but the gate is gone, so they are not
+stuck — and their confirmation links keep working.
+
+### Config validation
+
+`EMAIL_CONFIRMATION_MODE` defaults to `off` because that default is *safe* —
+it is current behavior. But when the mode is `send` or `enforce`, `config.Load()`
+**fails fast** if any of `EMAIL_SENDER`, `EMAIL_FROM_ADDRESS`, `APP_BASE_URL`, or
+`API_BASE_URL` is missing, rather than warning the way `TRUST_PROXY` does. The
+precedent does not fit: a misconfigured rate limiter degrades availability and
+self-heals, whereas a half-configured mailer strands users with no signal. A
+crashlooping task fails the ECS rolling deploy and leaves the previous version
+serving, which is the louder and safer failure. The check lives where it matters
+— you cannot turn the feature on half-configured — while keeping phase 2's deploy
+a genuine no-op.
 
 ## Problem
 
@@ -65,6 +113,10 @@ someone else's address yields a working account that consumes matching compute,
 can connect Spotify, and can mint iCal feeds.
 
 ## Flows
+
+These describe `enforce`, the end state. In `send` the same mail goes out and the
+same link works, but the user is already confirmed, so nothing gates them and the
+"unconfirmed user arrives" flow never triggers.
 
 **Happy path.** Signup creates the row with `confirmed = false`, mints a nonce,
 sends a link, and returns 201 as it does today. The SPA routes to
@@ -155,9 +207,12 @@ query:
 
 | Site | Source of `confirmed` |
 |---|---|
-| `Signup` | Known to be `false` without asking |
+| `Signup` | Known from the mode without asking — `false` only in `enforce` |
 | `Login` | Already reads the user row — add the column to `GetUserByEmail` |
 | `Refresh` | `GetActiveRefreshTokenByHash` gains a `JOIN users` — still one query |
+
+`CreateUser` takes `confirmed` as an explicit parameter rather than leaning on
+the column default, so the mode — not the schema — decides.
 
 `JWTSigner.SignAccess` takes a `confirmed bool` and emits a custom claim;
 `VerifyAccess` returns it alongside the user ID, and it enters the request
@@ -192,7 +247,7 @@ the assumption is not silently inherited.
 
 | Route | Auth | Behavior | Limit |
 |---|---|---|---|
-| `POST /auth/signup` | public | Creates `confirmed=false`, mints token, sends mail, returns 201 unchanged | existing 3/hr per IP |
+| `POST /auth/signup` | public | Per mode: marks `confirmed`, mints token, sends mail. Returns 201 unchanged in every mode | existing 3/hr per IP |
 | `GET /auth/confirm?token=` | public | 302 to `?welcome=true` or `?confirmerror=true` | 20/hr per IP (`EndpointConfirm`) |
 | `POST /auth/confirm/resend` | authed | Upserts a fresh token, sends, 204. No-op 204 if already confirmed | 3/hr per user (`EndpointConfirmResend`) |
 | `GET /me` | authed | Gains `confirmed` in the response body | existing |
@@ -231,7 +286,9 @@ r.Group(func(r chi.Router) {
 r.Group(func(r chi.Router) {
     r.Use(middleware.RequireAuth(s.JWTSigner))
     r.Use(middleware.RateLimitByUser(authedLimiter, middleware.EndpointAuthed))
-    r.Use(middleware.RequireConfirmed())
+    if s.EmailConfirmationMode == config.ConfirmationEnforce {
+        r.Use(middleware.RequireConfirmed())
+    }
     // ... all existing authenticated routes, unchanged ...
 })
 ```
@@ -240,6 +297,11 @@ Both groups share the *same* limiter instances, so budgets do not double.
 `DELETE /me` is exempt on purpose: an unconfirmed user must still be able to
 delete their account. `RequireConfirmed` reads the claim from the request
 context and takes no `*store.Queries`.
+
+The mode gates only the `Use` call, not the route layout — the two groups exist
+in every mode. Keeping the shape identical across modes means phase 4 changes
+which middleware runs, not which routes exist, so the flip cannot reshuffle
+routing.
 
 ## Email delivery
 
@@ -260,12 +322,15 @@ config error, per the runbook.
 
 | Var | Purpose | Local |
 |---|---|---|
+| `EMAIL_CONFIRMATION_MODE` | `off` \| `send` \| `enforce`; defaults to `off` | `enforce` |
 | `EMAIL_SENDER` | `ses` or `log` | `log` |
 | `EMAIL_FROM_ADDRESS` | Envelope/From | `dev@localhost` |
 | `APP_BASE_URL` | SPA origin, redirect target | `http://localhost:5173` |
 | `API_BASE_URL` | API origin, used to build the emailed link | `http://localhost:8080` |
 
-All four are added to `.env.example`.
+All five are added to `.env.example`. Local dev runs `enforce` with the `log`
+sender, so development exercises the real path and the confirmation link is
+pasted out of the server log.
 
 `API_BASE_URL` duplicates the value of `ICAL_BASE_URL`
 (`https://api.hereswhatshappening.app`). Consolidating them is a follow-up, kept
@@ -305,9 +370,16 @@ bundled with a feature.
 ## Terraform
 
 Apex domain identity and DKIM CNAMEs (today's `ses.tf` verifies only
-`inbound.<domain>`), SPF and DMARC TXT records, `ses:SendEmail` on the **task**
-role — not the execution role — and the four env vars in `local.api_env_vars`,
-each carrying the same "does not auto-apply" comment `TRUST_PROXY` has.
+`inbound.<domain>`), SPF and DMARC TXT records, and `ses:SendEmail` on the
+**task** role — not the execution role. This is all of phase 0, and it is the
+only part of the feature that merges as terraform.
+
+The five env vars are also declared in `local.api_env_vars`, each carrying the
+same "does not auto-apply" comment `TRUST_PROXY` has. They are documentation and
+drift-reference only — the values that matter reach the task through
+`taskdef-edit.sh` in phases 3 and 4. `EMAIL_CONFIRMATION_MODE` is declared there
+as `enforce`, the intended end state, so the file records where the system is
+headed rather than whichever phase it happens to be in.
 
 The apex TXT record must be checked for an existing value before adding SPF; if
 one exists the mechanisms merge into a single record rather than a second one,
@@ -315,13 +387,21 @@ which would break SPF evaluation.
 
 ## Testing
 
-**Go.** Signup creates an unconfirmed user, a token row, and one captured
-message. Confirm covers happy path, expired, unknown, and consumed-replay.
-Resend regenerates, invalidates the prior token, and no-ops when already
-confirmed. `RequireConfirmed` passes and 403s off the claim. Server-level wiring
-asserts an unconfirmed token gets 403 on a guarded route and 200 on `/me`,
-`/auth/confirm/resend`, and `DELETE /me`. Round-trip a token through
-`SignAccess`/`VerifyAccess` with both claim values.
+**Go.** Signup in `enforce` creates an unconfirmed user, a token row, and one
+captured message. Confirm covers happy path, expired, unknown, and
+consumed-replay. Resend regenerates, invalidates the prior token, and no-ops when
+already confirmed. `RequireConfirmed` passes and 403s off the claim.
+Server-level wiring asserts an unconfirmed token gets 403 on a guarded route and
+200 on `/me`, `/auth/confirm/resend`, and `DELETE /me`. Round-trip a token
+through `SignAccess`/`VerifyAccess` with both claim values.
+
+**Modes.** Each of the three is tested at the signup handler: `off` creates a
+confirmed user and sends nothing, `send` creates a confirmed user *and* sends,
+`enforce` creates an unconfirmed user and sends. Server-level, `off` and `send`
+must return 200 on a route that 403s under `enforce` — that assertion is what
+makes phase 2 safe to merge, so it is worth more than the sum of the others.
+`config.Load()` errors when a non-`off` mode is missing any required var, and
+defaults to `off` when unset.
 
 **Frontend.** `ConfirmEmailPage` render, resend, and rate-limit states;
 `RequireAuth` redirect on unconfirmed and pass-through under `allowUnconfirmed`;
@@ -330,6 +410,11 @@ refresh-and-retry on 403.
 
 ## Out of scope
 
+- **Removing `EMAIL_CONFIRMATION_MODE`.** It is rollout scaffolding, not a
+  permanent feature flag. Once `enforce` has been live and stable, delete the
+  mode and hardcode enforcement — otherwise the auth path keeps a branch that
+  nothing exercises and every future change has to reason about three modes.
+  This is a follow-up ticket, not a maybe.
 - Consolidating `API_BASE_URL` and `ICAL_BASE_URL`.
 - Re-confirmation on email change (see the caveat above).
 - A cleanup job for expired `email_confirmations` rows. The table holds at most
