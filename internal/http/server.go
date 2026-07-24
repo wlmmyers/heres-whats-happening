@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
@@ -61,18 +60,37 @@ func (s *Server) Router() http.Handler {
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Timeout(30 * time.Second))
 
-	// Rate limiters for the public auth surface. Signup is Postgres-backed so
-	// the ceiling survives restarts; login and refresh are in-process, which is
-	// accurate enough for limits this loose.
-	signupLimiter := ratelimit.NewPostgres(s.Queries, "signup", 3, time.Hour)
+	// Rate limiters for the public auth surface. All in-process: state resets on
+	// restart, which is acceptable while the API runs a single task.
+	signupLimiter := ratelimit.NewMemory(3, time.Hour)
 	loginLimiter := ratelimit.NewMemory(10, time.Minute)
 	refreshLimiter := ratelimit.NewMemory(30, time.Minute)
+	logoutLimiter := ratelimit.NewMemory(30, time.Minute)
+	icalFeedLimiter := ratelimit.NewMemory(60, time.Minute)
+	readyzLimiter := ratelimit.NewMemory(30, time.Minute)
+
+	// Authenticated, keyed on user ID. The net covers every route in the group,
+	// including ones added later; the rest stack on top of it.
+	authedLimiter := ratelimit.NewMemory(120, time.Minute)
+	authedWriteLimiter := ratelimit.NewMemory(30, time.Minute)
+	manualInterestsLimiter := ratelimit.NewMemory(60, time.Hour)
+	spotifyExchangeLimiter := ratelimit.NewMemory(10, time.Hour)
+	icalTokenLimiter := ratelimit.NewMemory(10, time.Hour)
 
 	// Public
+	//
+	// /healthz is deliberately NOT rate limited: it is the ALB health check
+	// target (terraform/prod/alb.tf), so limiting it would let a flood fail the
+	// health check and cycle healthy tasks. It does no work beyond writing a
+	// static body, so there is nothing to protect.
 	r.Get("/healthz", handlers.Healthz())
-	r.Get("/readyz", handlers.Readyz(s.DB))
-	// Public iCal feed — token in URL is the credential.
-	r.Get("/ical/{token}", handlers.GetIcalFeed(s.Queries))
+	r.With(middleware.RateLimit(readyzLimiter, middleware.EndpointReadyz)).
+		Get("/readyz", handlers.Readyz(s.DB))
+	// Public iCal feed — token in URL is the credential. The 32-byte token is
+	// not guessable; the limit caps DB lookups and calendar renders from any one
+	// source. 60/min is ~1 req/sec, far above real calendar-client polling.
+	r.With(middleware.RateLimit(icalFeedLimiter, middleware.EndpointIcalFeed)).
+		Get("/ical/{token}", handlers.GetIcalFeed(s.Queries))
 
 	// Auth (public)
 	r.With(middleware.RateLimitOnSuccess(signupLimiter, middleware.EndpointSignup)).
@@ -81,30 +99,59 @@ func (s *Server) Router() http.Handler {
 		Post("/auth/login", handlers.Login(s.Queries, s.JWTSigner, s.RefreshTTL))
 	r.With(middleware.RateLimit(refreshLimiter, middleware.EndpointRefresh)).
 		Post("/auth/refresh", handlers.Refresh(s.Queries, s.JWTSigner))
-	r.Post("/auth/logout", handlers.Logout(s.Queries))
+	r.With(middleware.RateLimit(logoutLimiter, middleware.EndpointLogout)).
+		Post("/auth/logout", handlers.Logout(s.Queries))
 
 	// Authenticated
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(s.JWTSigner))
+		// Safety net across the whole group. Installed with Use, not With, so a
+		// route added later is covered by default rather than silently unlimited.
+		// This line must stay above every nested r.Group below: chi copies the
+		// middleware stack by value at Group()/With() time, so a group inserted
+		// above it would snapshot an incomplete stack and its routes would be
+		// silently unlimited.
+		r.Use(middleware.RateLimitByUser(authedLimiter, middleware.EndpointAuthed))
+
+		// Reads — covered by the net alone.
 		r.Get("/me", handlers.GetMe(s.Queries))
-		r.Delete("/me", handlers.DeleteMe(s.Queries))
-		r.Patch("/me/match-threshold", handlers.UpdateMatchThreshold(s.Queries))
 		r.Get("/me/manual-interests", handlers.ListManualInterests(s.Queries))
-		r.Post("/me/manual-interests", handlers.CreateManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
-		r.Delete("/me/manual-interests/{id}", handlers.DeleteManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
 		r.Get("/me/spotify-interests", handlers.SpotifyInterests(s.Queries))
 		r.Get("/integrations/spotify/connect", handlers.SpotifyConnect(s.SpotifyClient, s.OAuthHMACKey))
 		r.Get("/integrations/spotify/status", handlers.SpotifyStatus(s.Queries))
-		r.Post("/integrations/spotify/exchange", handlers.SpotifyExchange(
-			s.Queries, s.SpotifyClient, s.SpotifyCipher, s.OAuthHMACKey,
-			s.QueuePublisher, s.InterestsQueueURL))
-		r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
 		r.Get("/me/calendar", handlers.GetMyCalendar(s.Queries))
-		r.Post("/me/not-interested", handlers.AddNotInterested(s.Queries))
-		r.Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))
 		r.Get("/events/{id}", handlers.GetEventByIDForUser(s.Queries))
-		r.Post("/me/ical-token", handlers.CreateIcalToken(s.Queries, s.IcalBaseURL))
-		r.Delete("/me/ical-token", handlers.DeleteIcalToken(s.Queries))
+
+		// Writes. A nested group states the limiter once; chi composes it with
+		// the outer net, so these routes pass through both.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite))
+			r.Delete("/me", handlers.DeleteMe(s.Queries))
+			r.Patch("/me/match-threshold", handlers.UpdateMatchThreshold(s.Queries))
+			r.Post("/me/not-interested", handlers.AddNotInterested(s.Queries))
+			r.Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))
+			r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
+			r.Delete("/me/ical-token", handlers.DeleteIcalToken(s.Queries))
+		})
+
+		// Both publish to the interests queue, so both cost downstream compute.
+		// One shared budget, so exhausting adds never blocks deletes.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RateLimitByUser(manualInterestsLimiter, middleware.EndpointManualInterests))
+			r.Post("/me/manual-interests", handlers.CreateManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
+			r.Delete("/me/manual-interests/{id}", handlers.DeleteManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
+		})
+
+		// Spends Spotify API quota that is shared across all users, so one
+		// abusive account can break the integration for everyone.
+		r.With(middleware.RateLimitByUser(spotifyExchangeLimiter, middleware.EndpointSpotifyExchange)).
+			Post("/integrations/spotify/exchange", handlers.SpotifyExchange(
+				s.Queries, s.SpotifyClient, s.SpotifyCipher, s.OAuthHMACKey,
+				s.QueuePublisher, s.InterestsQueueURL))
+
+		// Mints a fresh token on every call.
+		r.With(middleware.RateLimitByUser(icalTokenLimiter, middleware.EndpointIcalToken)).
+			Post("/me/ical-token", handlers.CreateIcalToken(s.Queries, s.IcalBaseURL))
 	})
 
 	return r
@@ -128,9 +175,6 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	if s.InterestConsumer != nil {
 		go func() { errCh <- s.InterestConsumer.Run(ctx) }()
-	}
-	if s.Queries != nil {
-		go s.runRateLimitCleanup(ctx)
 	}
 
 	select {
@@ -162,34 +206,4 @@ func (s *Server) trustProxyWarning() string {
 		"This is correct for direct connections but WRONG behind a proxy/ALB, where all " +
 		"clients share one address and the rate limits apply site-wide. Set TRUST_PROXY=true " +
 		"when running behind the load balancer."
-}
-
-// rateLimitRetention is how long rate limit rows are kept. Comfortably longer
-// than the widest window (1h) so cleanup can never delete a live row.
-const rateLimitRetention = 24 * time.Hour
-
-// deleteExpiredRateLimitEvents removes rate limit rows past the retention
-// window, measured from now.
-func (s *Server) deleteExpiredRateLimitEvents(ctx context.Context, now time.Time) error {
-	cutoff := pgtype.Timestamptz{Time: now.Add(-rateLimitRetention), Valid: true}
-	return s.Queries.DeleteRateLimitEventsBefore(ctx, cutoff)
-}
-
-// runRateLimitCleanup deletes expired rate limit rows until ctx is cancelled.
-func (s *Server) runRateLimitCleanup(ctx context.Context) {
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			delCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			err := s.deleteExpiredRateLimitEvents(delCtx, time.Now())
-			cancel()
-			if err != nil {
-				log.Printf("rate limit cleanup: %v", err)
-			}
-		}
-	}
 }

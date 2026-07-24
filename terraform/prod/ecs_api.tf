@@ -97,8 +97,12 @@ resource "aws_ecs_service" "api" {
   name            = "${var.app_name_prefix}-api"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.api.arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
+  # Rate limiting (internal/http/middleware) is in-process, not a shared store,
+  # so each task enforces its own independent limit. Raising desired_count (or
+  # adding autoscaling) multiplies every limit by the task count — pair that
+  # change with moving the limiter to a distributed/shared backend first.
+  desired_count = 1
+  launch_type   = "FARGATE"
 
   network_configuration {
     subnets          = aws_subnet.public[*].id

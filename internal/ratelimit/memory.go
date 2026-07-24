@@ -23,10 +23,11 @@ type bucket struct {
 }
 
 // Memory is an in-process token-bucket Limiter. State is per-process: it resets
-// on restart and is not shared across tasks, which is acceptable for the login
-// and refresh limits but not for signup (see Postgres).
+// on restart and is not shared across tasks, which is acceptable while the API
+// runs a single ECS task (terraform/prod/ecs_api.tf desired_count).
 //
-// Record is a no-op — Memory counts every Allow.
+// Allow peeks and Record spends. Every caller must pair them — an Allow with no
+// matching Record consumes nothing.
 type Memory struct {
 	mu      sync.Mutex
 	buckets map[string]*bucket
@@ -55,13 +56,9 @@ func NewMemoryWithClock(limit int, window time.Duration, now func() time.Time) *
 	}
 }
 
-// Allow consumes one token for key. It never returns an error.
-func (m *Memory) Allow(_ context.Context, key string) (Decision, error) {
-	now := m.now()
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+// bucketLocked returns key's bucket, creating it if absent, and marks it seen.
+// Callers must hold m.mu.
+func (m *Memory) bucketLocked(key string, now time.Time) *bucket {
 	if len(m.buckets) >= hardBucketCap {
 		m.sweepLocked(now)
 		if len(m.buckets) >= hardBucketCap {
@@ -81,23 +78,62 @@ func (m *Memory) Allow(_ context.Context, key string) (Decision, error) {
 		m.buckets[key] = b
 	}
 	b.lastSeen = now
-
-	// ReserveN tells us how long until a token is available. Cancelling the
-	// reservation on denial is what keeps a denied request from consuming
-	// budget and pushing the client's own recovery further out.
-	res := b.lim.ReserveN(now, 1)
-	if !res.OK() {
-		return Decision{Allowed: false, RetryAfter: m.window}, nil
-	}
-	if d := res.DelayFrom(now); d > 0 {
-		res.CancelAt(now)
-		return Decision{Allowed: false, RetryAfter: d}, nil
-	}
-	return Decision{Allowed: true}, nil
+	return b
 }
 
-// Record is a no-op. Memory counts at Allow time.
-func (m *Memory) Record(context.Context, string) error { return nil }
+// Allow reports whether key has at least one token, WITHOUT spending it. Call
+// Record to spend. It never returns an error.
+//
+// Separating the check from the spend is what lets RateLimitOnSuccess gate every
+// request but count only the ones whose handler succeeded.
+func (m *Memory) Allow(_ context.Context, key string) (Decision, error) {
+	now := m.now()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	b := m.bucketLocked(key, now)
+
+	tokens := b.lim.TokensAt(now)
+	if tokens >= 1 {
+		return Decision{Allowed: true}, nil
+	}
+
+	// Budget frees up as the missing fraction of a token accrues, which is a
+	// more useful Retry-After than the whole window.
+	perSecond := float64(m.limit)
+	if perSecond <= 0 {
+		return Decision{Allowed: false, RetryAfter: m.window}, nil
+	}
+	retryAfter := time.Duration((1 - tokens) / perSecond * float64(time.Second))
+	if retryAfter > m.window {
+		retryAfter = m.window
+	}
+	if retryAfter < 0 {
+		retryAfter = 0
+	}
+	return Decision{Allowed: false, RetryAfter: retryAfter}, nil
+}
+
+// Record spends one token for key. The debit is unconditional — it applies even
+// when the bucket is already empty, driving the balance negative.
+//
+// ReserveN, not AllowN: AllowN would decline to debit an empty bucket, so a
+// request whose handler already succeeded would go uncounted whenever a
+// concurrent request drained the bucket between Allow and Record. ReserveN
+// delegates to reserveN(t, n, InfDuration), which always succeeds for n=1 while
+// burst >= 1 and debits regardless of the current balance. The reservation is
+// deliberately never cancelled — cancelling is what would undo the debit.
+func (m *Memory) Record(_ context.Context, key string) error {
+	now := m.now()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	b := m.bucketLocked(key, now)
+	b.lim.ReserveN(now, 1)
+	return nil
+}
 
 // Sweep drops buckets untouched for more than two windows and returns how many
 // were removed. A bucket refills completely within one window, so anything idle

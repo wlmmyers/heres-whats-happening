@@ -29,7 +29,7 @@ func RequireAuth(signer *auth.JWTSigner) func(http.Handler) http.Handler {
 				httperr.Write(w, http.StatusUnauthorized, "invalid_token", "access token is not valid")
 				return
 			}
-			ctx := context.WithValue(r.Context(), userIDKey, uid)
+			ctx := ContextWithUserID(r.Context(), uid)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -42,4 +42,11 @@ func UserIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 	}
 	uid, ok := v.(uuid.UUID)
 	return uid, ok
+}
+
+// ContextWithUserID returns ctx carrying uid, the inverse of UserIDFromContext.
+// RequireAuth uses it on every authenticated request; tests use it to build a
+// request that looks authenticated without minting a JWT.
+func ContextWithUserID(ctx context.Context, uid uuid.UUID) context.Context {
+	return context.WithValue(ctx, userIDKey, uid)
 }

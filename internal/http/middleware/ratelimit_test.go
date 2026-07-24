@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
@@ -133,7 +134,7 @@ func TestRateLimitOnSuccess_RecordsOn201(t *testing.T) {
 	req.RemoteAddr = "203.0.113.9:1234"
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
-	require.Equal(t, []string{"203.0.113.9"}, l.recorded)
+	require.Equal(t, []string{"ip:203.0.113.9"}, l.recorded)
 }
 
 // The core of the successes-only policy: a mistyped password must cost nothing.
@@ -290,11 +291,161 @@ func TestRateLimit_EmitsOnDeniedWithError(t *testing.T) {
 	require.Contains(t, out, "RateLimitRejections")
 }
 
-// These endpoint values are the metric `endpoint` dimension the CloudWatch
-// alarms in terraform/prod/observability.tf key on. If you change one, update
-// that file's ratelimit_alarms map keys or the matching alarm goes blind.
+// These endpoint values are the metric `endpoint` dimension emitted on a 429.
+// A subset is also keyed on by the CloudWatch alarms in
+// terraform/prod/observability.tf — if you change one of those, update that
+// file's ratelimit_alarms map or the matching alarm goes blind. The rest are
+// emitted only and have no alarm to keep in sync.
 func TestEndpointConstants(t *testing.T) {
 	require.Equal(t, "signup", middleware.EndpointSignup)
 	require.Equal(t, "login", middleware.EndpointLogin)
 	require.Equal(t, "refresh", middleware.EndpointRefresh)
+	require.Equal(t, "logout", middleware.EndpointLogout)
+	require.Equal(t, "ical_feed", middleware.EndpointIcalFeed)
+	require.Equal(t, "readyz", middleware.EndpointReadyz)
+	require.Equal(t, "authed", middleware.EndpointAuthed)
+	require.Equal(t, "authed_write", middleware.EndpointAuthedWrite)
+	require.Equal(t, "manual_interests", middleware.EndpointManualInterests)
+	require.Equal(t, "spotify_exchange", middleware.EndpointSpotifyExchange)
+	require.Equal(t, "ical_token", middleware.EndpointIcalToken)
+}
+
+// keyRecordingLimiter captures the key each call was made with, so tests can
+// assert on the key strategy rather than only on the status code.
+type keyRecordingLimiter struct {
+	allowedKeys  []string
+	recordedKeys []string
+}
+
+func (k *keyRecordingLimiter) Allow(_ context.Context, key string) (ratelimit.Decision, error) {
+	k.allowedKeys = append(k.allowedKeys, key)
+	return ratelimit.Decision{Allowed: true}, nil
+}
+
+func (k *keyRecordingLimiter) Record(_ context.Context, key string) error {
+	k.recordedKeys = append(k.recordedKeys, key)
+	return nil
+}
+
+func TestRateLimitByUser_KeysOnUserID(t *testing.T) {
+	uid := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	l := &keyRecordingLimiter{}
+	h := middleware.RateLimitByUser(l, middleware.EndpointAuthed)(okHandler(http.StatusOK))
+
+	req := httptest.NewRequest(http.MethodGet, "/me", nil)
+	req = req.WithContext(middleware.ContextWithUserID(req.Context(), uid))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []string{"u:" + uid.String()}, l.allowedKeys)
+	require.Equal(t, []string{"u:" + uid.String()}, l.recordedKeys,
+		"an allowed request must spend its token")
+}
+
+func TestRateLimitByUser_TwoUsersHaveIndependentBudgets(t *testing.T) {
+	alice := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	bob := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+
+	l := ratelimit.NewMemory(1, time.Minute)
+	h := middleware.RateLimitByUser(l, middleware.EndpointAuthed)(okHandler(http.StatusOK))
+
+	do := func(uid uuid.UUID) int {
+		req := httptest.NewRequest(http.MethodGet, "/me", nil)
+		req = req.WithContext(middleware.ContextWithUserID(req.Context(), uid))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	require.Equal(t, http.StatusOK, do(alice))
+	require.Equal(t, http.StatusTooManyRequests, do(alice), "alice is out of budget")
+	require.Equal(t, http.StatusOK, do(bob), "bob has his own budget")
+}
+
+// RequireAuth 401s before this middleware runs, so a missing user ID means a
+// middleware-ordering bug. Falling back to the IP degrades to the old behavior
+// instead of collapsing every such request into one shared empty-string bucket.
+func TestRateLimitByUser_FallsBackToIPWhenNoUser(t *testing.T) {
+	l := &keyRecordingLimiter{}
+	h := middleware.RateLimitByUser(l, middleware.EndpointAuthed)(okHandler(http.StatusOK))
+
+	req := httptest.NewRequest(http.MethodGet, "/me", nil)
+	req.RemoteAddr = "203.0.113.9:5555"
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []string{"ip:203.0.113.9"}, l.allowedKeys)
+}
+
+func TestRateLimit_KeysOnIPAndSpendsToken(t *testing.T) {
+	l := &keyRecordingLimiter{}
+	h := middleware.RateLimit(l, middleware.EndpointLogin)(okHandler(http.StatusOK))
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	req.RemoteAddr = "198.51.100.4:1234"
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, []string{"ip:198.51.100.4"}, l.allowedKeys)
+	require.Equal(t, []string{"ip:198.51.100.4"}, l.recordedKeys)
+}
+
+// The signup limit is 3/hour. A user who fat-fingers their email or picks a
+// weak password must not burn that budget — otherwise three typos lock them out
+// for an hour with no account to show for it. This is an integration test
+// against the real Memory limiter on purpose: it is exactly the pairing that
+// used to be a silent no-op.
+func TestRateLimitOnSuccess_WithMemory_FailuresConsumeNoBudget(t *testing.T) {
+	l := ratelimit.NewMemory(3, time.Hour)
+
+	status := http.StatusBadRequest
+	h := middleware.RateLimitOnSuccess(l, middleware.EndpointSignup)(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}))
+
+	do := func() int {
+		req := httptest.NewRequest(http.MethodPost, "/auth/signup", nil)
+		req.RemoteAddr = "203.0.113.7:4444"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	for i := range 3 {
+		require.Equal(t, http.StatusBadRequest, do(), "rejected signup %d", i+1)
+	}
+
+	status = http.StatusCreated
+	require.Equal(t, http.StatusCreated, do(),
+		"three failed signups must leave the hourly budget untouched")
+}
+
+func TestRateLimitOnSuccess_WithMemory_SuccessesConsumeBudget(t *testing.T) {
+	var buf bytes.Buffer
+	old := observability.Default
+	observability.Default = observability.NewEmitter(&buf)
+	defer func() { observability.Default = old }()
+
+	l := ratelimit.NewMemory(3, time.Hour)
+	h := middleware.RateLimitOnSuccess(l, middleware.EndpointSignup)(
+		okHandler(http.StatusCreated))
+
+	do := func() int {
+		req := httptest.NewRequest(http.MethodPost, "/auth/signup", nil)
+		req.RemoteAddr = "203.0.113.8:4444"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	for i := range 3 {
+		require.Equal(t, http.StatusCreated, do(), "signup %d", i+1)
+	}
+	require.Equal(t, http.StatusTooManyRequests, do(), "the 4th signup in an hour is limited")
 }
