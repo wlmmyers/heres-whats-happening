@@ -61,10 +61,9 @@ func (s *Server) Router() http.Handler {
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Timeout(30 * time.Second))
 
-	// Rate limiters for the public auth surface. Signup is Postgres-backed so
-	// the ceiling survives restarts; login and refresh are in-process, which is
-	// accurate enough for limits this loose.
-	signupLimiter := ratelimit.NewPostgres(s.Queries, "signup", 3, time.Hour)
+	// Rate limiters for the public auth surface. All in-process: state resets on
+	// restart, which is acceptable while the API runs a single task.
+	signupLimiter := ratelimit.NewMemory(3, time.Hour)
 	loginLimiter := ratelimit.NewMemory(10, time.Minute)
 	refreshLimiter := ratelimit.NewMemory(30, time.Minute)
 

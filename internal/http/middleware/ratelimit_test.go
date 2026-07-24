@@ -384,3 +384,53 @@ func TestRateLimit_KeysOnIPAndSpendsToken(t *testing.T) {
 	require.Equal(t, []string{"ip:198.51.100.4"}, l.allowedKeys)
 	require.Equal(t, []string{"ip:198.51.100.4"}, l.recordedKeys)
 }
+
+// The signup limit is 3/hour. A user who fat-fingers their email or picks a
+// weak password must not burn that budget — otherwise three typos lock them out
+// for an hour with no account to show for it. This is an integration test
+// against the real Memory limiter on purpose: it is exactly the pairing that
+// used to be a silent no-op.
+func TestRateLimitOnSuccess_WithMemory_FailuresConsumeNoBudget(t *testing.T) {
+	l := ratelimit.NewMemory(3, time.Hour)
+
+	status := http.StatusBadRequest
+	h := middleware.RateLimitOnSuccess(l, middleware.EndpointSignup)(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}))
+
+	do := func() int {
+		req := httptest.NewRequest(http.MethodPost, "/auth/signup", nil)
+		req.RemoteAddr = "203.0.113.7:4444"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	for i := range 3 {
+		require.Equal(t, http.StatusBadRequest, do(), "rejected signup %d", i+1)
+	}
+
+	status = http.StatusCreated
+	require.Equal(t, http.StatusCreated, do(),
+		"three failed signups must leave the hourly budget untouched")
+}
+
+func TestRateLimitOnSuccess_WithMemory_SuccessesConsumeBudget(t *testing.T) {
+	l := ratelimit.NewMemory(3, time.Hour)
+	h := middleware.RateLimitOnSuccess(l, middleware.EndpointSignup)(
+		okHandler(http.StatusCreated))
+
+	do := func() int {
+		req := httptest.NewRequest(http.MethodPost, "/auth/signup", nil)
+		req.RemoteAddr = "203.0.113.8:4444"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	for i := range 3 {
+		require.Equal(t, http.StatusCreated, do(), "signup %d", i+1)
+	}
+	require.Equal(t, http.StatusTooManyRequests, do(), "the 4th signup in an hour is limited")
+}
