@@ -22,6 +22,11 @@ const (
 	EndpointLogin   = "login"
 	EndpointRefresh = "refresh"
 	EndpointAuthed  = "authed"
+
+	// Public (IP-keyed)
+	EndpointLogout   = "logout"
+	EndpointIcalFeed = "ical_feed"
+	EndpointReadyz   = "readyz"
 )
 
 // keyFunc selects the rate-limit bucket key for a request.

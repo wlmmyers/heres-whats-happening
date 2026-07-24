@@ -65,12 +65,24 @@ func (s *Server) Router() http.Handler {
 	signupLimiter := ratelimit.NewMemory(3, time.Hour)
 	loginLimiter := ratelimit.NewMemory(10, time.Minute)
 	refreshLimiter := ratelimit.NewMemory(30, time.Minute)
+	logoutLimiter := ratelimit.NewMemory(30, time.Minute)
+	icalFeedLimiter := ratelimit.NewMemory(60, time.Minute)
+	readyzLimiter := ratelimit.NewMemory(30, time.Minute)
 
 	// Public
+	//
+	// /healthz is deliberately NOT rate limited: it is the ALB health check
+	// target (terraform/prod/alb.tf), so limiting it would let a flood fail the
+	// health check and cycle healthy tasks. It does no work beyond writing a
+	// static body, so there is nothing to protect.
 	r.Get("/healthz", handlers.Healthz())
-	r.Get("/readyz", handlers.Readyz(s.DB))
-	// Public iCal feed — token in URL is the credential.
-	r.Get("/ical/{token}", handlers.GetIcalFeed(s.Queries))
+	r.With(middleware.RateLimit(readyzLimiter, middleware.EndpointReadyz)).
+		Get("/readyz", handlers.Readyz(s.DB))
+	// Public iCal feed — token in URL is the credential. The 32-byte token is
+	// not guessable; the limit caps DB lookups and calendar renders from any one
+	// source. 60/min is ~1 req/sec, far above real calendar-client polling.
+	r.With(middleware.RateLimit(icalFeedLimiter, middleware.EndpointIcalFeed)).
+		Get("/ical/{token}", handlers.GetIcalFeed(s.Queries))
 
 	// Auth (public)
 	r.With(middleware.RateLimitOnSuccess(signupLimiter, middleware.EndpointSignup)).
@@ -79,7 +91,8 @@ func (s *Server) Router() http.Handler {
 		Post("/auth/login", handlers.Login(s.Queries, s.JWTSigner, s.RefreshTTL))
 	r.With(middleware.RateLimit(refreshLimiter, middleware.EndpointRefresh)).
 		Post("/auth/refresh", handlers.Refresh(s.Queries, s.JWTSigner))
-	r.Post("/auth/logout", handlers.Logout(s.Queries))
+	r.With(middleware.RateLimit(logoutLimiter, middleware.EndpointLogout)).
+		Post("/auth/logout", handlers.Logout(s.Queries))
 
 	// Authenticated
 	r.Group(func(r chi.Router) {
