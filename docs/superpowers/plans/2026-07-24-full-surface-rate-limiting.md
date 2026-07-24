@@ -862,16 +862,31 @@ Adds IP-keyed limits to `/auth/logout`, `/ical/{token}`, and `/readyz`. `/health
 Append to `internal/http/server_test.go`. These follow the existing `TestServer_RefreshIsRateLimited` pattern — a `Server` with no DB, hitting routes that answer without a database round trip.
 
 ```go
-func TestServer_IcalFeedIsRateLimited(t *testing.T) {
+// newTestServer starts a server backed by the test database. Each call builds a
+// fresh Router, so rate-limit buckets never leak between tests.
+func newTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
 	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+
 	s := &hs.Server{
-		DB:         pool,
-		Queries:    store.New(pool),
-		JWTSigner:  auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute),
-		RefreshTTL: time.Hour,
+		DB:            pool,
+		Queries:       q,
+		JWTSigner:     auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute),
+		RefreshTTL:    time.Hour,
+		DefaultCityID: uuid.UUID(city.ID.Bytes).String(),
 	}
 	srv := httptest.NewServer(s.Router())
-	defer srv.Close()
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestServer_IcalFeedIsRateLimited(t *testing.T) {
+	srv := newTestServer(t)
 
 	// The ical feed limit is 60/min. An unknown token 404s after one indexed
 	// lookup — which is exactly the cheap-to-send, not-free-to-serve request
@@ -891,15 +906,7 @@ func TestServer_IcalFeedIsRateLimited(t *testing.T) {
 }
 
 func TestServer_ReadyzIsRateLimited(t *testing.T) {
-	pool := testdb.MustOpen(t)
-	s := &hs.Server{
-		DB:         pool,
-		Queries:    store.New(pool),
-		JWTSigner:  auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute),
-		RefreshTTL: time.Hour,
-	}
-	srv := httptest.NewServer(s.Router())
-	defer srv.Close()
+	srv := newTestServer(t)
 
 	for i := range 30 {
 		resp, err := http.Get(srv.URL + "/readyz")
@@ -915,15 +922,7 @@ func TestServer_ReadyzIsRateLimited(t *testing.T) {
 }
 
 func TestServer_LogoutIsRateLimited(t *testing.T) {
-	pool := testdb.MustOpen(t)
-	s := &hs.Server{
-		DB:         pool,
-		Queries:    store.New(pool),
-		JWTSigner:  auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute),
-		RefreshTTL: time.Hour,
-	}
-	srv := httptest.NewServer(s.Router())
-	defer srv.Close()
+	srv := newTestServer(t)
 
 	for i := range 30 {
 		resp, err := http.Post(srv.URL+"/auth/logout", "application/json", nil)
@@ -941,15 +940,7 @@ func TestServer_LogoutIsRateLimited(t *testing.T) {
 // /healthz is the ALB health check target. Rate limiting it would let a
 // request flood fail the health check and cycle otherwise-healthy tasks.
 func TestServer_HealthzIsNeverRateLimited(t *testing.T) {
-	pool := testdb.MustOpen(t)
-	s := &hs.Server{
-		DB:         pool,
-		Queries:    store.New(pool),
-		JWTSigner:  auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute),
-		RefreshTTL: time.Hour,
-	}
-	srv := httptest.NewServer(s.Router())
-	defer srv.Close()
+	srv := newTestServer(t)
 
 	// Well past every other limit in the router.
 	for i := range 200 {
@@ -1069,26 +1060,9 @@ Adds the group-wide per-user net plus the four stacked buckets.
 Append to `internal/http/server_test.go`. These need a real user and access token, so they build a full server and sign up first.
 
 ```go
-// authedTestServer returns a running server plus an access token for a fresh user.
-func authedTestServer(t *testing.T, email string) (*httptest.Server, string) {
+// signupFor creates a user on srv and returns its access token.
+func signupFor(t *testing.T, srv *httptest.Server, email string) string {
 	t.Helper()
-	pool := testdb.MustOpen(t)
-	q := store.New(pool)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	city, err := q.GetDefaultCity(ctx)
-	require.NoError(t, err)
-
-	s := &hs.Server{
-		DB:            pool,
-		Queries:       q,
-		JWTSigner:     auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute),
-		RefreshTTL:    time.Hour,
-		DefaultCityID: uuid.UUID(city.ID.Bytes).String(),
-	}
-	srv := httptest.NewServer(s.Router())
-	t.Cleanup(srv.Close)
-
 	body, _ := json.Marshal(map[string]string{"email": email, "password": "hunter22"})
 	resp, err := http.Post(srv.URL+"/auth/signup", "application/json", bytes.NewReader(body))
 	require.NoError(t, err)
@@ -1099,8 +1073,15 @@ func authedTestServer(t *testing.T, email string) (*httptest.Server, string) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&su))
 	resp.Body.Close()
 	require.NotEmpty(t, su.AccessToken)
+	return su.AccessToken
+}
 
-	return srv, su.AccessToken
+// authedTestServer returns a running server plus an access token for a fresh
+// user. newTestServer is defined in Task 5.
+func authedTestServer(t *testing.T, email string) (*httptest.Server, string) {
+	t.Helper()
+	srv := newTestServer(t)
+	return srv, signupFor(t, srv, email)
 }
 
 func doAuthed(t *testing.T, srv *httptest.Server, method, path, token string) int {
@@ -1151,18 +1132,10 @@ func TestServer_AuthedLimitIsPerUser(t *testing.T) {
 		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", alice))
 
 	// A second user on the same server and the same source IP.
-	body, _ := json.Marshal(map[string]string{"email": "bob-limit@example.com", "password": "hunter22"})
-	resp, err := http.Post(srv.URL+"/auth/signup", "application/json", bytes.NewReader(body))
-	require.NoError(t, err)
-	require.Equal(t, http.StatusCreated, resp.StatusCode)
-	var bob struct {
-		AccessToken string `json:"access_token"`
-	}
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&bob))
-	resp.Body.Close()
+	bob := signupFor(t, srv, "bob-limit@example.com")
 
 	require.NotEqual(t, http.StatusTooManyRequests,
-		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", bob.AccessToken),
+		doAuthed(t, srv, http.MethodDelete, "/me/not-interested", bob),
 		"bob must have his own budget despite sharing alice's IP")
 }
 
@@ -1264,26 +1237,25 @@ Then replace the authenticated group (lines 86-108) with:
 		r.Get("/me/calendar", handlers.GetMyCalendar(s.Queries))
 		r.Get("/events/{id}", handlers.GetEventByIDForUser(s.Queries))
 
-		// Writes.
-		r.With(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite)).
-			Delete("/me", handlers.DeleteMe(s.Queries))
-		r.With(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite)).
-			Patch("/me/match-threshold", handlers.UpdateMatchThreshold(s.Queries))
-		r.With(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite)).
-			Post("/me/not-interested", handlers.AddNotInterested(s.Queries))
-		r.With(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite)).
-			Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))
-		r.With(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite)).
-			Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
-		r.With(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite)).
-			Delete("/me/ical-token", handlers.DeleteIcalToken(s.Queries))
+		// Writes. A nested group states the limiter once; chi composes it with
+		// the outer net, so these routes pass through both.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite))
+			r.Delete("/me", handlers.DeleteMe(s.Queries))
+			r.Patch("/me/match-threshold", handlers.UpdateMatchThreshold(s.Queries))
+			r.Post("/me/not-interested", handlers.AddNotInterested(s.Queries))
+			r.Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))
+			r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
+			r.Delete("/me/ical-token", handlers.DeleteIcalToken(s.Queries))
+		})
 
 		// Both publish to the interests queue, so both cost downstream compute.
 		// One shared budget, so exhausting adds never blocks deletes.
-		r.With(middleware.RateLimitByUser(manualInterestsLimiter, middleware.EndpointManualInterests)).
-			Post("/me/manual-interests", handlers.CreateManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
-		r.With(middleware.RateLimitByUser(manualInterestsLimiter, middleware.EndpointManualInterests)).
-			Delete("/me/manual-interests/{id}", handlers.DeleteManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RateLimitByUser(manualInterestsLimiter, middleware.EndpointManualInterests))
+			r.Post("/me/manual-interests", handlers.CreateManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
+			r.Delete("/me/manual-interests/{id}", handlers.DeleteManualInterest(s.Queries, s.QueuePublisher, s.InterestsQueueURL))
+		})
 
 		// Spends Spotify API quota that is shared across all users, so one
 		// abusive account can break the integration for everyone.
