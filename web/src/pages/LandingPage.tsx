@@ -91,7 +91,7 @@ export default function LandingPage({ children }: { children?: React.ReactNode }
   return (
     <div>
       <div className={c.pageHeader}>
-        <h1 className={c.pageTitle}>Your matched calendar</h1>
+        <h1 className={c.pageTitle}>Your Seattle calendar</h1>
       </div>
       {status === 'loading' ? (
         <ul className={s.list}>

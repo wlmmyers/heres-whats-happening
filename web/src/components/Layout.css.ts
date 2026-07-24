@@ -1,5 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { color, radius } from '../styles/theme';
+import { phone } from '../styles/breakpoints.css';
 
 export const page = style({
   minHeight: '100vh',
@@ -25,16 +26,28 @@ export const headerLoggedOut = style([
   header,
   {
     '@media': {
-      'screen and (max-width: 768px)': { display: 'none' },
+      [phone]: { display: 'none' },
     },
   },
 ]);
 
-// backgroundImage stays inline (set in JSX)
 export const logo = style({
   backgroundSize: 'cover',
   backgroundPosition: 'center',
   backgroundRepeat: 'no-repeat',
+  backgroundImage: `url('/titleGraphic1.png')`,
+  width: '280px',
+  height: '45px',
+  transform: 'translateY(2px)',
+  '@media': {
+    [phone]: {
+      backgroundImage: `url('/titleGraphicMobile.png')`,
+      width: '100px',
+      padding: '0.5rem 0',
+      marginRight: '0.5rem',
+      backgroundOrigin: 'content-box',
+    },
+  },
 });
 
 export const main = style({
@@ -49,15 +62,17 @@ export const mainLoggedOut = style([
   main,
   {
     '@media': {
-      'screen and (max-width: 768px)': { marginTop: 0 },
+      [phone]: { marginTop: 0 },
     },
   },
 ]);
 
 export const navLink = style({
-  paddingInline: '0.75rem',
-  paddingBlock: '0.5rem',
+  padding: '0.5rem 0.75rem',
   borderRadius: radius.sm,
+  '@media': {
+    [phone]: { padding: '0.5rem 0.5rem' },
+  },
 });
 
 export const navLinkActive = style({

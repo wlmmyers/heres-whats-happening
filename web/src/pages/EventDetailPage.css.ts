@@ -1,6 +1,7 @@
 import { style } from '@vanilla-extract/css';
 import { buttonPrimary } from '../styles/common.css';
 import { color, radius, fontSize, fontWeight } from '../styles/theme';
+import { phone } from '../styles/breakpoints.css';
 
 export const backLink = style({
   display: 'block',
@@ -18,7 +19,7 @@ export const thumbnail = style({
   objectFit: 'cover',
   borderRadius: radius.sm,
   '@media': {
-    'screen and (max-width: 768px)': { width: '100%', height: 'auto' },
+    [phone]: { width: '100%', height: 'auto' },
   },
 });
 
@@ -28,7 +29,7 @@ export const header = style({
   justifyContent: 'space-between',
   gap: '1rem',
   '@media': {
-    'screen and (max-width: 768px)': { flexDirection: 'column' },
+    [phone]: { flexDirection: 'column' },
   },
 });
 

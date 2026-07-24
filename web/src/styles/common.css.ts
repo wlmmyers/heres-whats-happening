@@ -1,5 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { color, radius, shadow, fontSize, fontWeight } from './theme';
+import { phone } from './breakpoints.css';
 
 export const card = style({
   backgroundColor: color.white,
@@ -65,7 +66,7 @@ export const pageHeader = style({
   justifyContent: 'space-between',
   gap: '1rem',
   '@media': {
-    'screen and (max-width: 768px)': { flexDirection: 'column' },
+    [phone]: { flexDirection: 'column', marginTop: 0 },
   },
 });
 

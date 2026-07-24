@@ -14,15 +14,7 @@ export default function Layout() {
   return (
     <div className={s.page}>
       <header className={clsx(s.header, { [s.headerLoggedOut]: !authed })}>
-        <div
-          style={{
-            backgroundImage: `url('/titleGraphic1.png')`,
-            width: '280px',
-            height: '45px',
-            transform: 'translateY(2px)',
-          }}
-          className={s.logo}
-        />
+        <div className={s.logo} />
         {authed && (
           <>
             <NavLink to="/calendar/seattle" className={link}>
