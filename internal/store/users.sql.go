@@ -13,31 +13,39 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, password_hash, city_id)
-VALUES ($1, $2, $3)
-RETURNING id, email, city_id, created_at
+INSERT INTO users (email, password_hash, city_id, confirmed)
+VALUES ($1, $2, $3, $4)
+RETURNING id, email, city_id, confirmed, created_at
 `
 
 type CreateUserParams struct {
 	Email        string      `json:"email"`
 	PasswordHash string      `json:"password_hash"`
 	CityID       pgtype.UUID `json:"city_id"`
+	Confirmed    bool        `json:"confirmed"`
 }
 
 type CreateUserRow struct {
 	ID        pgtype.UUID        `json:"id"`
 	Email     string             `json:"email"`
 	CityID    pgtype.UUID        `json:"city_id"`
+	Confirmed bool               `json:"confirmed"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash, arg.CityID)
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Email,
+		arg.PasswordHash,
+		arg.CityID,
+		arg.Confirmed,
+	)
 	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
 		&i.CityID,
+		&i.Confirmed,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -62,7 +70,7 @@ func (q *Queries) GetDefaultCity(ctx context.Context) (City, error) {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, city_id, created_at
+SELECT id, email, password_hash, city_id, confirmed, created_at
 FROM users
 WHERE email = $1 AND deleted_at IS NULL
 `
@@ -72,6 +80,7 @@ type GetUserByEmailRow struct {
 	Email        string             `json:"email"`
 	PasswordHash string             `json:"password_hash"`
 	CityID       pgtype.UUID        `json:"city_id"`
+	Confirmed    bool               `json:"confirmed"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -83,13 +92,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 		&i.Email,
 		&i.PasswordHash,
 		&i.CityID,
+		&i.Confirmed,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, city_id, created_at, score_threshold
+SELECT id, email, city_id, confirmed, created_at, score_threshold
 FROM users
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -98,6 +108,7 @@ type GetUserByIDRow struct {
 	ID             pgtype.UUID        `json:"id"`
 	Email          string             `json:"email"`
 	CityID         pgtype.UUID        `json:"city_id"`
+	Confirmed      bool               `json:"confirmed"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	ScoreThreshold *float64           `json:"score_threshold"`
 }
@@ -109,6 +120,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDR
 		&i.ID,
 		&i.Email,
 		&i.CityID,
+		&i.Confirmed,
 		&i.CreatedAt,
 		&i.ScoreThreshold,
 	)
@@ -164,6 +176,17 @@ func (q *Queries) ListActiveUsersForMatching(ctx context.Context) ([]ListActiveU
 		return nil, err
 	}
 	return items, nil
+}
+
+const markUserConfirmed = `-- name: MarkUserConfirmed :exec
+UPDATE users
+SET confirmed = TRUE
+WHERE id = $1
+`
+
+func (q *Queries) MarkUserConfirmed(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markUserConfirmed, id)
+	return err
 }
 
 const selectUsersNeedingEmbedding = `-- name: SelectUsersNeedingEmbedding :many

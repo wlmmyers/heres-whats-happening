@@ -24,6 +24,14 @@ type City struct {
 	Timezone string      `json:"timezone"`
 }
 
+type EmailConfirmation struct {
+	UserID     pgtype.UUID        `json:"user_id"`
+	TokenHash  []byte             `json:"token_hash"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type Event struct {
 	ID                 pgtype.UUID        `json:"id"`
 	SourceID           pgtype.UUID        `json:"source_id"`
@@ -100,6 +108,7 @@ type User struct {
 	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
 	DeletedAt                  pgtype.Timestamptz `json:"deleted_at"`
 	ScoreThreshold             *float64           `json:"score_threshold"`
+	Confirmed                  bool               `json:"confirmed"`
 }
 
 type UserEventMatch struct {
