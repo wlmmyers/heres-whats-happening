@@ -417,6 +417,11 @@ func TestRateLimitOnSuccess_WithMemory_FailuresConsumeNoBudget(t *testing.T) {
 }
 
 func TestRateLimitOnSuccess_WithMemory_SuccessesConsumeBudget(t *testing.T) {
+	var buf bytes.Buffer
+	old := observability.Default
+	observability.Default = observability.NewEmitter(&buf)
+	defer func() { observability.Default = old }()
+
 	l := ratelimit.NewMemory(3, time.Hour)
 	h := middleware.RateLimitOnSuccess(l, middleware.EndpointSignup)(
 		okHandler(http.StatusCreated))
