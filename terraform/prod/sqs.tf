@@ -44,6 +44,7 @@ resource "aws_cloudwatch_metric_alarm" "events_dlq_depth" {
   threshold           = 1
   dimensions          = { QueueName = aws_sqs_queue.events_dlq.name }
   alarm_description   = "Messages landed in the events DLQ. Check consumer logs."
+  alarm_actions       = [aws_sns_topic.alerts.arn]
 }
 
 resource "aws_cloudwatch_metric_alarm" "interests_dlq_depth" {
@@ -57,4 +58,5 @@ resource "aws_cloudwatch_metric_alarm" "interests_dlq_depth" {
   threshold           = 1
   dimensions          = { QueueName = aws_sqs_queue.interests_dlq.name }
   alarm_description   = "Messages landed in the interests DLQ. Check consumer logs."
+  alarm_actions       = [aws_sns_topic.alerts.arn]
 }
