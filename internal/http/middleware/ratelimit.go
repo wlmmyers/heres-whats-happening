@@ -10,6 +10,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"github.com/wmyers/heres-whats-happening/internal/http/httperr"
+	"github.com/wmyers/heres-whats-happening/internal/observability"
 	"github.com/wmyers/heres-whats-happening/internal/ratelimit"
 )
 
@@ -69,6 +70,7 @@ func checkAllowed(w http.ResponseWriter, r *http.Request, l ratelimit.Limiter, n
 	if d.Allowed {
 		return true
 	}
+	observability.Default.RateLimitRejection(name, ClientIP(r))
 	w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(d.RetryAfter)))
 	httperr.Write(w, http.StatusTooManyRequests, "rate_limited",
 		"too many requests, please try again later")
