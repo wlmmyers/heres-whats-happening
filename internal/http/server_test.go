@@ -278,3 +278,26 @@ func TestServer_IcalTokenMintingIsRateLimited(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests,
 		doAuthed(t, srv, http.MethodPost, "/me/ical-token", token))
 }
+
+// spotify_exchange is 10/hour. limitEvery records the token before invoking
+// the handler, so the 429 arrives on the 11th request even though the
+// handler itself can never succeed here (authedTestServer wires a nil
+// Spotify client) — so only the rate-limit boundary is asserted, not the
+// handler's own status.
+func TestServer_SpotifyExchangeIsRateLimited(t *testing.T) {
+	srv, token := authedTestServer(t, "spotify-exchange-limit@example.com")
+
+	for i := range 10 {
+		code := doAuthed(t, srv, http.MethodPost, "/integrations/spotify/exchange", token)
+		require.NotEqual(t, http.StatusTooManyRequests, code, "request %d", i+1)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/integrations/spotify/exchange", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	require.NotEmpty(t, resp.Header.Get("Retry-After"))
+}

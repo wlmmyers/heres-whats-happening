@@ -4,7 +4,10 @@
 # namespace "HeresWhatsHappening/api", metric "RateLimitRejections", dimension
 # "endpoint". The app defines eleven endpoint values in
 # internal/http/middleware/ratelimit.go; the subset alarmed below MUST match
-# those constants exactly — TestMetricContractConstants guards the app side.
+# those constants exactly — TestMetricContractConstants (internal/observability)
+# guards the namespace/metric-name/dimension-key contract, while
+# TestEndpointConstants (internal/http/middleware/ratelimit_test.go) pins the
+# endpoint values the alarm map keys mirror.
 # Values not listed here are still emitted and queryable in Logs Insights, they
 # just do not page. The metric is sparse (a data point only when a rejection
 # occurs), so the alarms treat missing data as not breaching.
