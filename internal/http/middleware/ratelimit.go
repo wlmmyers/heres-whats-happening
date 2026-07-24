@@ -14,6 +14,15 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/ratelimit"
 )
 
+// Rate-limit endpoint identifiers. These are the metric `endpoint` dimension
+// VALUES emitted on a 429 and are mirrored as the alarm map keys in
+// terraform/prod/observability.tf — keep the two in sync.
+const (
+	EndpointSignup  = "signup"
+	EndpointLogin   = "login"
+	EndpointRefresh = "refresh"
+)
+
 // RateLimit rejects requests over the limit before they reach the handler.
 // Every request counts. name appears in log lines only.
 func RateLimit(l ratelimit.Limiter, name string) func(http.Handler) http.Handler {
