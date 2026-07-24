@@ -14,6 +14,7 @@ import (
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
 	hs "github.com/wmyers/heres-whats-happening/internal/http"
+	"github.com/wmyers/heres-whats-happening/internal/observability"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 	"github.com/wmyers/heres-whats-happening/internal/testdb"
 )
@@ -68,6 +69,11 @@ func TestServer_EndToEnd_SignupLoginMe(t *testing.T) {
 // fresh Router, so rate-limit buckets never leak between tests.
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+
+	old := observability.Default
+	observability.Default = observability.NewEmitter(&bytes.Buffer{})
+	t.Cleanup(func() { observability.Default = old })
+
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -97,7 +103,7 @@ func TestServer_IcalFeedIsRateLimited(t *testing.T) {
 		resp, err := http.Get(srv.URL + "/ical/not-a-real-token.ics")
 		require.NoError(t, err)
 		resp.Body.Close()
-		require.NotEqual(t, http.StatusTooManyRequests, resp.StatusCode, "request %d", i+1)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode, "request %d", i+1)
 	}
 
 	resp, err := http.Get(srv.URL + "/ical/not-a-real-token.ics")
@@ -130,7 +136,7 @@ func TestServer_LogoutIsRateLimited(t *testing.T) {
 		resp, err := http.Post(srv.URL+"/auth/logout", "application/json", nil)
 		require.NoError(t, err)
 		resp.Body.Close()
-		require.NotEqual(t, http.StatusTooManyRequests, resp.StatusCode, "request %d", i+1)
+		require.Equal(t, http.StatusNoContent, resp.StatusCode, "request %d", i+1)
 	}
 
 	resp, err := http.Post(srv.URL+"/auth/logout", "application/json", nil)
