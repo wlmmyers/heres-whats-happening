@@ -34,7 +34,20 @@ func (c *fakeClock) Advance(d time.Duration) {
 	c.t = c.t.Add(d)
 }
 
-func TestMemory_AllowsUpToLimitThenDenies(t *testing.T) {
+// Allow is a peek: it reports budget without spending any. Only Record spends.
+func TestMemory_AllowDoesNotConsume(t *testing.T) {
+	clk := newFakeClock()
+	l := ratelimit.NewMemoryWithClock(3, time.Minute, clk.Now)
+	ctx := context.Background()
+
+	for i := range 100 {
+		d, err := l.Allow(ctx, "1.1.1.1")
+		require.NoError(t, err)
+		require.True(t, d.Allowed, "Allow must not consume budget (call %d)", i+1)
+	}
+}
+
+func TestMemory_RecordConsumes(t *testing.T) {
 	clk := newFakeClock()
 	l := ratelimit.NewMemoryWithClock(3, time.Minute, clk.Now)
 	ctx := context.Background()
@@ -43,6 +56,7 @@ func TestMemory_AllowsUpToLimitThenDenies(t *testing.T) {
 		d, err := l.Allow(ctx, "1.1.1.1")
 		require.NoError(t, err)
 		require.True(t, d.Allowed, "request %d should be allowed", i+1)
+		require.NoError(t, l.Record(ctx, "1.1.1.1"))
 	}
 
 	d, err := l.Allow(ctx, "1.1.1.1")
@@ -60,6 +74,7 @@ func TestMemory_KeysAreIndependent(t *testing.T) {
 	d, err := l.Allow(ctx, "1.1.1.1")
 	require.NoError(t, err)
 	require.True(t, d.Allowed)
+	require.NoError(t, l.Record(ctx, "1.1.1.1"))
 
 	d, err = l.Allow(ctx, "1.1.1.1")
 	require.NoError(t, err)
@@ -67,7 +82,7 @@ func TestMemory_KeysAreIndependent(t *testing.T) {
 
 	d, err = l.Allow(ctx, "2.2.2.2")
 	require.NoError(t, err)
-	require.True(t, d.Allowed, "a different IP must have its own bucket")
+	require.True(t, d.Allowed, "a different key must have its own bucket")
 }
 
 func TestMemory_RefillsAfterWindow(t *testing.T) {
@@ -78,6 +93,7 @@ func TestMemory_RefillsAfterWindow(t *testing.T) {
 	for range 2 {
 		d, _ := l.Allow(ctx, "1.1.1.1")
 		require.True(t, d.Allowed)
+		require.NoError(t, l.Record(ctx, "1.1.1.1"))
 	}
 	d, _ := l.Allow(ctx, "1.1.1.1")
 	require.False(t, d.Allowed)
@@ -89,15 +105,15 @@ func TestMemory_RefillsAfterWindow(t *testing.T) {
 	require.True(t, d.Allowed, "bucket must refill after one full window")
 }
 
-// A denied request must not consume a token, or a client hammering the endpoint
-// would push its own recovery further and further out.
-func TestMemory_DenialDoesNotConsumeBudget(t *testing.T) {
+// A denied request must not push its own recovery further out.
+func TestMemory_DenialDoesNotDelayRefill(t *testing.T) {
 	clk := newFakeClock()
 	l := ratelimit.NewMemoryWithClock(1, time.Minute, clk.Now)
 	ctx := context.Background()
 
 	d, _ := l.Allow(ctx, "1.1.1.1")
 	require.True(t, d.Allowed)
+	require.NoError(t, l.Record(ctx, "1.1.1.1"))
 
 	for range 10 {
 		d, _ = l.Allow(ctx, "1.1.1.1")
@@ -109,9 +125,42 @@ func TestMemory_DenialDoesNotConsumeBudget(t *testing.T) {
 	require.True(t, d.Allowed, "10 denials must not have delayed the refill")
 }
 
-func TestMemory_RecordIsNoOp(t *testing.T) {
-	l := ratelimit.NewMemory(1, time.Minute)
-	require.NoError(t, l.Record(context.Background(), "1.1.1.1"))
+// RetryAfter is the time to accrue the missing fraction of one token, not the
+// whole window — a client that is barely over should be told to wait barely.
+func TestMemory_RetryAfterReflectsDeficit(t *testing.T) {
+	clk := newFakeClock()
+	// 60 per minute == 1 token per second.
+	l := ratelimit.NewMemoryWithClock(60, time.Minute, clk.Now)
+	ctx := context.Background()
+
+	for range 60 {
+		require.NoError(t, l.Record(ctx, "1.1.1.1"))
+	}
+
+	d, err := l.Allow(ctx, "1.1.1.1")
+	require.NoError(t, err)
+	require.False(t, d.Allowed)
+	require.InDelta(t, float64(time.Second), float64(d.RetryAfter), float64(50*time.Millisecond),
+		"one token accrues per second at 60/min")
+}
+
+// Record debits even when the bucket is already empty, so a 2xx handler result
+// is always counted. Without this, a concurrent request draining the bucket
+// between Allow and Record would silently lose the count.
+func TestMemory_RecordDebitsWhenEmpty(t *testing.T) {
+	clk := newFakeClock()
+	l := ratelimit.NewMemoryWithClock(1, time.Minute, clk.Now)
+	ctx := context.Background()
+
+	for range 3 {
+		require.NoError(t, l.Record(ctx, "1.1.1.1"))
+	}
+
+	// Three debits against a 1-token bucket leaves it two tokens in arrears, so
+	// one window of refill is not enough to recover.
+	clk.Advance(time.Minute)
+	d, _ := l.Allow(ctx, "1.1.1.1")
+	require.False(t, d.Allowed, "debits past empty must still count")
 }
 
 // Without eviction, an attacker rotating source IPs grows the map without bound
@@ -146,7 +195,7 @@ func TestMemory_SweepKeepsActiveBuckets(t *testing.T) {
 	require.Equal(t, 0, l.Sweep(clk.Now()))
 }
 
-func TestMemory_ConcurrentAllowIsRaceFree(t *testing.T) {
+func TestMemory_ConcurrentAccessIsRaceFree(t *testing.T) {
 	l := ratelimit.NewMemory(1000, time.Minute)
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -155,7 +204,10 @@ func TestMemory_ConcurrentAllowIsRaceFree(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			for range 20 {
-				_, _ = l.Allow(ctx, fmt.Sprintf("10.0.0.%d", i%5))
+				key := fmt.Sprintf("10.0.0.%d", i%5)
+				if d, _ := l.Allow(ctx, key); d.Allowed {
+					_ = l.Record(ctx, key)
+				}
 			}
 		}(i)
 	}
