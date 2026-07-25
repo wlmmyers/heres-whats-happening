@@ -98,6 +98,12 @@ func (s *Server) Router() http.Handler {
 	spotifyExchangeLimiter := ratelimit.NewMemory(10, time.Hour)
 	icalTokenLimiter := ratelimit.NewMemory(10, time.Hour)
 
+	// Confirmation. IP-keyed: the emailed link is followed by a browser with no
+	// Authorization header.
+	confirmLimiter := ratelimit.NewMemory(20, time.Hour)
+	// User-keyed: each resend costs an outbound email.
+	confirmResendLimiter := ratelimit.NewMemory(3, time.Hour)
+
 	// Public
 	//
 	// /healthz is deliberately NOT rate limited: it is the ALB health check
@@ -122,8 +128,32 @@ func (s *Server) Router() http.Handler {
 		Post("/auth/refresh", handlers.Refresh(s.Queries, s.JWTSigner))
 	r.With(middleware.RateLimit(logoutLimiter, middleware.EndpointLogout)).
 		Post("/auth/logout", handlers.Logout(s.Queries))
+	// Followed by a mail client, so it is public and always redirects.
+	r.With(middleware.RateLimit(confirmLimiter, middleware.EndpointConfirm)).
+		Get("/auth/confirm", handlers.ConfirmEmail(s.Queries, s.confirmationDeps()))
 
-	// Authenticated
+	// Authenticated, EXEMPT from the confirmation gate: what an unconfirmed
+	// user needs to get confirmed, or to leave. Kept as its own small group so
+	// the guarded group below can gate by default — a route added there later
+	// is covered automatically, which is the property that matters. Exempting
+	// routes inside the guarded group instead would mean a route added later
+	// could silently land outside the gate.
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireAuth(s.JWTSigner))
+		// The same limiter instances as the guarded group, so budgets do not
+		// double: a user gets one 120/min authed budget across both groups.
+		r.Use(middleware.RateLimitByUser(authedLimiter, middleware.EndpointAuthed))
+
+		r.Get("/me", handlers.GetMe(s.Queries))
+		r.With(middleware.RateLimitByUser(confirmResendLimiter, middleware.EndpointConfirmResend)).
+			Post("/auth/confirm/resend", handlers.ResendConfirmation(s.Queries, s.confirmationDeps()))
+		// Exempt on purpose: an unconfirmed user must still be able to delete
+		// their account.
+		r.With(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite)).
+			Delete("/me", handlers.DeleteMe(s.Queries))
+	})
+
+	// Authenticated + confirmed. Everything else, including routes added later.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(s.JWTSigner))
 		// Safety net across the whole group. Installed with Use, not With, so a
@@ -133,9 +163,14 @@ func (s *Server) Router() http.Handler {
 		// above it would snapshot an incomplete stack and its routes would be
 		// silently unlimited.
 		r.Use(middleware.RateLimitByUser(authedLimiter, middleware.EndpointAuthed))
+		// The mode gates only this Use call, never the route layout — the two
+		// groups exist in every mode, so phase 4 changes which middleware runs,
+		// not which routes exist, and the flip cannot reshuffle routing.
+		if s.EmailConfirmationMode == config.ConfirmationEnforce {
+			r.Use(middleware.RequireConfirmed())
+		}
 
 		// Reads — covered by the net alone.
-		r.Get("/me", handlers.GetMe(s.Queries))
 		r.Get("/me/manual-interests", handlers.ListManualInterests(s.Queries))
 		r.Get("/me/spotify-interests", handlers.SpotifyInterests(s.Queries))
 		r.Get("/integrations/spotify/connect", handlers.SpotifyConnect(s.SpotifyClient, s.OAuthHMACKey))
@@ -147,7 +182,6 @@ func (s *Server) Router() http.Handler {
 		// the outer net, so these routes pass through both.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite))
-			r.Delete("/me", handlers.DeleteMe(s.Queries))
 			r.Patch("/me/match-threshold", handlers.UpdateMatchThreshold(s.Queries))
 			r.Post("/me/not-interested", handlers.AddNotInterested(s.Queries))
 			r.Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
+	"github.com/wmyers/heres-whats-happening/internal/config"
+	"github.com/wmyers/heres-whats-happening/internal/email"
 	hs "github.com/wmyers/heres-whats-happening/internal/http"
 	"github.com/wmyers/heres-whats-happening/internal/observability"
 	"github.com/wmyers/heres-whats-happening/internal/store"
@@ -300,4 +303,153 @@ func TestServer_SpotifyExchangeIsRateLimited(t *testing.T) {
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 	require.NotEmpty(t, resp.Header.Get("Retry-After"))
+}
+
+// newTestServerWithMode starts a server in the given confirmation mode and
+// returns it alongside the fake sender.
+func newTestServerWithMode(t *testing.T, mode config.ConfirmationMode) (*httptest.Server, *email.Fake) {
+	t.Helper()
+
+	old := observability.Default
+	observability.Default = observability.NewEmitter(&bytes.Buffer{})
+	t.Cleanup(func() { observability.Default = old })
+
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+
+	fake := &email.Fake{}
+	s := &hs.Server{
+		DB:                    pool,
+		Queries:               q,
+		JWTSigner:             auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute),
+		RefreshTTL:            time.Hour,
+		DefaultCityID:         uuid.UUID(city.ID.Bytes).String(),
+		EmailConfirmationMode: mode,
+		EmailSender:           fake,
+		AppBaseURL:            "https://app.example.com",
+		APIBaseURL:            "https://api.example.com",
+	}
+	srv := httptest.NewServer(s.Router())
+	t.Cleanup(srv.Close)
+	return srv, fake
+}
+
+// signupOn signs up and returns the access token.
+func signupOn(t *testing.T, srv *httptest.Server, address string) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"email": address, "password": "hunter22"})
+	resp, err := http.Post(srv.URL+"/auth/signup", "application/json", bytes.NewReader(body))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	var out struct {
+		AccessToken string `json:"access_token"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+	return out.AccessToken
+}
+
+func authedGet(t *testing.T, srv *httptest.Server, path, token string) int {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	return resp.StatusCode
+}
+
+// confirmLinkFrom pulls the confirm URL out of a plain-text mail body.
+// server_test.go is package http_test and cannot see the handlers' copy.
+func confirmLinkFrom(t *testing.T, text string) string {
+	t.Helper()
+	for _, f := range strings.Fields(text) {
+		if strings.Contains(f, "/auth/confirm?token=") {
+			return f
+		}
+	}
+	t.Fatalf("no confirm link in message body: %q", text)
+	return ""
+}
+
+// guardedRoutes are authenticated routes behind the confirmation gate. Both
+// return 200 for a confirmed user, so the only thing that changes between modes
+// is the gate — the calendar carries its date range because the handler 400s
+// without one, which would mask the 403-vs-200 contrast these tests exist to show.
+var guardedRoutes = []string{
+	"/me/manual-interests",
+	"/me/calendar?from=2026-01-01&to=2026-01-31",
+}
+
+func TestServer_Enforce_UnconfirmedIsGatedOffGuardedRoutes(t *testing.T) {
+	srv, _ := newTestServerWithMode(t, config.ConfirmationEnforce)
+	tok := signupOn(t, srv, "gated@example.com")
+
+	for _, route := range guardedRoutes {
+		require.Equal(t, http.StatusForbidden, authedGet(t, srv, route, tok), route)
+	}
+}
+
+func TestServer_Enforce_ExemptRoutesStayReachable(t *testing.T) {
+	srv, _ := newTestServerWithMode(t, config.ConfirmationEnforce)
+	tok := signupOn(t, srv, "exempt@example.com")
+
+	// What an unconfirmed user needs to get confirmed, or to leave.
+	require.Equal(t, http.StatusOK, authedGet(t, srv, "/me", tok))
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/auth/confirm/resend", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	req, _ = http.NewRequest(http.MethodDelete, srv.URL+"/me", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+}
+
+// This is the assertion that makes phase 2 safe to merge: with the mode unset
+// or set to send, a route that 403s under enforce must still return 200.
+func TestServer_OffAndSend_GuardedRoutesStayOpen(t *testing.T) {
+	for _, mode := range []config.ConfirmationMode{config.ConfirmationOff, config.ConfirmationSend} {
+		t.Run(string(mode), func(t *testing.T) {
+			srv, _ := newTestServerWithMode(t, mode)
+			tok := signupOn(t, srv, string(mode)+"-open@example.com")
+			for _, route := range guardedRoutes {
+				require.Equal(t, http.StatusOK, authedGet(t, srv, route, tok), route)
+			}
+		})
+	}
+}
+
+func TestServer_ConfirmLinkEndToEnd(t *testing.T) {
+	srv, fake := newTestServerWithMode(t, config.ConfirmationEnforce)
+	tok := signupOn(t, srv, "e2e-confirm@example.com")
+	require.Equal(t, http.StatusForbidden, authedGet(t, srv, guardedRoutes[0], tok))
+
+	// Follow the emailed link against this server, not the configured API host.
+	require.Len(t, fake.Messages(), 1)
+	link := confirmLinkFrom(t, fake.Last().Text)
+	path := link[strings.Index(link, "/auth/confirm"):]
+
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := noRedirect.Get(srv.URL + path)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Equal(t, "https://app.example.com/?welcome=true", resp.Header.Get("Location"))
+
+	// The old token still carries confirmed:false — that is the bounded stale
+	// case the SPA self-heals by refreshing. A freshly minted one passes.
+	require.Equal(t, http.StatusForbidden, authedGet(t, srv, guardedRoutes[0], tok))
 }

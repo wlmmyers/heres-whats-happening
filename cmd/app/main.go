@@ -18,6 +18,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/crypto"
 	"github.com/wmyers/heres-whats-happening/internal/db"
 	"github.com/wmyers/heres-whats-happening/internal/dsn"
+	"github.com/wmyers/heres-whats-happening/internal/email"
 	hs "github.com/wmyers/heres-whats-happening/internal/http"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
 	"github.com/wmyers/heres-whats-happening/internal/matcher"
@@ -155,6 +156,21 @@ func serve() error {
 		interestConsumer = ingest.NewConsumer(qClient, cfg.InterestsQueueURL, ih, cfg.IngestWorkers, "interests")
 	}
 
+	// config.Load has already rejected an unset or unknown EMAIL_SENDER whenever
+	// the mode is not off. The log sender is the fallback for mode=off, where
+	// nothing is ever sent — a nil Sender would be a panic waiting on a future
+	// mode flip.
+	var mailer email.Sender
+	switch cfg.EmailSender {
+	case "ses":
+		mailer, err = email.NewSESSender(ctx, cfg.AWSRegion, cfg.EmailFromAddress)
+		if err != nil {
+			return fmt.Errorf("email sender: %w", err)
+		}
+	default:
+		mailer = email.NewLogSender()
+	}
+
 	s := &hs.Server{
 		Addr:               cfg.HTTPAddr,
 		DB:                 pool,
@@ -172,6 +188,11 @@ func serve() error {
 		IcalBaseURL:        cfg.IcalBaseURL,
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 		TrustProxy:         cfg.TrustProxy,
+
+		EmailConfirmationMode: cfg.EmailConfirmationMode,
+		EmailSender:           mailer,
+		AppBaseURL:            cfg.AppBaseURL,
+		APIBaseURL:            cfg.APIBaseURL,
 	}
 	fmt.Printf("listening on %s (ingest workers=%d)\n", cfg.HTTPAddr, cfg.IngestWorkers)
 	return s.Run(ctx)
