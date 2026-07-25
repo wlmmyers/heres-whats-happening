@@ -1,9 +1,9 @@
 import { style } from '@vanilla-extract/css';
-import { card, errorText, buttonSubmit } from '../styles/common.css';
+import { errorText, buttonSubmit, cardNoShadow } from '../styles/common.css';
 import { color, fontSize, fontWeight } from '../styles/theme';
 
 export const signupCard = style([
-  card,
+  cardNoShadow,
   {
     width: '100%',
     maxWidth: '24rem',

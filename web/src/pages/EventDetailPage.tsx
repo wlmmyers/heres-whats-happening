@@ -36,16 +36,18 @@ export default function EventDetailPage() {
         {`< Calendar`}
       </Link>
 
-      <div className={s.header}>
-        {data.image_url && <img src={data.image_url} alt="" className={s.thumbnail} />}
-        <div className={s.headerText}>
-          <h1 className={s.title}>{data.title}</h1>
-          <div className={s.date}>{dateLabel}</div>
-          <div className={s.venue}>
-            {data.venue.name}
-            {data.venue.address && <> · {data.venue.address}</>}
+      <div className={c.cardTranslucent}>
+        <div className={s.detail}>
+          {data.image_url && <img src={data.image_url} alt="" className={s.thumbnail} />}
+          <div className={s.detailText}>
+            <h1 className={s.title}>{data.title}</h1>
+            <div className={s.date}>{dateLabel}</div>
+            <div className={s.venue}>
+              {data.venue.name}
+              {data.venue.address && <> · {data.venue.address}</>}
+            </div>
+            <div className={s.score}>{Math.round(data.score * 100)}% match</div>
           </div>
-          <div className={s.score}>{Math.round(data.score * 100)}% match</div>
         </div>
       </div>
 

@@ -15,3 +15,7 @@ AWS_PROFILE=profile aws ssm put-parameter \
     --value "bar" \
     --type String \
     --overwrite
+
+# Check the SESv2 account settings for the prod account
+    AWS_PROFILE=servant aws sesv2 get-account --region us-east-1 \
+  --query '{Prod:ProductionAccessEnabled,Max24:SendQuota.Max24HourSend,Rate:SendQuota.MaxSendRate}'

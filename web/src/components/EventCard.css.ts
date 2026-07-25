@@ -1,14 +1,13 @@
 import { style } from '@vanilla-extract/css';
-import { card } from '../styles/common.css';
-import { color, fontSize, fontWeight, radius, shadow, transition } from '../styles/theme';
+import { clickableCard } from '../styles/common.css';
+import { color, fontSize, fontWeight, radius, transition } from '../styles/theme';
 
 export const eventCard = style([
-  card,
+  clickableCard,
   {
     padding: '1rem',
     minHeight: '150px',
     ...transition,
-    ':hover': { boxShadow: shadow.md },
   },
 ]);
 

@@ -1,9 +1,11 @@
 export const color = {
   white: '#ffffff',
+  whiteA60: 'rgb(255 255 255 / 0.6)',
   blackA40: 'rgb(0 0 0 / 0.4)',
   gray50: '#f9fafb',
   gray100: '#f3f4f6',
-  gray200: '#e5e7eb',
+  gray200: '#e5e5e5',
+  gray300: '#cbcbcb',
   gray500: '#6b7280',
   gray600: '#4b5563',
   gray700: '#374151',
@@ -38,16 +40,21 @@ export const fontWeight = {
 } as const;
 
 export const radius = {
-  sm: '0.25rem',
-  md: '0.375rem',
+  sm: 0,
   full: '9999px',
 } as const;
 
 export const shadow = {
-  sm: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
-  base: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
-  md: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
-  lg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+  sm: `3px 3px 0px 0 ${color.gray300}`,
+  md: `5px 5px 0px 0 ${color.gray300}`,
+  lg: `9px 9px 0px 0 ${color.gray300}`,
+  hover: `5px 5px 2px 2px ${color.gray300};`,
+} as const;
+
+export const border = {
+  sm: `1px solid ${color.gray300}`,
+  md: `2px solid ${color.gray300}`,
+  lg: `3px solid ${color.gray300}`,
 } as const;
 
 export const transition = {
@@ -56,3 +63,9 @@ export const transition = {
   transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
   transitionDuration: '150ms',
 } as const;
+
+export const textStroke = (width: string) =>
+  ({
+    WebkitTextStroke: `${width} ${color.white}`,
+    paintOrder: 'stroke fill',
+  }) as const;
