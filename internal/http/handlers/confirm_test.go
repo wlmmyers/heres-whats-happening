@@ -2,11 +2,14 @@ package handlers_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
@@ -14,6 +17,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/config"
 	"github.com/wmyers/heres-whats-happening/internal/email"
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
+	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 	"github.com/wmyers/heres-whats-happening/internal/testdb"
 )
@@ -133,4 +137,66 @@ func TestConfirmEmail_NeverReturnsJSON(t *testing.T) {
 		require.Equal(t, http.StatusFound, rec.Code)
 		require.NotContains(t, rec.Header().Get("Content-Type"), "application/json")
 	}
+}
+
+func resendPost(t *testing.T, q *store.Queries, uid pgtype.UUID, sender email.Sender) *httptest.ResponseRecorder {
+	t.Helper()
+	h := handlers.ResendConfirmation(q, testDeps(sender))
+	req := httptest.NewRequest(http.MethodPost, "/auth/confirm/resend", nil)
+	req = req.WithContext(middleware.ContextWithUserID(req.Context(), uuid.UUID(uid.Bytes)))
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	return rec
+}
+
+func TestResendConfirmation_SendsFreshLinkAndInvalidatesThePrior(t *testing.T) {
+	q, uid, oldTok := newUnconfirmedUser(t, "resend@example.com", 24*time.Hour)
+	fake := &email.Fake{}
+
+	rec := resendPost(t, q, uid, fake)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.Len(t, fake.Messages(), 1)
+	require.Equal(t, "resend@example.com", fake.Last().To)
+
+	// The prior link stops working — one live token per user.
+	_, err := q.GetEmailConfirmationByHash(context.Background(), auth.HashRefresh(oldTok))
+	require.Error(t, err)
+
+	// The new one resolves and is unconsumed.
+	newLink := extractConfirmLink(t, fake.Last().Text)
+	newTok := newLink[strings.Index(newLink, "token=")+len("token="):]
+	row, err := q.GetEmailConfirmationByHash(context.Background(), auth.HashRefresh(newTok))
+	require.NoError(t, err)
+	require.False(t, row.ConsumedAt.Valid)
+}
+
+func TestResendConfirmation_AlreadyConfirmedIsANoOp204(t *testing.T) {
+	q, uid, _ := newUnconfirmedUser(t, "already@example.com", 24*time.Hour)
+	require.NoError(t, q.MarkUserConfirmed(context.Background(), uid))
+	fake := &email.Fake{}
+
+	rec := resendPost(t, q, uid, fake)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.Empty(t, fake.Messages(), "a confirmed user must not be re-mailed")
+}
+
+func TestResendConfirmation_SendFailureReturns500(t *testing.T) {
+	q, uid, _ := newUnconfirmedUser(t, "resendfail@example.com", 24*time.Hour)
+
+	// Unlike signup, the user explicitly asked for this — surface the failure
+	// so the UI can say the mail did not go out.
+	rec := resendPost(t, q, uid, &email.Fake{Err: errors.New("ses is down")})
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+func TestResendConfirmation_NoUserInContextReturns401(t *testing.T) {
+	q, _, _ := newUnconfirmedUser(t, "nouser@example.com", 24*time.Hour)
+
+	h := handlers.ResendConfirmation(q, testDeps(&email.Fake{}))
+	req := httptest.NewRequest(http.MethodPost, "/auth/confirm/resend", nil)
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
 }

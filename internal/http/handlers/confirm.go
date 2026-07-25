@@ -14,6 +14,8 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/auth"
 	"github.com/wmyers/heres-whats-happening/internal/config"
 	"github.com/wmyers/heres-whats-happening/internal/email"
+	"github.com/wmyers/heres-whats-happening/internal/http/httperr"
+	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
 
@@ -127,5 +129,41 @@ func ConfirmEmail(q *store.Queries, conf ConfirmationDeps) http.HandlerFunc {
 		}
 
 		http.Redirect(w, r, welcome, http.StatusFound)
+	}
+}
+
+// ResendConfirmation mints a fresh link for the authenticated user and mails
+// it, invalidating the previous one. It is a no-op 204 when the user is
+// already confirmed, so a stale tab cannot generate pointless mail.
+//
+// This route is deliberately exempt from the confirmation gate: it is one of
+// the few things an unconfirmed user must be able to do.
+func ResendConfirmation(q *store.Queries, conf ConfirmationDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid, ok := middleware.UserIDFromContext(r.Context())
+		if !ok {
+			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		pgUID := pgtype.UUID{Bytes: uid, Valid: true}
+		row, err := q.GetUserByID(ctx, pgUID)
+		if err != nil {
+			httperr.Write(w, http.StatusNotFound, "no_user", "user not found")
+			return
+		}
+		if row.Confirmed {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		if err := sendConfirmation(ctx, q, conf, row.Email, pgUID); err != nil {
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "send_failed",
+				"could not send the confirmation email", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
