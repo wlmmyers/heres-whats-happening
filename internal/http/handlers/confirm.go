@@ -3,9 +3,12 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/http"
 	"net/url"
 	"time"
 
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
@@ -66,4 +69,63 @@ func sendConfirmation(ctx context.Context, q *store.Queries, conf ConfirmationDe
 		return fmt.Errorf("send confirmation mail: %w", err)
 	}
 	return nil
+}
+
+// ConfirmEmail validates the emailed token, flips users.confirmed, and 302s
+// back into the SPA. It ALWAYS redirects and never returns JSON — this is a
+// browser navigation from a mail client, not an API call.
+//
+// Only two states produce the error redirect: an unknown token, and an
+// unconsumed token past its expiry. Everything else lands on ?welcome=true.
+func ConfirmEmail(q *store.Queries, conf ConfirmationDeps) http.HandlerFunc {
+	welcome := conf.AppBaseURL + "/?welcome=true"
+	confirmError := conf.AppBaseURL + "/?confirmerror=true"
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := r.URL.Query().Get("token")
+		if token == "" {
+			http.Redirect(w, r, confirmError, http.StatusFound)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		row, err := q.GetEmailConfirmationByHash(ctx, auth.HashRefresh(token))
+		if err != nil {
+			http.Redirect(w, r, confirmError, http.StatusFound)
+			return
+		}
+
+		// Already consumed: almost always a mail-security scanner having
+		// prefetched the link before the human clicked it. The account is
+		// confirmed, so send them to the welcome page — reporting a failure
+		// here would tell a successfully confirmed user their link was broken.
+		if row.ConsumedAt.Valid {
+			http.Redirect(w, r, welcome, http.StatusFound)
+			return
+		}
+
+		if row.ExpiresAt.Time.Before(time.Now()) {
+			http.Redirect(w, r, confirmError, http.StatusFound)
+			return
+		}
+
+		// Order matters: confirm the user FIRST, then mark the token consumed.
+		// The reverse order can strand a user — a consumed token whose owner is
+		// still unconfirmed would redirect every future click to ?welcome=true
+		// while the gate keeps rejecting them.
+		if err := q.MarkUserConfirmed(ctx, row.UserID); err != nil {
+			log.Printf("[%s] confirm: mark confirmed: %v", chimw.GetReqID(r.Context()), err)
+			http.Redirect(w, r, confirmError, http.StatusFound)
+			return
+		}
+		if err := q.ConsumeEmailConfirmation(ctx, row.UserID); err != nil {
+			// Non-fatal: the user is confirmed. An unconsumed row just means a
+			// replay re-runs an idempotent update.
+			log.Printf("[%s] confirm: mark consumed: %v", chimw.GetReqID(r.Context()), err)
+		}
+
+		http.Redirect(w, r, welcome, http.StatusFound)
+	}
 }
