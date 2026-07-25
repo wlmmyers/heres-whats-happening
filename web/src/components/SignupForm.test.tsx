@@ -19,6 +19,7 @@ function mockSignup(signup: ReturnType<typeof vi.fn>) {
     login: vi.fn(),
     signup,
     logout: vi.fn(),
+    refreshUser: vi.fn(),
   });
 }
 

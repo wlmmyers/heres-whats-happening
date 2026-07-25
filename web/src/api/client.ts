@@ -61,6 +61,25 @@ async function refresh(): Promise<boolean> {
   return true;
 }
 
+/**
+ * refreshSession mints a new access token from the refresh cookie. Exposed so
+ * ConfirmEmailPage can pick up a confirmation that happened on another device
+ * without waiting out the 15m access-token TTL.
+ */
+export async function refreshSession(): Promise<boolean> {
+  return refresh();
+}
+
+/** Reads the error code from a response without consuming the caller's copy. */
+async function errorCode(resp: Response): Promise<string> {
+  try {
+    const body = (await resp.clone().json()) as ApiErrorBody;
+    return body.error?.code ?? '';
+  } catch {
+    return '';
+  }
+}
+
 export interface ApiFetchOptions {
   method?: string;
   body?: unknown;
@@ -79,6 +98,17 @@ export async function apiFetch<T = unknown>(path: string, opts: ApiFetchOptions 
   let resp = await rawFetch(path, init);
 
   if (resp.status === 401 && !path.endsWith('/auth/refresh')) {
+    const refreshed = await refresh();
+    if (refreshed) {
+      resp = await rawFetch(path, init);
+    }
+  }
+
+  // A 403 confirmation_required means this token was minted before the account
+  // was confirmed. Confirmation is monotonic, so a refresh always resolves it —
+  // this is the self-heal for the second-tab case, bounded by the access TTL.
+  // Retried once: if the retry still 403s, the user genuinely is unconfirmed.
+  if (resp.status === 403 && (await errorCode(resp)) === 'confirmation_required') {
     const refreshed = await refresh();
     if (refreshed) {
       resp = await rawFetch(path, init);

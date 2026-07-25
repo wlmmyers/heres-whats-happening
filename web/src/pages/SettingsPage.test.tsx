@@ -52,10 +52,11 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(useAuth).mockReturnValue({
     status: 'authenticated',
-    user: { id: 'u1', email: 'a@x' },
+    user: { id: 'u1', email: 'a@x', confirmed: true },
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),
+    refreshUser: vi.fn(),
   });
   (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
     connected: false,

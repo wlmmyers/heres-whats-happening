@@ -15,6 +15,7 @@ beforeEach(() => {
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),
+    refreshUser: vi.fn(),
   });
 });
 

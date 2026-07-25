@@ -3,6 +3,7 @@ import { apiFetch, setAccessToken, clearAccessToken } from './client';
 export interface User {
   id: string;
   email: string;
+  confirmed: boolean;
   score_threshold?: number;
 }
 
@@ -39,4 +40,9 @@ export async function logout(): Promise<void> {
 
 export async function getMe(): Promise<User> {
   return apiFetch<User>('/me');
+}
+
+/** Mints a fresh confirmation link and mails it, invalidating the previous one. */
+export async function resendConfirmation(): Promise<void> {
+  await apiFetch<void>('/auth/confirm/resend', { method: 'POST' });
 }
