@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
+	"github.com/wmyers/heres-whats-happening/internal/config"
 	"github.com/wmyers/heres-whats-happening/internal/http/httperr"
 	"github.com/wmyers/heres-whats-happening/internal/pwhash"
 	"github.com/wmyers/heres-whats-happening/internal/store"
@@ -31,12 +34,17 @@ type signupResponse struct {
 type userOut struct {
 	ID             string   `json:"id"`
 	Email          string   `json:"email"`
+	Confirmed      bool     `json:"confirmed"`
 	ScoreThreshold *float64 `json:"score_threshold,omitempty"`
 }
 
 // Signup creates a new user, sets the refresh cookie, and returns an access token.
 // cityID is the default city assignment for v1.
-func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, cityID string) http.HandlerFunc {
+//
+// conf.Mode decides whether the new user is confirmed and whether mail goes
+// out. Only enforce creates an unconfirmed user — send still confirms, so the
+// whole flow can be exercised against real signups with nobody locked out.
+func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, cityID string, conf ConfirmationDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req signupRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -68,11 +76,16 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
+		// Known from the mode without asking the database. CreateUser takes it
+		// explicitly rather than leaning on the column default, so the mode —
+		// not the schema — decides.
+		confirmed := conf.Mode != config.ConfirmationEnforce
+
 		row, err := q.CreateUser(ctx, store.CreateUserParams{
 			Email:        req.Email,
 			PasswordHash: hash,
 			CityID:       pgtype.UUID{Bytes: cityUUID, Valid: true},
-			Confirmed:    true,
+			Confirmed:    confirmed,
 		})
 		if err != nil {
 			var pgErr *pgconn.PgError
@@ -106,9 +119,18 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 		}
 		setRefreshCookie(w, refreshTok, refreshTTL)
 
+		// A send failure is logged but must not fail the request: the user still
+		// reaches /confirm-email, where resend is one click away.
+		if conf.Mode != config.ConfirmationOff {
+			if err := sendConfirmation(ctx, q, conf, row.Email, row.ID); err != nil {
+				log.Printf("[%s] signup: confirmation mail for %s: %v",
+					chimw.GetReqID(r.Context()), row.Email, err)
+			}
+		}
+
 		writeJSON(w, http.StatusCreated, signupResponse{
 			AccessToken: access,
-			User:        userOut{ID: row.ID.String(), Email: row.Email},
+			User:        userOut{ID: row.ID.String(), Email: row.Email, Confirmed: row.Confirmed},
 		})
 	}
 }

@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
+	"github.com/wmyers/heres-whats-happening/internal/config"
+	"github.com/wmyers/heres-whats-happening/internal/email"
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 	"github.com/wmyers/heres-whats-happening/internal/testdb"
@@ -30,7 +34,7 @@ func TestSignup_Success(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
-	h := handlers.Signup(q, signer, time.Hour, defaultCityID(t, q))
+	h := handlers.Signup(q, signer, time.Hour, defaultCityID(t, q), handlers.ConfirmationDeps{Mode: config.ConfirmationOff, Sender: &email.Fake{}})
 
 	body, _ := json.Marshal(map[string]string{
 		"email":    "alice@example.com",
@@ -69,7 +73,7 @@ func TestSignup_DuplicateEmailReturns409(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
-	h := handlers.Signup(q, signer, time.Hour, defaultCityID(t, q))
+	h := handlers.Signup(q, signer, time.Hour, defaultCityID(t, q), handlers.ConfirmationDeps{Mode: config.ConfirmationOff, Sender: &email.Fake{}})
 
 	send := func() *httptest.ResponseRecorder {
 		body, _ := json.Marshal(map[string]string{"email": "dup@example.com", "password": "hunter22"})
@@ -87,7 +91,7 @@ func TestSignup_ShortPasswordReturns400(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
-	h := handlers.Signup(q, signer, time.Hour, defaultCityID(t, q))
+	h := handlers.Signup(q, signer, time.Hour, defaultCityID(t, q), handlers.ConfirmationDeps{Mode: config.ConfirmationOff, Sender: &email.Fake{}})
 
 	body, _ := json.Marshal(map[string]string{"email": "x@example.com", "password": "short"})
 	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
@@ -108,7 +112,7 @@ func signupAndGetCity(t *testing.T) (*store.Queries, *auth.JWTSigner, string) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+	handlers.Signup(q, signer, time.Hour, cityID, handlers.ConfirmationDeps{Mode: config.ConfirmationOff, Sender: &email.Fake{}})(rec, req)
 	require.Equal(t, http.StatusCreated, rec.Code)
 	return q, signer, cityID
 }
@@ -165,7 +169,7 @@ func TestRefresh_Success(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+	handlers.Signup(q, signer, time.Hour, cityID, handlers.ConfirmationDeps{Mode: config.ConfirmationOff, Sender: &email.Fake{}})(rec, req)
 	require.Equal(t, http.StatusCreated, rec.Code)
 
 	var refreshCookie *http.Cookie
@@ -210,7 +214,7 @@ func TestRefresh_RevokedRejected(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+	handlers.Signup(q, signer, time.Hour, cityID, handlers.ConfirmationDeps{Mode: config.ConfirmationOff, Sender: &email.Fake{}})(rec, req)
 	require.Equal(t, http.StatusCreated, rec.Code)
 
 	var refreshCookie *http.Cookie
@@ -241,7 +245,7 @@ func TestLogout_RevokesAndClears(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+	handlers.Signup(q, signer, time.Hour, cityID, handlers.ConfirmationDeps{Mode: config.ConfirmationOff, Sender: &email.Fake{}})(rec, req)
 	require.Equal(t, http.StatusCreated, rec.Code)
 	var refreshCookie *http.Cookie
 	for _, c := range rec.Result().Cookies() {
@@ -263,4 +267,116 @@ func TestLogout_RevokesAndClears(t *testing.T) {
 	rec3 := httptest.NewRecorder()
 	handlers.Refresh(q, signer)(rec3, req3)
 	require.Equal(t, http.StatusUnauthorized, rec3.Code)
+}
+
+// signupWith runs a signup in the given mode and returns the queries handle,
+// the recorder, and the fake sender.
+func signupWith(t *testing.T, mode config.ConfirmationMode, address string) (*store.Queries, *httptest.ResponseRecorder, *email.Fake) {
+	t.Helper()
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	fake := &email.Fake{}
+	h := handlers.Signup(q, signer, time.Hour, defaultCityID(t, q), handlers.ConfirmationDeps{
+		Mode:       mode,
+		Sender:     fake,
+		APIBaseURL: "https://api.example.com",
+		AppBaseURL: "https://app.example.com",
+	})
+
+	body, _ := json.Marshal(map[string]string{"email": address, "password": "hunter22"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	return q, rec, fake
+}
+
+func confirmedOf(t *testing.T, q *store.Queries, address string) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	row, err := q.GetUserByEmail(ctx, address)
+	require.NoError(t, err)
+	return row.Confirmed
+}
+
+// extractConfirmLink pulls the confirm URL out of a plain-text mail body.
+func extractConfirmLink(t *testing.T, text string) string {
+	t.Helper()
+	for _, f := range strings.Fields(text) {
+		if strings.Contains(f, "/auth/confirm?token=") {
+			return f
+		}
+	}
+	t.Fatalf("no confirm link in message body: %q", text)
+	return ""
+}
+
+func TestSignup_ModeOff_ConfirmedAndNoMail(t *testing.T) {
+	q, rec, fake := signupWith(t, config.ConfirmationOff, "off@example.com")
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.True(t, confirmedOf(t, q, "off@example.com"))
+	require.Empty(t, fake.Messages(), "off must send nothing — it is today's behavior byte for byte")
+}
+
+func TestSignup_ModeSend_ConfirmedAndMailSent(t *testing.T) {
+	q, rec, fake := signupWith(t, config.ConfirmationSend, "send@example.com")
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.True(t, confirmedOf(t, q, "send@example.com"),
+		"send must leave the user confirmed so nobody can be locked out")
+	require.Len(t, fake.Messages(), 1)
+	require.Equal(t, "send@example.com", fake.Last().To)
+	require.Contains(t, fake.Last().Text, "https://api.example.com/auth/confirm?token=")
+}
+
+func TestSignup_ModeEnforce_UnconfirmedTokenRowAndMailSent(t *testing.T) {
+	q, rec, fake := signupWith(t, config.ConfirmationEnforce, "enforce@example.com")
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.False(t, confirmedOf(t, q, "enforce@example.com"))
+	require.Len(t, fake.Messages(), 1)
+
+	// A token row exists and resolves by the hash of the token in the link.
+	link := extractConfirmLink(t, fake.Last().Text)
+	tok := link[strings.Index(link, "token=")+len("token="):]
+	row, err := q.GetEmailConfirmationByHash(context.Background(), auth.HashRefresh(tok))
+	require.NoError(t, err)
+	require.False(t, row.ConsumedAt.Valid)
+	require.True(t, row.ExpiresAt.Time.After(time.Now().Add(23*time.Hour)))
+}
+
+func TestSignup_ResponseCarriesConfirmed(t *testing.T) {
+	_, rec, _ := signupWith(t, config.ConfirmationEnforce, "body@example.com")
+
+	var resp struct {
+		User struct {
+			Confirmed bool `json:"confirmed"`
+		} `json:"user"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.False(t, resp.User.Confirmed)
+}
+
+func TestSignup_SendFailureStillReturns201(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	fake := &email.Fake{Err: errors.New("ses is down")}
+	h := handlers.Signup(q, signer, time.Hour, defaultCityID(t, q), handlers.ConfirmationDeps{
+		Mode: config.ConfirmationEnforce, Sender: fake,
+		APIBaseURL: "https://api.example.com", AppBaseURL: "https://app.example.com",
+	})
+
+	body, _ := json.Marshal(map[string]string{"email": "sendfail@example.com", "password": "hunter22"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h(rec, req)
+
+	// The user still reaches /confirm-email, where resend is one click away.
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.False(t, confirmedOf(t, q, "sendfail@example.com"))
 }

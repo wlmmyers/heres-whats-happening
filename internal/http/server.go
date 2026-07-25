@@ -11,7 +11,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
+	"github.com/wmyers/heres-whats-happening/internal/config"
 	"github.com/wmyers/heres-whats-happening/internal/crypto"
+	"github.com/wmyers/heres-whats-happening/internal/email"
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
@@ -47,6 +49,25 @@ type Server struct {
 	// Plan 7 addition — when true, derive the client IP from the rightmost
 	// X-Forwarded-For entry. Set only when running behind our ALB.
 	TrustProxy bool
+
+	// Plan 8 additions — email confirmation. The mode gates only whether
+	// RequireConfirmed is installed; the route layout is identical in all three
+	// modes, so flipping the mode changes which middleware runs, never which
+	// routes exist.
+	EmailConfirmationMode config.ConfirmationMode
+	EmailSender           email.Sender
+	AppBaseURL            string
+	APIBaseURL            string
+}
+
+// confirmationDeps bundles the confirmation config for the auth handlers.
+func (s *Server) confirmationDeps() handlers.ConfirmationDeps {
+	return handlers.ConfirmationDeps{
+		Mode:       s.EmailConfirmationMode,
+		Sender:     s.EmailSender,
+		APIBaseURL: s.APIBaseURL,
+		AppBaseURL: s.AppBaseURL,
+	}
 }
 
 func (s *Server) Router() http.Handler {
@@ -94,7 +115,7 @@ func (s *Server) Router() http.Handler {
 
 	// Auth (public)
 	r.With(middleware.RateLimitOnSuccess(signupLimiter, middleware.EndpointSignup)).
-		Post("/auth/signup", handlers.Signup(s.Queries, s.JWTSigner, s.RefreshTTL, s.DefaultCityID))
+		Post("/auth/signup", handlers.Signup(s.Queries, s.JWTSigner, s.RefreshTTL, s.DefaultCityID, s.confirmationDeps()))
 	r.With(middleware.RateLimit(loginLimiter, middleware.EndpointLogin)).
 		Post("/auth/login", handlers.Login(s.Queries, s.JWTSigner, s.RefreshTTL))
 	r.With(middleware.RateLimit(refreshLimiter, middleware.EndpointRefresh)).
