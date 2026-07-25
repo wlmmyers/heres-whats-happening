@@ -26,13 +26,19 @@ export const thumbnail = style({
 export const detail = style({
   display: 'flex',
   justifyContent: 'space-between',
-  gap: '1rem',
   '@media': {
     [phone]: { flexDirection: 'column' },
   },
 });
 
-export const detailText = style({ minWidth: 0, flexGrow: 1, padding: '0.5rem' });
+export const detailText = style({
+  minWidth: 0,
+  flexGrow: 1,
+  padding: '0.5rem 1rem',
+  '@media': {
+    [phone]: { padding: '1rem' },
+  },
+});
 
 export const title = style({
   ...fontSize['3xl'],
