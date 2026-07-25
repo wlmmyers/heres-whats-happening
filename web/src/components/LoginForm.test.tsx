@@ -78,8 +78,6 @@ describe('LoginForm', () => {
     await userEvent.type(screen.getByLabelText(/email/i), 'a@x');
     await userEvent.type(screen.getByLabelText(/password/i), 'hunter22');
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
-    await waitFor(() =>
-      expect(screen.getByText(/too many login attempts/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/too many login attempts/i)).toBeInTheDocument());
   });
 });

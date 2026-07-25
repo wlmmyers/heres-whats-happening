@@ -117,4 +117,3 @@ func (c *Client) DeleteTestQueue(ctx context.Context, queueURL string) error {
 	}
 	return nil
 }
-

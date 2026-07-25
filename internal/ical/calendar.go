@@ -9,7 +9,7 @@ import (
 
 // Event is the minimal shape needed to emit a VEVENT block.
 type Event struct {
-	UID         string    // Stable across feed refreshes; format: "event-<id>@example.com"
+	UID         string // Stable across feed refreshes; format: "event-<id>@example.com"
 	Title       string
 	StartsAt    time.Time
 	EndsAt      time.Time // zero value → DTEND omitted

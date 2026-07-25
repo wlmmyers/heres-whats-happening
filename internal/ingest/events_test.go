@@ -87,8 +87,8 @@ func TestHandle_Reupsert_UpdatesLastSeenAndReplacesAssociations(t *testing.T) {
 
 	// Modify performers + genres
 	mod := sampleMessage()
-	mod.Performers = []string{"Phoebe Bridgers"}      // dropped MUNA
-	mod.Genres = []string{"folk"}                     // changed genre
+	mod.Performers = []string{"Phoebe Bridgers"} // dropped MUNA
+	mod.Genres = []string{"folk"}                // changed genre
 	modBody, _ := json.Marshal(mod)
 	require.NoError(t, h.Handle(ctx, modBody))
 
