@@ -168,6 +168,7 @@ var truncateTables = []string{
 	"user_interests",
 	"user_spotify_tokens",
 	"ical_tokens",
+	"email_confirmations",
 	"refresh_tokens",
 	"users",
 	"artist_genre_cache",

@@ -121,7 +121,7 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 
 		// A send failure is logged but must not fail the request: the user still
 		// reaches /confirm-email, where resend is one click away.
-		if conf.Mode != config.ConfirmationOff {
+		if conf.sendsMail() {
 			if err := sendConfirmation(ctx, q, conf, row.Email, row.ID); err != nil {
 				log.Printf("[%s] signup: confirmation mail for %s: %v",
 					chimw.GetReqID(r.Context()), row.Email, err)

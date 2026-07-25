@@ -30,9 +30,26 @@ type ConfirmationDeps struct {
 	AppBaseURL string
 }
 
+// sendsMail reports whether this mode puts confirmation mail on the wire.
+//
+// Deliberately an allowlist rather than `Mode != ConfirmationOff`: the zero
+// value of ConfirmationMode is "", not "off". config.Load normalizes an unset
+// env var to off, but a Server built directly — in tests, or by any future
+// caller that skips config.Load — carries "". Testing against off would treat
+// that zero value as "send", which is both the unsafe direction and a nil-Sender
+// panic. An unrecognized mode must never send.
+func (c ConfirmationDeps) sendsMail() bool {
+	return c.Mode == config.ConfirmationSend || c.Mode == config.ConfirmationEnforce
+}
+
 // sendConfirmation mints a fresh confirmation token for userID — replacing any
 // previous one, so a resend invalidates the older link — and emails it.
 func sendConfirmation(ctx context.Context, q *store.Queries, conf ConfirmationDeps, toEmail string, userID pgtype.UUID) error {
+	// A nil Sender in a sending mode is a wiring bug. Return it as an error so
+	// the caller's logging path reports it, rather than panicking mid-request.
+	if conf.Sender == nil {
+		return fmt.Errorf("confirmation: no email sender configured for mode %q", conf.Mode)
+	}
 	raw, err := auth.GenerateRefresh()
 	if err != nil {
 		return fmt.Errorf("generate confirmation token: %w", err)

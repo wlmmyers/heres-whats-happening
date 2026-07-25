@@ -380,3 +380,25 @@ func TestSignup_SendFailureStillReturns201(t *testing.T) {
 	require.Equal(t, http.StatusCreated, rec.Code)
 	require.False(t, confirmedOf(t, q, "sendfail@example.com"))
 }
+
+// The zero value of ConfirmationMode is "", not "off". A Server built without
+// going through config.Load carries it, so the send decision must be an
+// allowlist — treating "" as a sending mode would both send unintended mail and
+// dereference a nil Sender.
+func TestSignup_ZeroValueModeSendsNothingAndDoesNotPanic(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	// No Mode, no Sender — exactly what a bare Server literal produces.
+	h := handlers.Signup(q, signer, time.Hour, defaultCityID(t, q), handlers.ConfirmationDeps{})
+
+	body, _ := json.Marshal(map[string]string{"email": "zerovalue@example.com", "password": "hunter22"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.True(t, confirmedOf(t, q, "zerovalue@example.com"),
+		"an unrecognized mode must behave like off, not enforce")
+}
