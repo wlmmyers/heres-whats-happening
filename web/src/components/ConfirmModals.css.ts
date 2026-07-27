@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { color, fontSize, fontWeight, radius, shadow } from '../styles/theme';
+import { border, color, fontSize, fontWeight, radius, shadow } from '../styles/theme';
 
 export const backdrop = style({
   position: 'fixed',
@@ -15,7 +15,8 @@ export const backdrop = style({
 export const card = style({
   backgroundColor: color.white,
   boxShadow: shadow.lg,
-  borderRadius: radius.md,
+  border: border.md,
+  borderRadius: radius.sm,
   padding: '2rem',
   maxWidth: '26rem',
   width: '100%',

@@ -1,10 +1,8 @@
 import { style } from '@vanilla-extract/css';
-import { color, radius, fontSize } from '../styles/theme';
+import { color, radius, fontSize, border } from '../styles/theme';
 
 export const wrapper = style({
-  borderWidth: '1px',
-  borderStyle: 'solid',
-  borderRadius: radius.sm,
+  border: border.sm,
   padding: '0.5rem',
   display: 'flex',
   flexWrap: 'wrap',

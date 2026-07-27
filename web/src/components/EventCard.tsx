@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import type { CalendarEvent } from '../api/calendar';
 import * as s from './EventCard.css';
 
@@ -11,6 +11,7 @@ export default function EventCard({
   onNotInterested?: (id: string) => void;
   interactive?: boolean;
 }) {
+  const navigate = useNavigate();
   const date = new Date(event.starts_at);
   const dateLabel = date.toLocaleString(undefined, {
     weekday: 'short',
@@ -40,19 +41,19 @@ export default function EventCard({
   );
 
   return (
-    <div className={s.eventCard}>
-      {interactive ? (
-        <Link to={`/events/${event.id}`} className={s.link}>
-          {content}
-        </Link>
-      ) : (
-        <div className={s.link}>{content}</div>
-      )}
+    <div
+      className={s.eventCard}
+      onClick={interactive ? () => navigate(`/events/${event.id}`) : undefined}
+    >
+      <div className={s.link}>{content}</div>
       {onNotInterested && (
         <div className={s.notInterestedRow}>
           <button
             type="button"
-            onClick={() => onNotInterested(event.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onNotInterested(event.id);
+            }}
             className={s.notInterestedButton}
           >
             Not interested

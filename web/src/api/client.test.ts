@@ -104,7 +104,9 @@ describe('apiFetch confirmation_required handling', () => {
     let call = 0;
     global.fetch = vi.fn().mockImplementation(() => {
       call += 1;
-      return Promise.resolve(mockJsonResponse(403, { error: { code: 'forbidden', message: 'no' } }));
+      return Promise.resolve(
+        mockJsonResponse(403, { error: { code: 'forbidden', message: 'no' } }),
+      );
     });
 
     await expect(apiFetch('/me/calendar')).rejects.toThrowError(

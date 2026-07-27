@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import EventCard from './EventCard';
 import type { CalendarEvent } from '../api/calendar';
 
@@ -22,9 +22,17 @@ function renderCard(onNotInterested?: (id: string) => void, overrides?: Partial<
 }
 
 describe('EventCard', () => {
-  it('links to the event detail page', () => {
-    renderCard();
-    expect(screen.getByRole('link')).toHaveAttribute('href', '/events/e1');
+  it('navigates to the event detail page when clicked', () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<EventCard event={event} />} />
+          <Route path="/events/:id" element={<div>Event detail page</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('heading', { name: 'PB Live' }));
+    expect(screen.getByText('Event detail page')).toBeInTheDocument();
   });
 
   it('renders an image tile when the event has an image_url', () => {

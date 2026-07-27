@@ -33,8 +33,8 @@ func Defaults() Config {
 // NormalizedInterest is one user_interests row reduced to the fields the
 // matcher needs.
 type NormalizedInterest struct {
-	Value      string  // raw display value (artist name, genre slug, manual tag)
-	Normalized string  // normalized form used for matching
+	Value      string // raw display value (artist name, genre slug, manual tag)
+	Normalized string // normalized form used for matching
 	Weight     float64
 }
 

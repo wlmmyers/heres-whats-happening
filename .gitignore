@@ -32,6 +32,7 @@ web/.vite/
 
 # Claude & agents
 .claude/settings.local.json
+.claude/worktrees/
 
 # macOS
 .DS_Store

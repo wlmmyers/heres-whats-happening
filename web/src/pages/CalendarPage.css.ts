@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { card } from '../styles/common.css';
-import { color, radius, shadow, fontSize, fontWeight, transition } from '../styles/theme';
+import { color, radius, fontSize, fontWeight, transition, textStroke } from '../styles/theme';
 
 export const controls = style({
   display: 'flex',
@@ -8,12 +8,16 @@ export const controls = style({
   gap: '0.5rem',
 });
 
-export const controlLabel = style({ ...fontSize.sm, color: color.gray500 });
+export const controlLabel = style({
+  ...fontSize.sm,
+  color: color.gray500,
+  ...textStroke('4px'),
+});
 
 export const segment = style({ display: 'inline-flex', padding: '0.125rem' });
 
 export const rangeButton = style({
-  borderRadius: radius.md,
+  borderRadius: radius.sm,
   paddingInline: '0.75rem',
   paddingBlock: '0.25rem',
   ...fontSize.sm,
@@ -25,7 +29,6 @@ export const rangeButton = style({
 export const rangeButtonActive = style({
   backgroundColor: color.blue600,
   color: color.white,
-  boxShadow: shadow.sm,
 });
 
 export const rangeButtonInactive = style({

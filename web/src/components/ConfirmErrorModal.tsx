@@ -28,7 +28,12 @@ export default function ConfirmErrorModal({ onDismiss }: { onDismiss: () => void
 
   return (
     <div className={s.backdrop}>
-      <div role="dialog" aria-label="Confirmation link problem" aria-modal="true" className={s.card}>
+      <div
+        role="dialog"
+        aria-label="Confirmation link problem"
+        aria-modal="true"
+        className={s.card}
+      >
         <h2 className={s.title}>That link didn&rsquo;t work</h2>
         <p className={s.body}>
           Confirmation links expire after 24 hours. We can send you a fresh one.

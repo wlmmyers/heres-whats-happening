@@ -1,4 +1,5 @@
 import { globalStyle } from '@vanilla-extract/css';
+import { fontWeight } from './theme';
 
 globalStyle('*, ::before, ::after', {
   boxSizing: 'border-box',
@@ -32,7 +33,7 @@ globalStyle('button, input, optgroup, select, textarea', {
 // App global: carried over from styles.css (cursor + weight) merged with the reset.
 globalStyle('button', {
   cursor: 'pointer',
-  fontWeight: 600,
+  fontWeight: fontWeight.semibold,
   backgroundColor: 'transparent',
   backgroundImage: 'none',
 });

@@ -102,8 +102,12 @@ type discoveryEvent struct {
 		} `json:"end"`
 	} `json:"dates"`
 	Classifications []struct {
-		Genre    struct{ Name string `json:"name"` } `json:"genre"`
-		SubGenre struct{ Name string `json:"name"` } `json:"subGenre"`
+		Genre struct {
+			Name string `json:"name"`
+		} `json:"genre"`
+		SubGenre struct {
+			Name string `json:"name"`
+		} `json:"subGenre"`
 	} `json:"classifications"`
 	Embedded struct {
 		Venues []struct {

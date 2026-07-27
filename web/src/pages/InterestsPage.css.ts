@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { buttonPrimary, errorText } from '../styles/common.css';
-import { color, fontSize, radius } from '../styles/theme';
+import { color, fontSize, fontWeight, radius } from '../styles/theme';
 
 export const lead = style({
   color: color.gray600,
@@ -27,13 +27,12 @@ export const groupHeading = style({
 
 export const sectionHeading = style({
   ...fontSize.lg,
-  fontWeight: 600,
+  fontWeight: fontWeight.semibold,
 });
 
 export const showAllButton = style({
   marginTop: '0.5rem',
   color: color.blue600,
-  textDecorationLine: 'underline',
   ...fontSize.sm,
 });
 

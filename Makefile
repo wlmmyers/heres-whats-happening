@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape-ticketmaster scrape-spotify tei-up tei-down tei-seed match test-scripts bastion-start bastion-tunnel bastion-creds bastion-stop bastion-psql
+.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape-ticketmaster scrape-spotify tei-up tei-down tei-seed match test-scripts hooks hooks-uninstall bastion-start bastion-tunnel bastion-creds bastion-stop bastion-psql
 
 ifneq (,$(wildcard .env))
     include .env
@@ -94,6 +94,17 @@ test:
 # AWS-free shell tests for scripts/ (no DB, no AWS creds needed).
 test-scripts:
 	bash scripts/test/taskdef-edit.test.sh
+
+# Install the repo's git hooks. core.hooksPath is per-clone local config, so
+# every fresh clone needs this once. See .githooks/pre-commit for what runs.
+hooks:
+	git config core.hooksPath .githooks
+	@chmod +x .githooks/*
+	@echo "git hooks installed (.githooks/). Bypass a commit with --no-verify."
+
+hooks-uninstall:
+	git config --unset core.hooksPath
+	@echo "git hooks uninstalled (back to .git/hooks/)."
 
 run:
 	go run ./cmd/app serve

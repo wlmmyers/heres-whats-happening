@@ -1,21 +1,21 @@
 import { style } from '@vanilla-extract/css';
 import { buttonPrimary } from '../styles/common.css';
-import { color, radius, fontSize, fontWeight } from '../styles/theme';
+import { color, radius, fontSize, fontWeight, textStroke } from '../styles/theme';
 import { phone } from '../styles/breakpoints.css';
 
 export const backLink = style({
   display: 'block',
   ...fontSize.sm,
   color: color.blue600,
-  fontWeight: fontWeight.bold,
+  fontWeight: fontWeight.medium,
   marginBottom: '0.625rem',
+  ...textStroke('4px'),
   ':hover': { textDecorationLine: 'underline' },
 });
 
 export const thumbnail = style({
-  flexShrink: 0,
-  width: '8rem',
-  height: '8rem',
+  width: '9rem',
+  height: '9rem',
   objectFit: 'cover',
   borderRadius: radius.sm,
   '@media': {
@@ -23,17 +23,22 @@ export const thumbnail = style({
   },
 });
 
-export const header = style({
-  marginTop: '1rem',
+export const detail = style({
   display: 'flex',
   justifyContent: 'space-between',
-  gap: '1rem',
   '@media': {
     [phone]: { flexDirection: 'column' },
   },
 });
 
-export const headerText = style({ minWidth: 0, flexGrow: 1 });
+export const detailText = style({
+  minWidth: 0,
+  flexGrow: 1,
+  padding: '0.5rem 1rem',
+  '@media': {
+    [phone]: { padding: '1rem' },
+  },
+});
 
 export const title = style({
   ...fontSize['3xl'],
@@ -66,9 +71,6 @@ export const description = style({
   fontSize: fontSize.sm.fontSize,
 });
 
-export const viewEvent = style([
-  buttonPrimary,
-  { fontWeight: fontWeight.bold, display: 'inline-block', marginTop: '1rem' },
-]);
+export const viewEvent = style([buttonPrimary, { display: 'inline-block', marginTop: '1rem' }]);
 
 export const notFound = style({ color: color.gray700 });

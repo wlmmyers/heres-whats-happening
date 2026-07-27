@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { color, radius } from '../styles/theme';
+import { color, radius, textStroke } from '../styles/theme';
 import { phone } from '../styles/breakpoints.css';
 
 export const page = style({
@@ -8,13 +8,13 @@ export const page = style({
 });
 
 export const header = style({
+  position: 'fixed',
   backgroundColor: color.white,
   borderBottomWidth: '1px',
   padding: '0 1rem',
   display: 'flex',
   alignItems: 'center',
   gap: '0.5rem',
-  position: 'fixed',
   top: 0,
   right: 0,
   left: 0,
@@ -22,8 +22,7 @@ export const header = style({
   height: '4rem',
 });
 
-export const headerLoggedOut = style([
-  header,
+export const hiddenOnPhone = style([
   {
     '@media': {
       [phone]: { display: 'none' },
@@ -51,6 +50,7 @@ export const logo = style({
 });
 
 export const main = style({
+  position: 'relative',
   maxWidth: '60rem',
   marginInline: 'auto',
   marginTop: '4rem',
@@ -89,4 +89,25 @@ export const authActions = style({
   marginLeft: 'auto',
   display: 'flex',
   gap: '0.5rem',
+});
+
+export const footer = style({
+  marginTop: '2rem',
+  paddingBlock: '1rem',
+  textAlign: 'center',
+  color: color.gray500,
+  fontSize: '0.875rem',
+  ...textStroke('4px'),
+});
+
+export const background = style({
+  position: 'fixed',
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+  backgroundImage: 'repeating-linear-gradient(304deg, #ffffff 0 10px, #e5e5e5 10px 12px)',
+  backgroundSize: 'cover',
+  backgroundPosition: 'center',
+  backgroundRepeat: 'no-repeat',
 });

@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { color, fontSize, fontWeight, radius, shadow } from '../styles/theme';
+import { border, color, fontSize, fontWeight, radius, shadow } from '../styles/theme';
 
 export const card = style({
   maxWidth: '28rem',
@@ -7,7 +7,8 @@ export const card = style({
   padding: '2rem',
   textAlign: 'center',
   backgroundColor: color.white,
-  boxShadow: shadow.base,
+  boxShadow: shadow.md,
+  border: border.sm,
   borderRadius: radius.sm,
 });
 

@@ -74,7 +74,7 @@ describe('EventDetailPage', () => {
     });
     const { container } = renderAt('/events/e1');
     await waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
-    const img = container.querySelector(`.${s.header} img`);
+    const img = container.querySelector(`.${s.detail} img`);
     expect(img).toHaveAttribute('src', 'https://cdn.test/pb.jpg');
   });
 

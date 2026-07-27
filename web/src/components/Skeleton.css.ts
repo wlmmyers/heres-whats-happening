@@ -79,8 +79,7 @@ export const Animation = style({
       position: 'absolute',
       animation: `${wave} 1.6s linear 0.5s infinite`,
       transform: 'translateX(-100%)',
-      background:
-        'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent)',
+      background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent)',
     },
     [`${button} &`]: {
       borderRadius: '20px',

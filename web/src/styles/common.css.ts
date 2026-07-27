@@ -1,12 +1,38 @@
 import { style } from '@vanilla-extract/css';
-import { color, radius, shadow, fontSize, fontWeight } from './theme';
+import { color, radius, shadow, fontSize, fontWeight, border, textStroke } from './theme';
 import { phone } from './breakpoints.css';
 
 export const card = style({
   backgroundColor: color.white,
-  boxShadow: shadow.base,
+  boxShadow: shadow.sm,
   borderRadius: radius.sm,
+  border: border.sm,
 });
+
+export const cardNoShadow = style({
+  backgroundColor: color.white,
+  borderRadius: radius.sm,
+  border: border.sm,
+});
+
+export const cardTranslucent = style({
+  backgroundColor: color.whiteA60,
+  borderRadius: radius.sm,
+  border: border.sm,
+});
+
+export const clickableCard = style([
+  card,
+  {
+    cursor: 'pointer',
+    selectors: {
+      '&:hover': {
+        transform: 'scale(1.01)',
+        boxShadow: shadow.hover,
+      },
+    },
+  },
+]);
 
 export const buttonPrimary = style({
   backgroundColor: color.blue600,
@@ -57,6 +83,8 @@ export const textInput = style({
 export const pageTitle = style({
   ...fontSize['2xl'],
   fontWeight: fontWeight.semibold,
+  color: '#000',
+  ...textStroke('10px'),
 });
 
 export const pageHeader = style({

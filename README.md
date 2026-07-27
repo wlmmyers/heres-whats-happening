@@ -26,6 +26,24 @@ Check out the live app at [hereswhatshappening.app](https://hereswhatshappening.
 
 Go 1.24+, Docker, pnpm 9+, make, psql
 
+## Git hooks
+
+```bash
+make hooks
+```
+
+Points `core.hooksPath` at `.githooks/`, enabling a pre-commit hook that runs
+gofmt, `go vet`, the Go test suite, eslint, `tsc`, prettier, and vitest before
+each commit (~35s). `core.hooksPath` is per-clone local config, so every fresh
+clone needs this once.
+
+The Go tests are integration tests, so `make db-up queue-up` must be running or
+the hook aborts the commit and tells you so. Bypass a single commit with
+`git commit --no-verify`; remove the hooks with `make hooks-uninstall`.
+
+Note the checks run against the working tree, not the staged snapshot — if you
+stage only part of your changes, what runs is what is on disk.
+
 ## Backend quickstart
 
 ```bash

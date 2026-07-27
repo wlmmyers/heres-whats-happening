@@ -28,7 +28,8 @@ export default function Layout() {
 
   return (
     <div className={s.page}>
-      <header className={clsx(s.header, { [s.headerLoggedOut]: !authed })}>
+      <div className={s.background} />
+      <header className={clsx(s.header, { [s.hiddenOnPhone]: !authed })}>
         <div className={s.logo} />
         {authed && (
           <>
@@ -47,6 +48,9 @@ export default function Layout() {
       </header>
       <main className={clsx(s.main, { [s.mainLoggedOut]: !authed })}>
         <Outlet />
+        <div className={s.footer}>
+          <p>&copy; 2026 Here's What's Happening. All rights reserved.</p>
+        </div>
       </main>
       {showWelcome && <WelcomeModal onDismiss={() => dismiss('welcome')} />}
       {showConfirmError && <ConfirmErrorModal onDismiss={() => dismiss('confirmerror')} />}

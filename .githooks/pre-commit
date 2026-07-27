@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook — runs the same checks CI runs, before a commit is created.
+#
+#   Go:  gofmt, go vet, go test -p 1 ./... -count=1
+#   web: eslint, tsc, prettier, vitest
+#
+# Install with `make hooks` (points core.hooksPath at .githooks/). Bypass a
+# single commit with `git commit --no-verify`.
+#
+# NOTE: these checks run against the WORKING TREE, not the staged snapshot. If
+# you stage only some of your changes, what runs here is what is on disk — not
+# what is about to be committed.
+
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 1
+cd "$REPO_ROOT" || exit 1
+
+# Color only when attached to a terminal, so piped/CI output stays plain.
+if [ -t 1 ]; then
+    BOLD=$(tput bold); RED=$(tput setaf 1); GREEN=$(tput setaf 2)
+    YELLOW=$(tput setaf 3); RESET=$(tput sgr0)
+else
+    BOLD=""; RED=""; GREEN=""; YELLOW=""; RESET=""
+fi
+
+say()  { printf '%spre-commit%s %s\n' "$BOLD" "$RESET" "$*"; }
+fail() { printf '%spre-commit%s %s\n' "$RED" "$RESET" "$*" >&2; }
+
+# --- Preflight: the tools and services the checks depend on ------------------
+
+# Integration tests talk to a real Postgres and a real ElasticMQ on the ports
+# docker-compose.yml publishes. Probe the ports rather than the container names
+# so a natively-installed Postgres also satisfies the check.
+port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+MISSING=()
+command -v go   >/dev/null 2>&1 || MISSING+=("go is not on PATH")
+command -v pnpm >/dev/null 2>&1 || MISSING+=("pnpm is not on PATH")
+[ -d web/node_modules ] || MISSING+=("web/node_modules is missing        → cd web && pnpm install")
+port_open 5432 || MISSING+=("Postgres is not listening on :5432  → make db-up")
+port_open 9324 || MISSING+=("ElasticMQ is not listening on :9324 → make queue-up")
+
+if [ ${#MISSING[@]} -gt 0 ]; then
+    fail "cannot run the test suite:"
+    printf '\n'
+    for m in "${MISSING[@]}"; do printf '    %s\n' "$m" >&2; done
+    printf '\n'
+    fail "commit aborted. Fix the above, or bypass with: git commit --no-verify"
+    exit 1
+fi
+
+# --- Check runner -----------------------------------------------------------
+
+FAILED=()
+
+# Runs a check, buffering its output so a passing run stays quiet and a failing
+# one prints in full. The step name is written before the command starts so the
+# slow steps (go test, vitest) don't look like a hang.
+run_step() {
+    local name="$1"; shift
+    printf '  %-28s ' "$name"
+    local out status
+    out="$("$@" 2>&1)"; status=$?
+    if [ $status -eq 0 ]; then
+        printf '%sok%s\n' "$GREEN" "$RESET"
+    else
+        printf '%sFAIL%s\n' "$RED" "$RESET"
+        FAILED+=("$name")
+        [ -n "$out" ] && printf '%s\n' "$out" | sed 's/^/      /'
+    fi
+    return 0
+}
+
+# gofmt -l exits 0 even when it lists unformatted files, so its output is what
+# decides pass/fail. Only tracked files are checked — that keeps ignored trees
+# like .claude/worktrees/ out of it.
+gofmt_check() {
+    local tracked unformatted
+    tracked="$(git ls-files '*.go')"
+    [ -z "$tracked" ] && return 0
+    unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+    if [ -n "$unformatted" ]; then
+        printf 'these files need gofmt:\n%s\n\nfix with: gofmt -w %s\n' \
+            "$unformatted" "$(printf '%s' "$unformatted" | tr '\n' ' ')"
+        return 1
+    fi
+}
+
+# Run a command from web/ so pnpm resolves that workspace, not the repo root.
+in_web() { (cd "$REPO_ROOT/web" && "$@"); }
+
+# --- Checks -----------------------------------------------------------------
+
+say "running checks (bypass with --no-verify)"
+
+run_step "gofmt"            gofmt_check
+run_step "go vet"           go vet ./...
+run_step "go test"          go test -p 1 ./... -count=1
+run_step "web eslint"       in_web pnpm run lint
+run_step "web tsc"          in_web pnpm exec tsc -b
+run_step "web prettier"     in_web pnpm run format:check
+run_step "web vitest"       in_web pnpm run test
+
+# --- Verdict ----------------------------------------------------------------
+
+if [ ${#FAILED[@]} -gt 0 ]; then
+    printf '\n'
+    fail "commit aborted — ${#FAILED[@]} check(s) failed:"
+    for f in "${FAILED[@]}"; do printf '    %s%s%s\n' "$RED" "$f" "$RESET" >&2; done
+    printf '\n'
+    printf '  %sTo commit anyway: git commit --no-verify%s\n\n' "$YELLOW" "$RESET" >&2
+    exit 1
+fi
+
+say "${GREEN}all checks passed${RESET}"
+exit 0
