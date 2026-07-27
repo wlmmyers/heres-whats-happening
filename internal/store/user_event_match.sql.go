@@ -15,10 +15,13 @@ const deleteObsoleteMatches = `-- name: DeleteObsoleteMatches :exec
 DELETE FROM user_event_match
 WHERE event_id IN (
     SELECT id FROM events
-    WHERE archived_at IS NOT NULL OR starts_at <= NOW()
+    WHERE archived_at IS NOT NULL
+       OR event_over_at(starts_at, ends_at, time_tbd) <= NOW()
 )
 `
 
+// Inverse of ListUpcomingEventsForMatching: this deletes exactly the rows that
+// query would decline to re-create. Keep the two predicates mirrored.
 func (q *Queries) DeleteObsoleteMatches(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteObsoleteMatches)
 	return err

@@ -14,6 +14,7 @@ export function toMessage(d: EventDraft): EventMessage {
     description: d.description,
     starts_at: d.startsAt,
     ends_at: d.endsAt,
+    time_tbd: d.timeTbd,
     venue: {
       name: d.venue.name,
       address: d.venue.address,

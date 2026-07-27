@@ -24,6 +24,7 @@ const sqs = new SQSClient({
 const draft: EventDraft = {
   title: "Phoebe Bridgers",
   startsAt: "2026-01-02T20:00:00-05:00",
+  timeTbd: false,
   venue: { name: "The Bowl", address: "100 Main St" },
   performers: ["Phoebe Bridgers"],
   genres: ["indie"],

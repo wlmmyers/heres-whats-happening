@@ -18,6 +18,10 @@ WHERE m.user_id = $1
   AND e.archived_at IS NULL
   AND e.starts_at >= $2
   AND e.starts_at <  $3
+  -- Still showable: a date-only event runs until its local day is out, a timed
+  -- one until it ends. Filtering on starts_at alone would drop an event that
+  -- has begun but is not over — and drop date-only events from 00:00 onward.
+  AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
   AND NOT EXISTS (
       SELECT 1 FROM user_event_not_interested ni
       WHERE ni.user_id = m.user_id AND ni.event_id = e.id

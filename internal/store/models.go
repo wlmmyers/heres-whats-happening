@@ -49,6 +49,7 @@ type Event struct {
 	ArchivedAt         pgtype.Timestamptz `json:"archived_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	TimeTbd            bool               `json:"time_tbd"`
 }
 
 type EventGenre struct {

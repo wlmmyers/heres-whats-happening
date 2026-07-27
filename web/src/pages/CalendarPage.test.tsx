@@ -106,6 +106,23 @@ describe('CalendarPage', () => {
     expect(oneMonthTo < threeMonthTo).toBe(true);
   });
 
+  it('requests from the local calendar date, not the UTC date', async () => {
+    // 5pm Pacific on 7/25 is already 7/26 in UTC. Deriving `from` from the UTC
+    // date drops every event left in the local day.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-07-25T17:00:00-07:00'));
+    try {
+      const getCal = calApi.getCalendar as ReturnType<typeof vi.fn>;
+      getCal.mockResolvedValue([]);
+      renderPage();
+
+      await waitFor(() => expect(getCal).toHaveBeenCalled());
+      expect(getCal.mock.calls[0][0]).toBe('2026-07-25');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('removes a card and calls the API when Not interested is clicked', async () => {
     (calApi.getCalendar as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce([

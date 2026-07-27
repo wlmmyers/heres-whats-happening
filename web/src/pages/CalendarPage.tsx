@@ -10,8 +10,13 @@ import * as c from '../styles/common.css';
 import { getSpotifyStatus, startSpotifyConnect } from '../api/spotify';
 import { useAuth } from '../auth/useAuth';
 
+// Local calendar date, not the UTC one. toISOString() would roll `from` forward
+// to tomorrow every evening once local time passes midnight UTC, hiding the rest
+// of today's events.
 function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
 }
 
 const RANGE_OPTIONS = [

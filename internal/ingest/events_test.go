@@ -126,3 +126,47 @@ func TestHandle_UnknownGenre_SkipsSilently(t *testing.T) {
 	genres, _ := q.ListEventGenresByEvent(ctx, ev.ID)
 	require.ElementsMatch(t, []string{"rock"}, genres)
 }
+
+// A source that gives a date but no start time must be recorded as such, so the
+// stored local-midnight timestamp is never mistaken for a real start time.
+func TestHandle_PersistsTimeTBDFlag(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	cityID := defaultCityID(t, q)
+
+	m := sampleMessage()
+	m.SourceEventID = "tm-tbd"
+	m.TimeTBD = true
+
+	h := ingest.NewEventHandler(q, cityID)
+	ctx := context.Background()
+	body, _ := json.Marshal(m)
+	require.NoError(t, h.Handle(ctx, body))
+
+	srcRow, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
+	var timeTBD bool
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT time_tbd FROM events WHERE source_id = $1 AND source_event_id = $2",
+		srcRow.ID, "tm-tbd").Scan(&timeTBD))
+	require.True(t, timeTBD)
+}
+
+func TestHandle_DefaultsTimeTBDToFalse(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	cityID := defaultCityID(t, q)
+
+	h := ingest.NewEventHandler(q, cityID)
+	ctx := context.Background()
+	body, _ := json.Marshal(sampleMessage())
+	require.NoError(t, h.Handle(ctx, body))
+
+	srcRow, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
+	var timeTBD bool
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT time_tbd FROM events WHERE source_id = $1 AND source_event_id = $2",
+		srcRow.ID, "tm-aaa").Scan(&timeTBD))
+	require.False(t, timeTBD)
+}

@@ -14,11 +14,16 @@ type Message struct {
 	Description   string     `json:"description,omitempty"`
 	StartsAt      time.Time  `json:"starts_at"`
 	EndsAt        *time.Time `json:"ends_at,omitempty"`
-	Venue         Venue      `json:"venue"`
-	Performers    []string   `json:"performers,omitempty"`
-	Genres        []string   `json:"genres,omitempty"`
-	ImageURL      string     `json:"image_url,omitempty"`
-	URL           string     `json:"url,omitempty"`
+	// TimeTBD marks an event whose source gave a date but no start time.
+	// StartsAt is then local midnight on that date — a placeholder for sorting
+	// and display, not a real start time. Consumers must not treat such an
+	// event as over just because that midnight has passed.
+	TimeTBD    bool     `json:"time_tbd,omitempty"`
+	Venue      Venue    `json:"venue"`
+	Performers []string `json:"performers,omitempty"`
+	Genres     []string `json:"genres,omitempty"`
+	ImageURL   string   `json:"image_url,omitempty"`
+	URL        string   `json:"url,omitempty"`
 }
 
 // Venue is denormalized inline on the Message. The ingest consumer is

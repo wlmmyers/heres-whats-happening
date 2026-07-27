@@ -1,9 +1,9 @@
 -- name: UpsertEvent :one
 INSERT INTO events (
     source_id, source_event_id, title, description, starts_at, ends_at,
-    venue_id, image_url, url, last_seen_at
+    venue_id, image_url, url, time_tbd, last_seen_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
 ON CONFLICT (source_id, source_event_id)
 DO UPDATE SET
     title         = EXCLUDED.title,
@@ -13,6 +13,7 @@ DO UPDATE SET
     venue_id      = EXCLUDED.venue_id,
     image_url     = EXCLUDED.image_url,
     url           = EXCLUDED.url,
+    time_tbd      = EXCLUDED.time_tbd,
     last_seen_at  = NOW(),
     archived_at   = NULL,
     updated_at    = NOW()
@@ -35,7 +36,7 @@ SELECT id, title, description
 FROM events
 WHERE embedding IS NULL
   AND archived_at IS NULL
-  AND starts_at > NOW();
+  AND event_over_at(starts_at, ends_at, time_tbd) > NOW();
 
 -- name: UpdateEventEmbedding :exec
 UPDATE events
@@ -43,9 +44,11 @@ SET embedding = $2, embedding_updated_at = NOW(), updated_at = NOW()
 WHERE id = $1;
 
 -- name: ListUpcomingEventsForMatching :many
+-- Mirrors DeleteObsoleteMatches — see the note there before changing either.
 SELECT id, embedding
 FROM events
-WHERE archived_at IS NULL AND starts_at > NOW();
+WHERE archived_at IS NULL
+  AND event_over_at(starts_at, ends_at, time_tbd) > NOW();
 
 -- name: ListEventPerformersBatch :many
 SELECT event_id, performer_name, normalized_name

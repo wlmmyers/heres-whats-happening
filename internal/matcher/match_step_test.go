@@ -198,6 +198,115 @@ func matchCount(t *testing.T, pool *pgxpool.Pool, ctx context.Context, userID, e
 	return n
 }
 
+// seedMatchForEvent creates a user + venue + event and pre-seeds a match row,
+// returning the ids. startsAt/endsAt/timeTBD describe the event's schedule.
+func seedMatchForEvent(t *testing.T, pool *pgxpool.Pool, ctx context.Context,
+	key string, startsAt time.Time, endsAt *time.Time, timeTBD bool,
+) (userID, eventID pgtype.UUID) {
+	t.Helper()
+	q := store.New(pool)
+
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email: key + "@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+	require.NoError(t, err)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "V-" + key, NormalizedName: "v-" + key,
+	})
+	require.NoError(t, err)
+
+	ends := pgtype.Timestamptz{}
+	if endsAt != nil {
+		ends = pgtype.Timestamptz{Time: *endsAt, Valid: true}
+	}
+	eventID, err = q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID: src.ID, SourceEventID: key, Title: "Show " + key,
+		StartsAt: pgtype.Timestamptz{Time: startsAt, Valid: true},
+		EndsAt:   ends,
+		TimeTbd:  timeTBD,
+		VenueID:  venueID,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+		UserID: userRow.ID, EventID: eventID, Score: 0.9,
+		ScoreBreakdown: []byte(`{}`),
+		ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	}))
+
+	// Soft-delete the user so the run loads zero users and skips the stale-prune
+	// (which would delete this match for having an older computed_at, masking
+	// what these tests are about). DeleteObsoleteMatches is global and still
+	// runs, so it alone decides whether the seeded match survives.
+	_, err = pool.Exec(ctx, "UPDATE users SET deleted_at = NOW() WHERE id = $1", userRow.ID)
+	require.NoError(t, err)
+
+	return userRow.ID, eventID
+}
+
+// A date-only event is stored as local midnight, so it looks "past" from 00:00
+// on the day it happens — but the show is still ahead of the user.
+func TestMatchStep_KeepsDateOnlyEventUntilItsLocalDayEnds(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	// Midnight-local today, i.e. the show is later today.
+	userID, eventID := seedMatchForEvent(t, pool, ctx, "tbd-today",
+		time.Now().Add(-12*time.Hour), nil, true)
+
+	require.NoError(t, matcher.NewMatchStep(q, matcher.Defaults()).Run(ctx))
+
+	require.Equal(t, 1, matchCount(t, pool, ctx, userID, eventID),
+		"date-only event happening later today must not be treated as obsolete")
+}
+
+func TestMatchStep_DeletesDateOnlyEventAfterItsLocalDayEnds(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	userID, eventID := seedMatchForEvent(t, pool, ctx, "tbd-yesterday",
+		time.Now().Add(-30*time.Hour), nil, true)
+
+	require.NoError(t, matcher.NewMatchStep(q, matcher.Defaults()).Run(ctx))
+
+	require.Equal(t, 0, matchCount(t, pool, ctx, userID, eventID),
+		"date-only event whose local day is over is obsolete")
+}
+
+// A timed event that has started but not finished should stay on the calendar.
+func TestMatchStep_KeepsTimedEventWhileItIsStillRunning(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	userID, eventID := seedMatchForEvent(t, pool, ctx, "running-now",
+		time.Now().Add(-1*time.Hour), nil, false)
+
+	require.NoError(t, matcher.NewMatchStep(q, matcher.Defaults()).Run(ctx))
+
+	require.Equal(t, 1, matchCount(t, pool, ctx, userID, eventID),
+		"event that started an hour ago is still in progress")
+}
+
+func TestMatchStep_DeletesTimedEventAfterItEnds(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+
+	ended := time.Now().Add(-1 * time.Hour)
+	userID, eventID := seedMatchForEvent(t, pool, ctx, "already-ended",
+		time.Now().Add(-4*time.Hour), &ended, false)
+
+	require.NoError(t, matcher.NewMatchStep(q, matcher.Defaults()).Run(ctx))
+
+	require.Equal(t, 0, matchCount(t, pool, ctx, userID, eventID),
+		"event whose ends_at has passed is obsolete")
+}
+
 func TestMatchStep_PrunesDroppedMatch(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
