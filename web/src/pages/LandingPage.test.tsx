@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthContext';
 import LandingPage from './LandingPage';
 
@@ -33,6 +33,7 @@ function renderPage(children: React.ReactNode) {
             <Route path="/" element={<LandingPage>{children}</LandingPage>} />
             <Route path="/calendar/seattle" element={<div>calendar-route</div>} />
             <Route path="/interests" element={<div>interests-route</div>} />
+            <Route path="/confirm-email" element={<div>confirm-email-route</div>} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>
@@ -94,18 +95,21 @@ describe('LandingPage - Login', () => {
 });
 
 describe('LandingPage - Signup', () => {
-  it('signs up and redirects to interests', async () => {
+  // A new account is unconfirmed, so it goes to /confirm-email rather than
+  // straight into the product.
+  it('signs up and redirects to confirm-email', async () => {
     (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('401'));
     (authApi.signup as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       id: 'u',
       email: 'new@x',
+      confirmed: false,
     });
 
     renderPage(<SignupDialog />);
     await userEvent.type(screen.getByLabelText(/email/i), 'new@x');
     await userEvent.type(screen.getByLabelText(/password/i), 'hunter22');
     await userEvent.click(screen.getByRole('button', { name: /create account/i }));
-    await waitFor(() => expect(screen.getByText(/interests-route/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/confirm-email-route/)).toBeInTheDocument());
     expect(authApi.signup).toHaveBeenCalledWith('new@x', 'hunter22');
   });
 
@@ -124,5 +128,33 @@ describe('LandingPage - Signup', () => {
     await waitFor(() =>
       expect(screen.getByText(/an account with that email already exists/i)).toBeInTheDocument(),
     );
+  });
+});
+
+// The index route redirects, and ?welcome=true / ?confirmerror=true arrive
+// there. Layout's modals read those params, so dropping them on the redirect
+// loses the modal before it can ever render.
+function LocationProbe() {
+  const { search } = useLocation();
+  return <div data-testid="search">{search}</div>;
+}
+
+describe('LandingPage - redirect preserves query params', () => {
+  it('keeps the query string when redirecting an anonymous visitor to login', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/?welcome=true']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<LocationProbe />} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent('?welcome=true'));
   });
 });
