@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/mail"
 	"os"
 	"os/signal"
 	"syscall"
@@ -161,7 +162,11 @@ func serve() error {
 	var mailer email.Sender
 	switch cfg.EmailSender {
 	case "ses":
-		mailer, err = email.NewSESSender(ctx, cfg.AWSRegion, cfg.EmailFromAddress)
+		// Wrap the bare address with a display name so recipients see
+		// "Here's What's Happening" rather than a name synthesized from the
+		// local-part (e.g. "noreply"). mail.Address handles quoting/encoding.
+		from := (&mail.Address{Name: "Here's What's Happening", Address: cfg.EmailFromAddress}).String()
+		mailer, err = email.NewSESSender(ctx, cfg.AWSRegion, from)
 		if err != nil {
 			return fmt.Errorf("email sender: %w", err)
 		}
