@@ -47,18 +47,17 @@ this message.
 		HTML: fmt.Sprintf(`<!doctype html>
 <html>
   <body style="font-family: system-ui, -apple-system, sans-serif; line-height: 1.5;">
-    <h1 style="font-size: 1.25rem;">Welcome to Here's What's Happening</h1>
-    <p>Confirm your email address to start getting your calendar.</p>
+    <img src="https://hereswhatshappening.app/titleGraphic1.png" style="width: 280px;" alt="Here's What's Happening"/>
+    <div>Confirm your email address to get started!</div>
     <p>
-      <a href="%s" style="display:inline-block;padding:0.75rem 1.25rem;background:#111;color:#fff;text-decoration:none;border-radius:0.375rem;">
-        Confirm email address
+      <a href="%s">
+        %s
       </a>
     </p>
-    <p style="color:#666;font-size:0.875rem;">
+    <div>
       This link expires in 24 hours. If you didn't create an account, you can
       ignore this message.
-    </p>
-    <p style="color:#666;font-size:0.75rem;word-break:break-all;">%s</p>
+    </div>
   </body>
 </html>
 `, safeLink, safeLink),
