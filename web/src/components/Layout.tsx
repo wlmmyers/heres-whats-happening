@@ -1,7 +1,9 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuth } from '../auth/useAuth';
 import UserMenu from './UserMenu';
+import WelcomeModal from './WelcomeModal';
+import ConfirmErrorModal from './ConfirmErrorModal';
 import * as s from './Layout.css';
 
 const link = ({ isActive }: { isActive: boolean }) =>
@@ -10,6 +12,19 @@ const link = ({ isActive }: { isActive: boolean }) =>
 export default function Layout() {
   const { status } = useAuth();
   const authed = status === 'authenticated';
+
+  // The modals live here rather than on a page so they survive any redirects
+  const [params, setParams] = useSearchParams();
+  // If unauthed, user will be redirected to /login and the welcome message
+  // will be shown within that modal
+  const showWelcome = authed && params.get('welcome') === 'true';
+  const showConfirmError = params.get('confirmerror') === 'true';
+
+  const dismiss = (key: string) => {
+    const next = new URLSearchParams(params);
+    next.delete(key);
+    setParams(next, { replace: true });
+  };
 
   return (
     <div className={s.page}>
@@ -37,6 +52,8 @@ export default function Layout() {
           <p>&copy; 2026 Here's What's Happening. All rights reserved.</p>
         </div>
       </main>
+      {showWelcome && <WelcomeModal onDismiss={() => dismiss('welcome')} />}
+      {showConfirmError && <ConfirmErrorModal onDismiss={() => dismiss('confirmerror')} />}
     </div>
   );
 }

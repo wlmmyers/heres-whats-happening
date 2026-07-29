@@ -41,6 +41,7 @@ func GetMe(q *store.Queries) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, userOut{
 			ID:             uid.String(),
 			Email:          row.Email,
+			Confirmed:      row.Confirmed,
 			ScoreThreshold: threshold,
 		})
 	}

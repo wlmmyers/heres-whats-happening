@@ -27,15 +27,15 @@ locals {
     { name = "ICAL_BASE_URL", value = "https://api.${var.domain_name}" },
     { name = "CORS_ALLOWED_ORIGINS", value = "https://${var.domain_name},https://www.${var.domain_name}" },
     { name = "SPOTIFY_REDIRECT_URI", value = "https://${var.domain_name}/integrations/spotify/callback" },
-    # ROLLOUT ORDER MATTERS. This value is NOT auto-applied: the task def has
-    # ignore_changes = [container_definitions], and the app pipeline re-registers
-    # the live task def with only the image swapped. So TRUST_PROXY reaches the
-    # running task only via a manual `scripts/taskdef-edit.sh --set-env
-    # TRUST_PROXY=true --deploy`. Do that BEFORE (or together with) the first
-    # image that ships rate limiting. If the limiting image runs while this is
-    # unset, the app keys every request on the ALB's IP and the rate limits apply
-    # site-wide — the app logs a startup WARNING in that state.
     { name = "TRUST_PROXY", value = "true" },
+    { name = "EMAIL_SENDER", value = "ses" },
+    { name = "EMAIL_FROM_ADDRESS", value = "noreply@${var.domain_name}" },
+    { name = "APP_BASE_URL", value = "https://${var.domain_name}" },
+    # Duplicates ICAL_BASE_URL above. Consolidating them is a deliberate
+    # follow-up: renaming an env var that reaches prod only through a manual
+    # taskdef step is its own rollout risk and does not belong bundled with a
+    # feature.
+    { name = "API_BASE_URL", value = "https://api.${var.domain_name}" },
   ]
 
   # Secret env vars — pulled from Secrets Manager.

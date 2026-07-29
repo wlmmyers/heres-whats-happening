@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
+	emailpkg "github.com/wmyers/heres-whats-happening/internal/email"
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/store"
@@ -30,7 +32,7 @@ func TestGetMe_ReturnsCurrentUser(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
-		handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+		handlers.Signup(q, signer, time.Hour, cityID, handlers.ConfirmationDeps{Sender: &emailpkg.Fake{}})(rec, req)
 		require.Equal(t, http.StatusCreated, rec.Code)
 		var resp struct {
 			AccessToken string `json:"access_token"`
@@ -66,7 +68,7 @@ func TestDeleteMe_SoftDeletes(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+	handlers.Signup(q, signer, time.Hour, cityID, handlers.ConfirmationDeps{Sender: &emailpkg.Fake{}})(rec, req)
 	require.Equal(t, http.StatusCreated, rec.Code)
 	var resp struct {
 		AccessToken string `json:"access_token"`
@@ -121,4 +123,31 @@ func TestGetMe_ReturnsResolvedThreshold(t *testing.T) {
 	}
 	require.NoError(t, json.NewDecoder(rec2.Body).Decode(&out2))
 	require.InDelta(t, 0.5, out2.ScoreThreshold, 1e-9)
+}
+
+func TestGetMe_ReturnsConfirmed(t *testing.T) {
+	q := store.New(testdb.MustOpen(t))
+	ctx := context.Background()
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	row, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "me-confirmed@example.com", PasswordHash: "x", CityID: city.ID, Confirmed: false,
+	})
+	require.NoError(t, err)
+	uid := uuid.UUID(row.ID.Bytes)
+
+	call := func() map[string]any {
+		req := httptest.NewRequest(http.MethodGet, "/me", nil)
+		req = req.WithContext(middleware.ContextWithUserID(req.Context(), uid))
+		rec := httptest.NewRecorder()
+		handlers.GetMe(q)(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
+		return body
+	}
+
+	require.Equal(t, false, call()["confirmed"])
+	require.NoError(t, q.MarkUserConfirmed(ctx, row.ID))
+	require.Equal(t, true, call()["confirmed"])
 }

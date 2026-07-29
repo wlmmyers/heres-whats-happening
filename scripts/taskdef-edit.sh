@@ -5,6 +5,9 @@
 #
 # Env-overridable defaults (match the cutover script + Makefile):
 #   AWS_PROFILE=servant AWS_DEFAULT_REGION=us-east-1 CLUSTER=hwh-cluster FAMILY=hwh-api
+#
+# Example usage:
+# taskdef-edit.sh --set-env KEY=VALUE --deploy
 set -euo pipefail
 
 usage() {

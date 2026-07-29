@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import * as authApi from '../api/auth';
+import { refreshSession } from '../api/client';
 import type { User } from '../api/auth';
 import { AuthContext, type AuthStatus } from './context';
 
@@ -44,8 +45,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('anonymous');
   };
 
+  // Mints a fresh access token before re-reading /me, so a confirmation that
+  // happened on another device is visible without waiting out the access TTL.
+  const refreshUser = async () => {
+    await refreshSession();
+    const u = await authApi.getMe();
+    setUser(u);
+    setStatus('authenticated');
+    return u;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, status, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, status, login, signup, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

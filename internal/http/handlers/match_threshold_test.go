@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
+	emailpkg "github.com/wmyers/heres-whats-happening/internal/email"
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/store"
@@ -34,7 +35,7 @@ func signupForThreshold(t *testing.T, q *store.Queries, signer *auth.JWTSigner, 
 	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	handlers.Signup(q, signer, time.Hour, cityID)(rec, req)
+	handlers.Signup(q, signer, time.Hour, cityID, handlers.ConfirmationDeps{Sender: &emailpkg.Fake{}})(rec, req)
 	require.Equal(t, http.StatusCreated, rec.Code)
 	var resp struct {
 		AccessToken string `json:"access_token"`

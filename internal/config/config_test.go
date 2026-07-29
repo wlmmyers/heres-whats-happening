@@ -144,7 +144,9 @@ func TestLoad_TrustProxy(t *testing.T) {
 	require.Error(t, err)
 }
 
-// setRequiredDB sets the DB_* component vars every Load() call now needs.
+// setRequiredDB sets the DB_* component vars plus the mail vars every Load()
+// call now needs. Email confirmation is unconditional, so a Load() without the
+// mail vars is an error in every test, not just the confirmation ones.
 func setRequiredDB(t *testing.T) {
 	t.Helper()
 	t.Setenv("DB_USER", "app")
@@ -153,4 +155,68 @@ func setRequiredDB(t *testing.T) {
 	t.Setenv("DB_PORT", "5432")
 	t.Setenv("DB_NAME", "appdb")
 	t.Setenv("DB_SSLMODE", "disable")
+	t.Setenv("EMAIL_SENDER", "log")
+	t.Setenv("EMAIL_FROM_ADDRESS", "dev@localhost")
+	t.Setenv("APP_BASE_URL", "http://localhost:5173")
+	t.Setenv("API_BASE_URL", "http://localhost:8080")
+}
+
+// setMinimalEnv sets everything Load() needs except the mail vars, which it
+// clears so a stray value in the environment cannot mask a validation bug.
+func setMinimalEnv(t *testing.T) {
+	t.Helper()
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "test-key-test-key-test-key-32xx")
+	t.Setenv("EMAIL_SENDER", "")
+	t.Setenv("EMAIL_FROM_ADDRESS", "")
+	t.Setenv("APP_BASE_URL", "")
+	t.Setenv("API_BASE_URL", "")
+}
+
+// A half-configured mailer strands every new signup with no way in, so Load
+// refuses to start rather than warn.
+func TestLoad_RequiresEveryMailVar(t *testing.T) {
+	setMinimalEnv(t)
+	_, err := Load()
+	require.Error(t, err)
+	for _, want := range []string{"EMAIL_SENDER", "EMAIL_FROM_ADDRESS", "APP_BASE_URL", "API_BASE_URL"} {
+		require.Contains(t, err.Error(), want)
+	}
+}
+
+func TestLoad_NamesOnlyTheMissingMailVars(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("EMAIL_SENDER", "log")
+	t.Setenv("EMAIL_FROM_ADDRESS", "dev@localhost")
+	t.Setenv("APP_BASE_URL", "http://localhost:5173")
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "API_BASE_URL")
+	require.NotContains(t, err.Error(), "EMAIL_SENDER")
+}
+
+func TestLoad_RejectsUnknownEmailSender(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("EMAIL_SENDER", "sendgrid")
+	t.Setenv("EMAIL_FROM_ADDRESS", "dev@localhost")
+	t.Setenv("APP_BASE_URL", "http://localhost:5173")
+	t.Setenv("API_BASE_URL", "http://localhost:8080")
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "EMAIL_SENDER")
+}
+
+func TestLoad_FullyConfiguredMailSucceeds(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("EMAIL_SENDER", "log")
+	t.Setenv("EMAIL_FROM_ADDRESS", "dev@localhost")
+	t.Setenv("APP_BASE_URL", "http://localhost:5173")
+	t.Setenv("API_BASE_URL", "http://localhost:8080")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "log", cfg.EmailSender)
+	require.Equal(t, "dev@localhost", cfg.EmailFromAddress)
+	require.Equal(t, "http://localhost:5173", cfg.AppBaseURL)
+	require.Equal(t, "http://localhost:8080", cfg.APIBaseURL)
 }

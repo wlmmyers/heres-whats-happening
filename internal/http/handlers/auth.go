@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -31,12 +33,17 @@ type signupResponse struct {
 type userOut struct {
 	ID             string   `json:"id"`
 	Email          string   `json:"email"`
+	Confirmed      bool     `json:"confirmed"`
 	ScoreThreshold *float64 `json:"score_threshold,omitempty"`
 }
 
 // Signup creates a new user, sets the refresh cookie, and returns an access token.
 // cityID is the default city assignment for v1.
-func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, cityID string) http.HandlerFunc {
+//
+// The new user is always unconfirmed and always gets confirmation mail: the
+// account is gated off everything but /me, resend, and delete until the link is
+// clicked.
+func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, cityID string, conf ConfirmationDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req signupRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -72,6 +79,9 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 			Email:        req.Email,
 			PasswordHash: hash,
 			CityID:       pgtype.UUID{Bytes: cityUUID, Valid: true},
+			// Passed explicitly rather than leaning on the column default, so
+			// this handler — not the schema — decides.
+			Confirmed: false,
 		})
 		if err != nil {
 			var pgErr *pgconn.PgError
@@ -84,7 +94,7 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 		}
 
 		userUUID := uuid.UUID(row.ID.Bytes)
-		access, err := signer.SignAccess(userUUID)
+		access, err := signer.SignAccess(userUUID, row.Confirmed)
 		if err != nil {
 			httperr.WriteErr(w, r, http.StatusInternalServerError, "sign_failed", "could not sign access token", err)
 			return
@@ -105,9 +115,16 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 		}
 		setRefreshCookie(w, refreshTok, refreshTTL)
 
+		// A send failure is logged but must not fail the request: the user still
+		// reaches /confirm-email, where resend is one click away.
+		if err := sendConfirmation(ctx, q, conf, row.Email, row.ID); err != nil {
+			log.Printf("[%s] signup: confirmation mail for %s: %v",
+				chimw.GetReqID(r.Context()), row.Email, err)
+		}
+
 		writeJSON(w, http.StatusCreated, signupResponse{
 			AccessToken: access,
-			User:        userOut{ID: row.ID.String(), Email: row.Email},
+			User:        userOut{ID: row.ID.String(), Email: row.Email, Confirmed: row.Confirmed},
 		})
 	}
 }
@@ -145,7 +162,7 @@ func Login(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration) h
 		}
 
 		userUUID := uuid.UUID(row.ID.Bytes)
-		access, err := signer.SignAccess(userUUID)
+		access, err := signer.SignAccess(userUUID, row.Confirmed)
 		if err != nil {
 			httperr.WriteErr(w, r, http.StatusInternalServerError, "sign_failed", "could not sign access token", err)
 			return
@@ -188,7 +205,7 @@ func Refresh(q *store.Queries, signer *auth.JWTSigner) http.HandlerFunc {
 			httperr.Write(w, http.StatusUnauthorized, "invalid_refresh", "refresh token is not valid")
 			return
 		}
-		access, err := signer.SignAccess(uuid.UUID(row.UserID.Bytes))
+		access, err := signer.SignAccess(uuid.UUID(row.UserID.Bytes), row.Confirmed)
 		if err != nil {
 			httperr.WriteErr(w, r, http.StatusInternalServerError, "sign_failed", "could not sign access token", err)
 			return

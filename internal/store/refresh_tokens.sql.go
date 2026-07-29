@@ -43,11 +43,12 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 }
 
 const getActiveRefreshTokenByHash = `-- name: GetActiveRefreshTokenByHash :one
-SELECT id, user_id, expires_at, revoked_at, created_at
-FROM refresh_tokens
-WHERE token_hash = $1
-  AND revoked_at IS NULL
-  AND expires_at > NOW()
+SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked_at, rt.created_at, u.confirmed
+FROM refresh_tokens rt
+JOIN users u ON u.id = rt.user_id
+WHERE rt.token_hash = $1
+  AND rt.revoked_at IS NULL
+  AND rt.expires_at > NOW()
 `
 
 type GetActiveRefreshTokenByHashRow struct {
@@ -56,8 +57,13 @@ type GetActiveRefreshTokenByHashRow struct {
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	Confirmed bool               `json:"confirmed"`
 }
 
+// The JOIN carries `confirmed` so Refresh can mint a token with the claim
+// without a second query. It deliberately does NOT filter on u.deleted_at:
+// that preserves today's behavior exactly. Adding the filter would be a
+// separate (defensible) fix and does not belong bundled here.
 func (q *Queries) GetActiveRefreshTokenByHash(ctx context.Context, tokenHash []byte) (GetActiveRefreshTokenByHashRow, error) {
 	row := q.db.QueryRow(ctx, getActiveRefreshTokenByHash, tokenHash)
 	var i GetActiveRefreshTokenByHashRow
@@ -67,6 +73,7 @@ func (q *Queries) GetActiveRefreshTokenByHash(ctx context.Context, tokenHash []b
 		&i.ExpiresAt,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.Confirmed,
 	)
 	return i, err
 }

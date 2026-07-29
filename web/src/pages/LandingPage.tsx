@@ -4,12 +4,13 @@ import * as c from '../styles/common.css';
 import loggedOutData from '../api/logged-out-calendar-data.json';
 import type { CalendarEvent } from '../api/calendar';
 import { useAuth } from '../auth/useAuth';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import SkeletonCard from '../components/SkeletonCard';
 import { useLayoutEffect, useState } from 'react';
 
 export default function LandingPage({ children }: { children?: React.ReactNode }) {
   const { status } = useAuth();
+  const location = useLocation();
   const data = loggedOutData as { events: CalendarEvent[] };
   const [spacerHeight, setSpacerHeight] = useState(0);
 
@@ -80,11 +81,14 @@ export default function LandingPage({ children }: { children?: React.ReactNode }
   // The index path of the site renders this component with no children. In this case, redirect to
   // either the calendar or login page. The status === 'loading' case hits first and falls through to
   // the render, rendering the skeleton cards while the auth status is being determined.
+  // location.search must survive: ?welcome=true / ?confirmerror=true arrive on
+  // the index route, and Layout's modals read them. Dropping the params here
+  // loses the modal before it can ever render.
   if (!children) {
     if (status === 'authenticated') {
-      return <Navigate to="/calendar" replace />;
+      return <Navigate to={`/calendar${location.search}`} replace />;
     } else if (status === 'anonymous') {
-      return <Navigate to="/login" replace />;
+      return <Navigate to={`/login${location.search}`} replace />;
     }
   }
 

@@ -1,12 +1,16 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import RotatingLogo from './RotatingLogo';
 import * as s from './LoginForm.css';
 import * as c from '../styles/common.css';
 
-export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
-  const [email, setEmail] = useState('');
+export default function LoginForm() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const isWelcome = params.get('welcome') === 'true';
+  const prefilledEmail = params.get('email');
+  const [email, setEmail] = useState(prefilledEmail || '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -18,7 +22,7 @@ export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
     setSubmitting(true);
     try {
       await login(email, password);
-      onSuccess?.();
+      navigate('/calendar/seattle');
     } catch (err) {
       const code = (err as { code?: string }).code;
       if (code === 'invalid_credentials') {
@@ -37,8 +41,17 @@ export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
     <div className={s.loginCard}>
       <RotatingLogo />
       <div className={s.subtitle}>
-        A live-event calendar based on your interests
-        <aside className={s.aside}>Note: only supporting the Seattle area currently</aside>
+        {isWelcome ? (
+          <>
+            Your email is confirmed.
+            <br /> Sign in to add your interests and get started!
+          </>
+        ) : (
+          <>
+            A live-event calendar based on your interests
+            <aside className={s.aside}>Note: only supporting the Seattle area currently</aside>
+          </>
+        )}
       </div>
       <form onSubmit={onSubmit} className={s.form}>
         <h1 className={s.title}>Sign in</h1>

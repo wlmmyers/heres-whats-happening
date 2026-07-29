@@ -13,7 +13,10 @@ import (
 
 type ctxKey int
 
-const userIDKey ctxKey = 1
+const (
+	userIDKey    ctxKey = 1
+	confirmedKey ctxKey = 2
+)
 
 func RequireAuth(signer *auth.JWTSigner) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -24,12 +27,12 @@ func RequireAuth(signer *auth.JWTSigner) func(http.Handler) http.Handler {
 				return
 			}
 			tok := strings.TrimPrefix(authz, "Bearer ")
-			uid, err := signer.VerifyAccess(tok)
+			uid, confirmed, err := signer.VerifyAccess(tok)
 			if err != nil {
 				httperr.Write(w, http.StatusUnauthorized, "invalid_token", "access token is not valid")
 				return
 			}
-			ctx := ContextWithUserID(r.Context(), uid)
+			ctx := ContextWithConfirmed(ContextWithUserID(r.Context(), uid), confirmed)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -49,4 +52,23 @@ func UserIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 // request that looks authenticated without minting a JWT.
 func ContextWithUserID(ctx context.Context, uid uuid.UUID) context.Context {
 	return context.WithValue(ctx, userIDKey, uid)
+}
+
+// ConfirmedFromContext returns the confirmed claim from the verified access
+// token. The second return is false when no authenticated request context is
+// present — RequireConfirmed treats that as a rejection.
+func ConfirmedFromContext(ctx context.Context) (bool, bool) {
+	v := ctx.Value(confirmedKey)
+	if v == nil {
+		return false, false
+	}
+	c, ok := v.(bool)
+	return c, ok
+}
+
+// ContextWithConfirmed returns ctx carrying the confirmed claim, the inverse of
+// ConfirmedFromContext. RequireAuth uses it on every authenticated request;
+// tests use it to build a request that looks authenticated without minting a JWT.
+func ContextWithConfirmed(ctx context.Context, confirmed bool) context.Context {
+	return context.WithValue(ctx, confirmedKey, confirmed)
 }

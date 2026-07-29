@@ -23,6 +23,7 @@ export const subtitle = style({
   ...fontSize.sm,
   color: color.gray600,
   marginBottom: '1rem',
+  width: '100%',
 });
 
 export const field = style({

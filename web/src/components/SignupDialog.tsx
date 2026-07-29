@@ -6,7 +6,9 @@ export default function SignupDialog() {
   const navigate = useNavigate();
   return (
     <div role="dialog" aria-label="Sign up" className={s.wrapper}>
-      <SignupForm onSuccess={() => navigate('/interests')} />
+      {/* A new account is unconfirmed, so it lands on /confirm-email rather
+          than in the product. */}
+      <SignupForm onSuccess={() => navigate('/confirm-email')} />
     </div>
   );
 }

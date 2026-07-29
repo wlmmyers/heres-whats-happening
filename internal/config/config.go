@@ -47,6 +47,12 @@ type Config struct {
 
 	// Plan 7 additions
 	TrustProxy bool
+
+	// Plan 8 additions
+	EmailSender      string
+	EmailFromAddress string
+	AppBaseURL       string
+	APIBaseURL       string
 }
 
 func Load() (*Config, error) {
@@ -115,6 +121,39 @@ func Load() (*Config, error) {
 		trustProxy = b
 	}
 
+	emailSender := os.Getenv("EMAIL_SENDER")
+	emailFrom := os.Getenv("EMAIL_FROM_ADDRESS")
+	appBaseURL := os.Getenv("APP_BASE_URL")
+	apiBaseURL := os.Getenv("API_BASE_URL")
+
+	// Email confirmation is unconditional, so its configuration is required —
+	// there is no mode left that makes these optional.
+	//
+	// Fail fast rather than warn (the TRUST_PROXY precedent does not fit): a
+	// misconfigured rate limiter degrades availability and self-heals, but a
+	// half-configured mailer strands every new signup with no signal and no way
+	// in. A crashlooping task fails the ECS rolling deploy and leaves the
+	// previous version serving, which is the louder and safer failure.
+	var missing []string
+	for _, v := range []struct {
+		name, val string
+	}{
+		{"EMAIL_SENDER", emailSender},
+		{"EMAIL_FROM_ADDRESS", emailFrom},
+		{"APP_BASE_URL", appBaseURL},
+		{"API_BASE_URL", apiBaseURL},
+	} {
+		if v.val == "" {
+			missing = append(missing, v.name)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("email confirmation requires %s", strings.Join(missing, ", "))
+	}
+	if emailSender != "ses" && emailSender != "log" {
+		return nil, fmt.Errorf("invalid EMAIL_SENDER=%q (want ses or log)", emailSender)
+	}
+
 	cfg := &Config{
 		DatabaseURL:         dbURL,
 		HTTPAddr:            addr,
@@ -138,6 +177,11 @@ func Load() (*Config, error) {
 		IcalBaseURL:         os.Getenv("ICAL_BASE_URL"),
 		CORSAllowedOrigins:  corsOrigins,
 		TrustProxy:          trustProxy,
+
+		EmailSender:      emailSender,
+		EmailFromAddress: emailFrom,
+		AppBaseURL:       appBaseURL,
+		APIBaseURL:       apiBaseURL,
 	}
 	return cfg, nil
 }

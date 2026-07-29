@@ -30,11 +30,13 @@ const (
 	EndpointManualInterests = "manual_interests"
 	EndpointSpotifyExchange = "spotify_exchange"
 	EndpointIcalToken       = "ical_token"
+	EndpointConfirmResend   = "confirm_resend"
 
 	// Public (IP-keyed)
 	EndpointLogout   = "logout"
 	EndpointIcalFeed = "ical_feed"
 	EndpointReadyz   = "readyz"
+	EndpointConfirm  = "confirm"
 )
 
 // keyFunc selects the rate-limit bucket key for a request.

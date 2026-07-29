@@ -29,7 +29,7 @@ func TestCreateIcalToken_ReturnsURL(t *testing.T) {
 	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
 		Email: "ical@example.com", PasswordHash: "stub", CityID: city.ID,
 	})
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID), true)
 
 	mw := middleware.RequireAuth(signer)
 	h := mw(handlers.CreateIcalToken(q, "http://localhost:8080"))
@@ -62,7 +62,7 @@ func TestCreateIcalToken_RotatesOnRepeat(t *testing.T) {
 	userRow, _ := q.CreateUser(ctx, store.CreateUserParams{
 		Email: "ical-rotate@example.com", PasswordHash: "stub", CityID: city.ID,
 	})
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID), true)
 
 	mw := middleware.RequireAuth(signer)
 	h := mw(handlers.CreateIcalToken(q, "http://localhost:8080"))
@@ -113,7 +113,7 @@ func TestDeleteIcalToken_RemovesRow(t *testing.T) {
 		TokenHash: []byte("hash-bytes"),
 	}))
 
-	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID))
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID), true)
 	mw := middleware.RequireAuth(signer)
 	h := mw(handlers.DeleteIcalToken(q))
 

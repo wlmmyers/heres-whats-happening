@@ -76,3 +76,59 @@ describe('apiFetch', () => {
     await expect(apiFetch('/me')).rejects.toThrowError(ApiError);
   });
 });
+
+describe('apiFetch confirmation_required handling', () => {
+  const forbidden = () =>
+    mockJsonResponse(403, { error: { code: 'confirmation_required', message: 'nope' } });
+
+  it('refreshes once and retries on a 403 confirmation_required', async () => {
+    setAccessToken('stale');
+    let call = 0;
+    const spy = vi.fn().mockImplementation((url: string) => {
+      call += 1;
+      if (call === 1) return Promise.resolve(forbidden());
+      if (call === 2 && url.endsWith('/auth/refresh')) {
+        return Promise.resolve(mockJsonResponse(200, { access_token: 'fresh' }));
+      }
+      return Promise.resolve(mockJsonResponse(200, { ok: true }));
+    });
+    global.fetch = spy;
+
+    const out = await apiFetch<{ ok: boolean }>('/me/calendar');
+    expect(out).toEqual({ ok: true });
+    expect(call).toBe(3);
+    expect(String(spy.mock.calls[1][0])).toContain('/auth/refresh');
+  });
+
+  it('does not retry a 403 that is not confirmation_required', async () => {
+    let call = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      call += 1;
+      return Promise.resolve(
+        mockJsonResponse(403, { error: { code: 'forbidden', message: 'no' } }),
+      );
+    });
+
+    await expect(apiFetch('/me/calendar')).rejects.toThrowError(
+      expect.objectContaining({ status: 403, code: 'forbidden' }),
+    );
+    expect(call).toBe(1);
+  });
+
+  it('retries a confirmation_required 403 only once', async () => {
+    setAccessToken('stale');
+    let call = 0;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      call += 1;
+      if (call === 2 && url.endsWith('/auth/refresh')) {
+        return Promise.resolve(mockJsonResponse(200, { access_token: 'fresh' }));
+      }
+      return Promise.resolve(forbidden());
+    });
+
+    await expect(apiFetch('/me/calendar')).rejects.toThrowError(
+      expect.objectContaining({ status: 403, code: 'confirmation_required' }),
+    );
+    expect(call).toBe(3);
+  });
+});
