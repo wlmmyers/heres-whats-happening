@@ -96,8 +96,13 @@ func GetIcalFeed(q *store.Queries) http.HandlerFunc {
 		}
 		_ = q.UpdateIcalTokenLastAccessed(ctx, row.UserID)
 
+		// Look back a full day so events that started earlier — a show still in
+		// progress, or a date-only event stored as local midnight — are inside
+		// the range. The query's own "not over yet" filter decides what actually
+		// stays in the feed; this bound only has to be wide enough not to
+		// pre-empt it.
 		now := time.Now().UTC()
-		from := pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}
+		from := pgtype.Timestamptz{Time: now.Add(-24 * time.Hour), Valid: true}
 		to := pgtype.Timestamptz{Time: now.AddDate(0, 0, 60), Valid: true}
 
 		rows, err := q.GetUserCalendarInRange(ctx, store.GetUserCalendarInRangeParams{

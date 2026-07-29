@@ -64,6 +64,7 @@ func (h *EventHandler) handleMessage(ctx context.Context, m events.Message) erro
 		Description:   m.Description,
 		StartsAt:      pgtype.Timestamptz{Time: m.StartsAt, Valid: true},
 		EndsAt:        pgTimePtr(m.EndsAt),
+		TimeTbd:       m.TimeTBD,
 		VenueID:       venueID,
 		ImageUrl:      optString(m.ImageURL),
 		Url:           optString(m.URL),

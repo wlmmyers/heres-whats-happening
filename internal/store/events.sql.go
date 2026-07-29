@@ -181,7 +181,8 @@ func (q *Queries) ListEventPerformersBatch(ctx context.Context, dollar_1 []pgtyp
 const listUpcomingEventsForMatching = `-- name: ListUpcomingEventsForMatching :many
 SELECT id, embedding
 FROM events
-WHERE archived_at IS NULL AND starts_at > NOW()
+WHERE archived_at IS NULL
+  AND event_over_at(starts_at, ends_at, time_tbd) > NOW()
 `
 
 type ListUpcomingEventsForMatchingRow struct {
@@ -189,6 +190,7 @@ type ListUpcomingEventsForMatchingRow struct {
 	Embedding *pgvector.Vector `json:"embedding"`
 }
 
+// Mirrors DeleteObsoleteMatches — see the note there before changing either.
 func (q *Queries) ListUpcomingEventsForMatching(ctx context.Context) ([]ListUpcomingEventsForMatchingRow, error) {
 	rows, err := q.db.Query(ctx, listUpcomingEventsForMatching)
 	if err != nil {
@@ -214,7 +216,7 @@ SELECT id, title, description
 FROM events
 WHERE embedding IS NULL
   AND archived_at IS NULL
-  AND starts_at > NOW()
+  AND event_over_at(starts_at, ends_at, time_tbd) > NOW()
 `
 
 type SelectEventsNeedingEmbeddingRow struct {
@@ -262,9 +264,9 @@ func (q *Queries) UpdateEventEmbedding(ctx context.Context, arg UpdateEventEmbed
 const upsertEvent = `-- name: UpsertEvent :one
 INSERT INTO events (
     source_id, source_event_id, title, description, starts_at, ends_at,
-    venue_id, image_url, url, last_seen_at
+    venue_id, image_url, url, time_tbd, last_seen_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
 ON CONFLICT (source_id, source_event_id)
 DO UPDATE SET
     title         = EXCLUDED.title,
@@ -274,6 +276,7 @@ DO UPDATE SET
     venue_id      = EXCLUDED.venue_id,
     image_url     = EXCLUDED.image_url,
     url           = EXCLUDED.url,
+    time_tbd      = EXCLUDED.time_tbd,
     last_seen_at  = NOW(),
     archived_at   = NULL,
     updated_at    = NOW()
@@ -290,6 +293,7 @@ type UpsertEventParams struct {
 	VenueID       pgtype.UUID        `json:"venue_id"`
 	ImageUrl      *string            `json:"image_url"`
 	Url           *string            `json:"url"`
+	TimeTbd       bool               `json:"time_tbd"`
 }
 
 func (q *Queries) UpsertEvent(ctx context.Context, arg UpsertEventParams) (pgtype.UUID, error) {
@@ -303,6 +307,7 @@ func (q *Queries) UpsertEvent(ctx context.Context, arg UpsertEventParams) (pgtyp
 		arg.VenueID,
 		arg.ImageUrl,
 		arg.Url,
+		arg.TimeTbd,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

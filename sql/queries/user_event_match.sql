@@ -7,10 +7,13 @@ ON CONFLICT (user_id, event_id) DO UPDATE SET
     computed_at     = EXCLUDED.computed_at;
 
 -- name: DeleteObsoleteMatches :exec
+-- Inverse of ListUpcomingEventsForMatching: this deletes exactly the rows that
+-- query would decline to re-create. Keep the two predicates mirrored.
 DELETE FROM user_event_match
 WHERE event_id IN (
     SELECT id FROM events
-    WHERE archived_at IS NOT NULL OR starts_at <= NOW()
+    WHERE archived_at IS NOT NULL
+       OR event_over_at(starts_at, ends_at, time_tbd) <= NOW()
 );
 
 -- name: DeleteStaleMatchesForUsers :exec

@@ -161,6 +161,127 @@ func TestGetIcalFeed_ReturnsRFC5545(t *testing.T) {
 	require.Contains(t, body, "END:VCALENDAR")
 }
 
+// A date-only event is stored as local midnight. It must stay in the feed for
+// the whole day it happens on — not vanish an hour after midnight, hours before
+// the show actually starts.
+func TestGetIcalFeed_KeepsDateOnlyEventLaterToday(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, _ := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Neumos", NormalizedName: "neumos",
+	})
+	// Midnight-local today; the show is this evening.
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID: src.ID, SourceEventID: "ical-tbd-1", Title: "Date Only Show",
+		StartsAt: pgtype.Timestamptz{Time: time.Now().Add(-12 * time.Hour), Valid: true},
+		TimeTbd:  true,
+		VenueID:  venueID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+		UserID: userID, EventID: eventID, Score: 0.9,
+		ScoreBreakdown: []byte(`{}`),
+		ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	}))
+
+	rawToken := "ical-tbd-token-not-random-but-fine"
+	require.NoError(t, q.UpsertIcalToken(ctx, store.UpsertIcalTokenParams{
+		UserID: userID, TokenHash: auth.HashRefresh(rawToken),
+	}))
+
+	r := chi.NewRouter()
+	r.Get("/ical/{token}", handlers.GetIcalFeed(q))
+	req := httptest.NewRequest(http.MethodGet, "/ical/"+rawToken+".ics", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "SUMMARY:Date Only Show")
+}
+
+// An event that has started but is still running stays in the feed.
+func TestGetIcalFeed_KeepsInProgressEvent(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, _ := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Showbox", NormalizedName: "showbox",
+	})
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID: src.ID, SourceEventID: "ical-running-1", Title: "In Progress Show",
+		StartsAt: pgtype.Timestamptz{Time: time.Now().Add(-2 * time.Hour), Valid: true},
+		VenueID:  venueID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+		UserID: userID, EventID: eventID, Score: 0.9,
+		ScoreBreakdown: []byte(`{}`),
+		ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	}))
+
+	rawToken := "ical-running-token-not-random-but-fine"
+	require.NoError(t, q.UpsertIcalToken(ctx, store.UpsertIcalTokenParams{
+		UserID: userID, TokenHash: auth.HashRefresh(rawToken),
+	}))
+
+	r := chi.NewRouter()
+	r.Get("/ical/{token}", handlers.GetIcalFeed(q))
+	req := httptest.NewRequest(http.MethodGet, "/ical/"+rawToken+".ics", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "SUMMARY:In Progress Show")
+}
+
+// The feed must still drop events that are genuinely finished.
+func TestGetIcalFeed_DropsFinishedEvent(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, _ := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Tractor", NormalizedName: "tractor",
+	})
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID: src.ID, SourceEventID: "ical-done-1", Title: "Finished Show",
+		StartsAt: pgtype.Timestamptz{Time: time.Now().Add(-8 * time.Hour), Valid: true},
+		VenueID:  venueID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+		UserID: userID, EventID: eventID, Score: 0.9,
+		ScoreBreakdown: []byte(`{}`),
+		ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	}))
+
+	rawToken := "ical-done-token-not-random-but-fine"
+	require.NoError(t, q.UpsertIcalToken(ctx, store.UpsertIcalTokenParams{
+		UserID: userID, TokenHash: auth.HashRefresh(rawToken),
+	}))
+
+	r := chi.NewRouter()
+	r.Get("/ical/{token}", handlers.GetIcalFeed(q))
+	req := httptest.NewRequest(http.MethodGet, "/ical/"+rawToken+".ics", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "SUMMARY:Finished Show")
+}
+
 func TestGetIcalFeed_UnknownToken_404(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)

@@ -1,0 +1,8 @@
+{
+  "source_id": "email_newsletter",
+  "source_event_id": "1111111111111111111111111111111111111111111111111111111111111111",
+  "title": "Show With No Announced Time",
+  "starts_at": "2026-07-25T00:00:00-07:00",
+  "time_tbd": true,
+  "venue": { "name": "The Bowl" }
+}

@@ -6,6 +6,7 @@ import type { EventDraft } from "./schema.js";
 const draft: EventDraft = {
   title: "Phoebe Bridgers Live",
   startsAt: "2026-06-15T20:00:00Z",
+  timeTbd: false,
   venue: { name: "The Bowl", address: "100 Main St" },
   performers: ["Phoebe Bridgers", "MUNA"],
   genres: ["indie"],
@@ -32,5 +33,16 @@ describe("toMessage", () => {
 
   it("re-mapping the same draft yields the same hash (idempotent re-sends)", () => {
     expect(toMessage(draft).source_event_id).toBe(toMessage(draft).source_event_id);
+  });
+});
+
+describe("toMessage time_tbd", () => {
+  it("carries the date-only flag onto the wire message", () => {
+    const m = toMessage({ ...draft, startsAt: "2026-07-25T00:00:00-07:00", timeTbd: true });
+    expect(m.time_tbd).toBe(true);
+  });
+
+  it("marks events with a real start time as not TBD", () => {
+    expect(toMessage(draft).time_tbd).toBe(false);
   });
 });
