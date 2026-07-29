@@ -42,6 +42,28 @@ type calendarResponse struct {
 	Events []calendarEvent `json:"events"`
 }
 
+// parseDateRange reads the from/to query params (YYYY-MM-DD). On bad input it
+// writes the error response and returns ok=false.
+func parseDateRange(w http.ResponseWriter, r *http.Request) (from, to time.Time, ok bool) {
+	fromStr := r.URL.Query().Get("from")
+	toStr := r.URL.Query().Get("to")
+	if fromStr == "" || toStr == "" {
+		httperr.Write(w, http.StatusBadRequest, "missing_range", "from and to query params are required (YYYY-MM-DD)")
+		return time.Time{}, time.Time{}, false
+	}
+	from, err := time.Parse("2006-01-02", fromStr)
+	if err != nil {
+		httperr.Write(w, http.StatusBadRequest, "bad_from", "from must be YYYY-MM-DD")
+		return time.Time{}, time.Time{}, false
+	}
+	to, err = time.Parse("2006-01-02", toStr)
+	if err != nil {
+		httperr.Write(w, http.StatusBadRequest, "bad_to", "to must be YYYY-MM-DD")
+		return time.Time{}, time.Time{}, false
+	}
+	return from, to, true
+}
+
 // GetMyCalendar returns the authenticated user's matched events whose
 // starts_at falls in [from, to). Dates are YYYY-MM-DD.
 func GetMyCalendar(q *store.Queries) http.HandlerFunc {
@@ -51,20 +73,8 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
 			return
 		}
-		fromStr := r.URL.Query().Get("from")
-		toStr := r.URL.Query().Get("to")
-		if fromStr == "" || toStr == "" {
-			httperr.Write(w, http.StatusBadRequest, "missing_range", "from and to query params are required (YYYY-MM-DD)")
-			return
-		}
-		from, err := time.Parse("2006-01-02", fromStr)
-		if err != nil {
-			httperr.Write(w, http.StatusBadRequest, "bad_from", "from must be YYYY-MM-DD")
-			return
-		}
-		to, err := time.Parse("2006-01-02", toStr)
-		if err != nil {
-			httperr.Write(w, http.StatusBadRequest, "bad_to", "to must be YYYY-MM-DD")
+		from, to, ok := parseDateRange(w, r)
+		if !ok {
 			return
 		}
 
@@ -95,6 +105,63 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 					Address: textPtrToString(row.VenueAddress),
 				},
 				MatchedBecause: bd,
+			}
+			if row.EndsAt.Valid {
+				ev.EndsAt = row.EndsAt.Time.UTC().Format(time.RFC3339)
+			}
+			ev.ImageURL = textPtrToString(row.ImageUrl)
+			ev.URL = textPtrToString(row.Url)
+			out.Events = append(out.Events, ev)
+		}
+		writeJSON(w, http.StatusOK, out)
+	}
+}
+
+// GetCityCalendar returns every showable event in the given city whose
+// starts_at falls in [from, to) — no match filtering, so events the caller has
+// no user_event_match row for are included. This is what the calendar page
+// falls back to when the user has no interests to match against, so the
+// response is deliberately identical for every caller: no not-interested
+// filtering, and score/matched_because are always the empty values.
+func GetCityCalendar(q *store.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cityUUID, err := uuid.Parse(chi.URLParam(r, "cityId"))
+		if err != nil {
+			httperr.Write(w, http.StatusBadRequest, "bad_city_id", "cityId is not a valid uuid")
+			return
+		}
+		from, to, ok := parseDateRange(w, r)
+		if !ok {
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		rows, err := q.GetCityCalendarInRange(ctx, store.GetCityCalendarInRangeParams{
+			CityID:     pgtype.UUID{Bytes: cityUUID, Valid: true},
+			StartsAt:   pgtype.Timestamptz{Time: from, Valid: true},
+			StartsAt_2: pgtype.Timestamptz{Time: to, Valid: true},
+		})
+		if err != nil {
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not load city calendar", err)
+			return
+		}
+
+		out := calendarResponse{Events: make([]calendarEvent, 0, len(rows))}
+		for _, row := range rows {
+			ev := calendarEvent{
+				ID:          uuidString(row.EventID),
+				Title:       row.Title,
+				Description: row.Description,
+				StartsAt:    row.StartsAt.Time.UTC().Format(time.RFC3339),
+				Venue: calendarVenue{
+					Name:    row.VenueName,
+					Address: textPtrToString(row.VenueAddress),
+				},
+				// No match exists for these events; parseBreakdown(nil) gives the
+				// empty non-nil slices the FE expects.
+				MatchedBecause: parseBreakdown(nil),
 			}
 			if row.EndsAt.Valid {
 				ev.EndsAt = row.EndsAt.Time.UTC().Format(time.RFC3339)

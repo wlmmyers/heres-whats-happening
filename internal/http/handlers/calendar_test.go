@@ -287,3 +287,167 @@ func TestGetMyCalendar_ResetRestoresEvents(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 	require.Len(t, resp.Events, 1) // event visible again after reset
 }
+
+// cityRouter wires the handler the way server.go does, so {cityId} resolves.
+func cityRouter(q *store.Queries, signer *auth.JWTSigner) *chi.Mux {
+	r := chi.NewRouter()
+	r.With(middleware.RequireAuth(signer)).Get("/calendar/{cityId}", handlers.GetCityCalendar(q))
+	return r
+}
+
+func TestGetCityCalendar_ReturnsUnmatchedEvents(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	// A second event with NO user_event_match row at all.
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, _ := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Side Room", NormalizedName: "side room",
+	})
+	_, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:      src.ID,
+		SourceEventID: "city-unmatched",
+		Title:         "Unmatched Show",
+		Description:   "nobody matched this",
+		StartsAt:      pgtype.Timestamptz{Time: time.Now().Add(72 * time.Hour), Valid: true},
+		VenueID:       venueID,
+	})
+	require.NoError(t, err)
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	from := time.Now().Add(-24 * time.Hour).UTC().Format("2006-01-02")
+	to := time.Now().Add(30 * 24 * time.Hour).UTC().Format("2006-01-02")
+
+	url := "/calendar/" + uuidFromPgCal(city.ID).String() + "?from=" + from + "&to=" + to
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Events []struct {
+			Title          string  `json:"title"`
+			Score          float64 `json:"score"`
+			MatchedBecause struct {
+				Performers []string `json:"performers"`
+				Genres     []string `json:"genres"`
+			} `json:"matched_because"`
+		} `json:"events"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+
+	titles := []string{}
+	for _, e := range resp.Events {
+		titles = append(titles, e.Title)
+	}
+	// Both the matched event and the unmatched one.
+	require.ElementsMatch(t, []string{"PB Live", "Unmatched Show"}, titles)
+	for _, e := range resp.Events {
+		require.Zero(t, e.Score, e.Title)
+		require.Empty(t, e.MatchedBecause.Performers, e.Title)
+		require.Empty(t, e.MatchedBecause.Genres, e.Title)
+	}
+}
+
+// The endpoint is deliberately city-wide, not caller-specific: a not-interested
+// event still appears. Guards against someone "helpfully" adding the filter.
+func TestGetCityCalendar_IncludesNotInterestedEvents(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, eventID := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	require.NoError(t, q.AddNotInterested(ctx, store.AddNotInterestedParams{
+		UserID: userID, EventID: eventID,
+	}))
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	from := time.Now().Add(-24 * time.Hour).UTC().Format("2006-01-02")
+	to := time.Now().Add(30 * 24 * time.Hour).UTC().Format("2006-01-02")
+
+	url := "/calendar/" + uuidFromPgCal(city.ID).String() + "?from=" + from + "&to=" + to
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Events []struct {
+			Title string `json:"title"`
+		} `json:"events"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.Len(t, resp.Events, 1)
+	require.Equal(t, "PB Live", resp.Events[0].Title)
+}
+
+func TestGetCityCalendar_UnknownCityReturnsEmptyList(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	url := "/calendar/" + uuid.New().String() + "?from=2026-01-01&to=2026-12-31"
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"events":[]}`, rec.Body.String())
+}
+
+func TestGetCityCalendar_BadCityID_Returns400(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	req := httptest.NewRequest(http.MethodGet, "/calendar/not-a-uuid?from=2026-01-01&to=2026-12-31", nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "bad_city_id")
+}
+
+func TestGetCityCalendar_MissingDates_Returns400(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	url := "/calendar/" + uuidFromPgCal(city.ID).String()
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "missing_range")
+}
+
+func TestGetCityCalendar_NoToken_Returns401(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+
+	req := httptest.NewRequest(http.MethodGet, "/calendar/"+uuid.New().String()+"?from=2026-01-01&to=2026-12-31", nil)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
