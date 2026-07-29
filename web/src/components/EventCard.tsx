@@ -21,15 +21,16 @@ export default function EventCard({
     minute: '2-digit',
   });
   const matchedBits = [...event.matched_because.performers, ...event.matched_because.genres];
-
-  const content = (
-    <>
-      {event.image_url && <img src={event.image_url} alt="" className={s.thumbnail} />}
-      <div className={s.body}>
-        <div className={s.titleRow}>
-          <h3 className={s.title}>{event.title}</h3>
-          <span className={s.score}>{Math.round(event.score * 100)}% match</span>
-        </div>
+  return (
+    <div
+      className={s.eventCard}
+      onClick={interactive ? () => navigate(`/events/${event.id}`) : undefined}
+    >
+      {event.image_url && (
+        <img src={event.image_url} alt="" data-thumbnail className={s.thumbnail} />
+      )}
+      <div className={s.main}>
+        <h3 className={s.title}>{event.title}</h3>
         <div className={s.date}>
           {dateLabel} · {event.venue.name}
         </div>
@@ -37,17 +38,9 @@ export default function EventCard({
           <div className={s.matched}>Matched because: {matchedBits.join(', ')}</div>
         )}
       </div>
-    </>
-  );
-
-  return (
-    <div
-      className={s.eventCard}
-      onClick={interactive ? () => navigate(`/events/${event.id}`) : undefined}
-    >
-      <div className={s.link}>{content}</div>
+      <span className={s.score}>{Math.round(event.score * 100)}% match</span>
       {onNotInterested && (
-        <div className={s.notInterestedRow}>
+        <div className={s.notInterested}>
           <button
             type="button"
             onClick={(e) => {

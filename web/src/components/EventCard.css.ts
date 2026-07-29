@@ -1,71 +1,113 @@
 import { style } from '@vanilla-extract/css';
 import { clickableCard } from '../styles/common.css';
 import { color, fontSize, fontWeight, radius, transition } from '../styles/theme';
+import { phone } from '../styles/breakpoints.css';
 
 export const eventCard = style([
   clickableCard,
   {
+    display: 'grid',
+    gridTemplateColumns: '8rem auto auto',
+    gridTemplateRows: 'auto',
+    gridTemplateAreas: `
+      'thumbnail main matchScore'
+      'thumbnail main notInterested'
+    `,
     padding: '1rem',
     minHeight: '150px',
     ...transition,
+    // Collapse the thumbnail column to 0 when no thumbnail is rendered in the DOM.
+    selectors: {
+      '&:not(:has([data-thumbnail]))': {
+        gridTemplateColumns: '0 auto auto',
+      },
+    },
+    '@media': {
+      [phone]: {
+        gridTemplateColumns: '6rem auto auto',
+        gridTemplateRows: 'auto',
+        gridTemplateAreas: `
+          'thumbnail main main'
+          'matchScore matchScore notInterested'
+        `,
+        selectors: {
+          '&:not(:has([data-thumbnail]))': {
+            gridTemplateColumns: '0 auto auto',
+          },
+        },
+      },
+    },
   },
 ]);
 
-export const link = style({
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: '0.75rem',
+export const main = style({
+  gridArea: 'main',
 });
 
 export const thumbnail = style({
+  gridArea: 'thumbnail',
   flexShrink: 0,
-  width: '5rem',
-  height: '5rem',
+  width: '7rem',
+  height: '7rem',
+  marginBottom: '0.5rem',
   objectFit: 'cover',
   borderRadius: radius.sm,
-});
-
-export const body = style({ minWidth: 0, flexGrow: 1 });
-
-export const titleRow = style({
-  display: 'flex',
-  alignItems: 'baseline',
-  justifyContent: 'space-between',
-  gap: '1rem',
+  '@media': {
+    [phone]: {
+      width: '5rem',
+      height: '5rem',
+    },
+  },
 });
 
 export const title = style({
-  ...fontSize.lg,
   fontWeight: fontWeight.semibold,
   color: color.gray900,
+  ...fontSize.lg,
+  lineHeight: '1.5rem',
 });
 
 export const score = style({
-  ...fontSize.sm,
+  gridArea: 'matchScore',
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'flex-end',
   color: color.gray500,
   whiteSpace: 'nowrap',
+  textAlign: 'right',
+  ...fontSize.sm,
+  '@media': {
+    [phone]: {
+      textAlign: 'left',
+      alignItems: 'flex-end',
+      justifyContent: 'flex-start',
+      ...fontSize.xs,
+    },
+  },
 });
 
 export const date = style({
-  ...fontSize.sm,
   color: color.gray700,
   marginTop: '0.25rem',
+  ...fontSize.sm,
 });
 
 export const matched = style({
-  ...fontSize.xs,
   color: color.blue700,
   marginTop: '0.5rem',
+  ...fontSize.xs,
 });
 
-export const notInterestedRow = style({
-  marginTop: '0.75rem',
+export const notInterested = style({
+  gridArea: 'notInterested',
   display: 'flex',
+  alignItems: 'flex-end',
   justifyContent: 'flex-end',
+  marginTop: '0.75rem',
 });
 
 export const notInterestedButton = style({
-  ...fontSize.xs,
+  gridArea: 'notInterestedButton',
   fontWeight: fontWeight.medium,
   border: '1px solid',
   borderColor: color.gray200,
@@ -74,6 +116,7 @@ export const notInterestedButton = style({
   paddingBlock: '0.25rem',
   backgroundColor: color.white,
   ...transition,
+  ...fontSize.xs,
   color: color.gray500,
   ':hover': { color: color.red600, borderColor: color.red600 },
 });

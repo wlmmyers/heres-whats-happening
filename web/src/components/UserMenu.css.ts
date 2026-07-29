@@ -52,6 +52,8 @@ export const signOut = style({
   borderWidth: 0,
   backgroundColor: 'transparent',
   padding: 0,
+  width: '100%',
+  textAlign: 'left',
   ...fontSize.sm,
   color: color.gray700,
 });
