@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
-	"github.com/wmyers/heres-whats-happening/internal/config"
 	"github.com/wmyers/heres-whats-happening/internal/email"
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
@@ -27,9 +27,14 @@ const (
 	errorURL   = "https://app.example.com/?confirmerror=true"
 )
 
+// welcomeFor is the welcome redirect the SPA should receive: the bare welcome
+// URL plus the confirmed address, escaped, so the login form can prefill it.
+func welcomeFor(address string) string {
+	return welcomeURL + "&email=" + url.QueryEscape(address)
+}
+
 func testDeps(sender email.Sender) handlers.ConfirmationDeps {
 	return handlers.ConfirmationDeps{
-		Mode:       config.ConfirmationEnforce,
 		Sender:     sender,
 		APIBaseURL: "https://api.example.com",
 		AppBaseURL: "https://app.example.com",
@@ -75,24 +80,35 @@ func TestConfirmEmail_HappyPathFlipsConfirmedAndRedirectsToWelcome(t *testing.T)
 	rec := confirmGet(t, q, tok)
 
 	require.Equal(t, http.StatusFound, rec.Code)
-	require.Equal(t, welcomeURL, rec.Header().Get("Location"))
+	require.Equal(t, welcomeFor("happy@example.com"), rec.Header().Get("Location"))
 
 	row, err := q.GetUserByID(context.Background(), uid)
 	require.NoError(t, err)
 	require.True(t, row.Confirmed)
 }
 
+func TestConfirmEmail_WelcomeCarriesEscapedEmailForPrefill(t *testing.T) {
+	// A plus-addressed email is the reason to escape: a raw '+' in a query
+	// string decodes to a space, so the SPA would prefill the wrong address.
+	q, _, tok := newUnconfirmedUser(t, "plus+tag@example.com", 24*time.Hour)
+
+	rec := confirmGet(t, q, tok)
+
+	require.Equal(t, http.StatusFound, rec.Code)
+	require.Equal(t, welcomeURL+"&email=plus%2Btag%40example.com", rec.Header().Get("Location"))
+}
+
 func TestConfirmEmail_ConsumedReplayStillRedirectsToWelcome(t *testing.T) {
 	q, _, tok := newUnconfirmedUser(t, "replay@example.com", 24*time.Hour)
 
 	// First fetch: the corporate mail scanner (Outlook SafeLinks) prefetching.
-	require.Equal(t, welcomeURL, confirmGet(t, q, tok).Header().Get("Location"))
+	require.Equal(t, welcomeFor("replay@example.com"), confirmGet(t, q, tok).Header().Get("Location"))
 
 	// Second fetch: the human actually clicking. Telling them their link failed
 	// would be a lie — they are confirmed.
 	rec := confirmGet(t, q, tok)
 	require.Equal(t, http.StatusFound, rec.Code)
-	require.Equal(t, welcomeURL, rec.Header().Get("Location"))
+	require.Equal(t, welcomeFor("replay@example.com"), rec.Header().Get("Location"))
 }
 
 func TestConfirmEmail_ExpiredTokenRedirectsToError(t *testing.T) {

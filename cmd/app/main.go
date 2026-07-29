@@ -156,10 +156,8 @@ func serve() error {
 		interestConsumer = ingest.NewConsumer(qClient, cfg.InterestsQueueURL, ih, cfg.IngestWorkers, "interests")
 	}
 
-	// config.Load has already rejected an unset or unknown EMAIL_SENDER whenever
-	// the mode is not off. The log sender is the fallback for mode=off, where
-	// nothing is ever sent — a nil Sender would be a panic waiting on a future
-	// mode flip.
+	// config.Load has already rejected anything but "ses" or "log", so the
+	// default arm is only ever "log".
 	var mailer email.Sender
 	switch cfg.EmailSender {
 	case "ses":
@@ -189,10 +187,9 @@ func serve() error {
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 		TrustProxy:         cfg.TrustProxy,
 
-		EmailConfirmationMode: cfg.EmailConfirmationMode,
-		EmailSender:           mailer,
-		AppBaseURL:            cfg.AppBaseURL,
-		APIBaseURL:            cfg.APIBaseURL,
+		EmailSender: mailer,
+		AppBaseURL:  cfg.AppBaseURL,
+		APIBaseURL:  cfg.APIBaseURL,
 	}
 	fmt.Printf("listening on %s (ingest workers=%d)\n", cfg.HTTPAddr, cfg.IngestWorkers)
 	return s.Run(ctx)

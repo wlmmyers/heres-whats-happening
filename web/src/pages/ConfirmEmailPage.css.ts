@@ -28,13 +28,12 @@ export const body = style({
 export const address = style({
   fontWeight: fontWeight.semibold,
   color: color.gray900,
-  wordBreak: 'break-all',
+  wordBreak: 'break-word',
 });
 
 export const actions = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '0.75rem',
   alignItems: 'center',
 });
 

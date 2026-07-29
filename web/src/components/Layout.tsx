@@ -17,7 +17,7 @@ export default function Layout() {
   // route's redirect and still render when the SPA is anonymous — the
   // confirm link is often opened on a phone with no session.
   const [params, setParams] = useSearchParams();
-  const showWelcome = params.get('welcome') === 'true';
+  const showWelcome = authed && params.get('welcome') === 'true';
   const showConfirmError = params.get('confirmerror') === 'true';
 
   const dismiss = (key: string) => {

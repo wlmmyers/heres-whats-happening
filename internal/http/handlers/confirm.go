@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
-	"github.com/wmyers/heres-whats-happening/internal/config"
 	"github.com/wmyers/heres-whats-happening/internal/email"
 	"github.com/wmyers/heres-whats-happening/internal/http/httperr"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
@@ -26,7 +25,6 @@ const confirmationTTL = 24 * time.Hour
 // confirmation links. Grouped into a struct because Signup, ConfirmEmail, and
 // ResendConfirmation all need overlapping subsets of it.
 type ConfirmationDeps struct {
-	Mode   config.ConfirmationMode
 	Sender email.Sender
 	// APIBaseURL builds the link that goes in the mail — it points at this API,
 	// because the mail client navigates straight to GET /auth/confirm.
@@ -35,25 +33,15 @@ type ConfirmationDeps struct {
 	AppBaseURL string
 }
 
-// sendsMail reports whether this mode puts confirmation mail on the wire.
-//
-// Deliberately an allowlist rather than `Mode != ConfirmationOff`: the zero
-// value of ConfirmationMode is "", not "off". config.Load normalizes an unset
-// env var to off, but a Server built directly — in tests, or by any future
-// caller that skips config.Load — carries "". Testing against off would treat
-// that zero value as "send", which is both the unsafe direction and a nil-Sender
-// panic. An unrecognized mode must never send.
-func (c ConfirmationDeps) sendsMail() bool {
-	return c.Mode == config.ConfirmationSend || c.Mode == config.ConfirmationEnforce
-}
-
 // sendConfirmation mints a fresh confirmation token for userID — replacing any
 // previous one, so a resend invalidates the older link — and emails it.
 func sendConfirmation(ctx context.Context, q *store.Queries, conf ConfirmationDeps, toEmail string, userID pgtype.UUID) error {
-	// A nil Sender in a sending mode is a wiring bug. Return it as an error so
-	// the caller's logging path reports it, rather than panicking mid-request.
+	// A nil Sender is a wiring bug — config.Load requires EMAIL_SENDER, so only
+	// a Server built without it (tests, or a future caller that skips
+	// config.Load) can get here. Return it as an error so the caller's logging
+	// path reports it, rather than panicking mid-request.
 	if conf.Sender == nil {
-		return fmt.Errorf("confirmation: no email sender configured for mode %q", conf.Mode)
+		return fmt.Errorf("confirmation: no email sender configured")
 	}
 	raw, err := auth.GenerateRefresh()
 	if err != nil {
@@ -80,7 +68,6 @@ func sendConfirmation(ctx context.Context, q *store.Queries, conf ConfirmationDe
 // Only two states produce the error redirect: an unknown token, and an
 // unconsumed token past its expiry. Everything else lands on ?welcome=true.
 func ConfirmEmail(q *store.Queries, conf ConfirmationDeps) http.HandlerFunc {
-	welcome := conf.AppBaseURL + "/?welcome=true"
 	confirmError := conf.AppBaseURL + "/?confirmerror=true"
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +84,16 @@ func ConfirmEmail(q *store.Queries, conf ConfirmationDeps) http.HandlerFunc {
 		if err != nil {
 			http.Redirect(w, r, confirmError, http.StatusFound)
 			return
+		}
+
+		// Carry the confirmed address back to the SPA as ?email= so the login
+		// form it lands on can prefill it. Escaping matters — a raw '+' in a
+		// plus-addressed email would otherwise decode to a space. If the lookup
+		// fails, fall back to the bare welcome page rather than failing a
+		// confirmation that otherwise succeeded.
+		welcome := conf.AppBaseURL + "/?welcome=true"
+		if u, uerr := q.GetUserByID(ctx, row.UserID); uerr == nil {
+			welcome += "&email=" + url.QueryEscape(u.Email)
 		}
 
 		// Already consumed: almost always a mail-security scanner having

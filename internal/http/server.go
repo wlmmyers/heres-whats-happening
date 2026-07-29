@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
-	"github.com/wmyers/heres-whats-happening/internal/config"
 	"github.com/wmyers/heres-whats-happening/internal/crypto"
 	"github.com/wmyers/heres-whats-happening/internal/email"
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
@@ -50,20 +49,15 @@ type Server struct {
 	// X-Forwarded-For entry. Set only when running behind our ALB.
 	TrustProxy bool
 
-	// Plan 8 additions — email confirmation. The mode gates only whether
-	// RequireConfirmed is installed; the route layout is identical in all three
-	// modes, so flipping the mode changes which middleware runs, never which
-	// routes exist.
-	EmailConfirmationMode config.ConfirmationMode
-	EmailSender           email.Sender
-	AppBaseURL            string
-	APIBaseURL            string
+	// Plan 8 additions — email confirmation.
+	EmailSender email.Sender
+	AppBaseURL  string
+	APIBaseURL  string
 }
 
 // confirmationDeps bundles the confirmation config for the auth handlers.
 func (s *Server) confirmationDeps() handlers.ConfirmationDeps {
 	return handlers.ConfirmationDeps{
-		Mode:       s.EmailConfirmationMode,
 		Sender:     s.EmailSender,
 		APIBaseURL: s.APIBaseURL,
 		AppBaseURL: s.AppBaseURL,
@@ -163,12 +157,7 @@ func (s *Server) Router() http.Handler {
 		// above it would snapshot an incomplete stack and its routes would be
 		// silently unlimited.
 		r.Use(middleware.RateLimitByUser(authedLimiter, middleware.EndpointAuthed))
-		// The mode gates only this Use call, never the route layout — the two
-		// groups exist in every mode, so phase 4 changes which middleware runs,
-		// not which routes exist, and the flip cannot reshuffle routing.
-		if s.EmailConfirmationMode == config.ConfirmationEnforce {
-			r.Use(middleware.RequireConfirmed())
-		}
+		r.Use(middleware.RequireConfirmed())
 
 		// Reads — covered by the net alone.
 		r.Get("/me/manual-interests", handlers.ListManualInterests(s.Queries))

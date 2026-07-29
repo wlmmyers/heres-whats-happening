@@ -27,26 +27,7 @@ locals {
     { name = "ICAL_BASE_URL", value = "https://api.${var.domain_name}" },
     { name = "CORS_ALLOWED_ORIGINS", value = "https://${var.domain_name},https://www.${var.domain_name}" },
     { name = "SPOTIFY_REDIRECT_URI", value = "https://${var.domain_name}/integrations/spotify/callback" },
-    # ROLLOUT ORDER MATTERS. This value is NOT auto-applied: the task def has
-    # ignore_changes = [container_definitions], and the app pipeline re-registers
-    # the live task def with only the image swapped. So TRUST_PROXY reaches the
-    # running task only via a manual `scripts/taskdef-edit.sh --set-env
-    # TRUST_PROXY=true --deploy`. Do that BEFORE (or together with) the first
-    # image that ships rate limiting. If the limiting image runs while this is
-    # unset, the app keys every request on the ALB's IP and the rate limits apply
-    # site-wide — the app logs a startup WARNING in that state.
     { name = "TRUST_PROXY", value = "true" },
-    # NOT AUTO-APPLIED, same as TRUST_PROXY above: the task def has
-    # ignore_changes = [container_definitions] and the app pipeline re-registers
-    # the live task def with only the image swapped. These values reach the
-    # running task only through a manual `scripts/taskdef-edit.sh --set-env ...
-    # --deploy`, in rollout phases 3 (send) and 4 (enforce).
-    #
-    # EMAIL_CONFIRMATION_MODE is declared here as its intended END STATE, so
-    # this file records where the system is headed rather than whichever phase
-    # it currently happens to be in. The live value will be `off` from the app
-    # merge until SES production access is granted, then `send`, then `enforce`.
-    { name = "EMAIL_CONFIRMATION_MODE", value = "enforce" },
     { name = "EMAIL_SENDER", value = "ses" },
     { name = "EMAIL_FROM_ADDRESS", value = "noreply@${var.domain_name}" },
     { name = "APP_BASE_URL", value = "https://${var.domain_name}" },

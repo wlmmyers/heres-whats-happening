@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/auth"
-	"github.com/wmyers/heres-whats-happening/internal/config"
 	"github.com/wmyers/heres-whats-happening/internal/email"
 	hs "github.com/wmyers/heres-whats-happening/internal/http"
 	"github.com/wmyers/heres-whats-happening/internal/observability"
@@ -187,20 +186,54 @@ func TestServer_RefreshIsRateLimited(t *testing.T) {
 	require.NotEmpty(t, resp.Header.Get("Retry-After"))
 }
 
-// signupFor creates a user on srv and returns its access token.
-func signupFor(t *testing.T, srv *httptest.Server, email string) string {
+// signupFor creates a user on srv, confirms them, and returns an access token
+// that carries confirmed:true.
+//
+// Signup always creates an unconfirmed user, and every route outside /me,
+// resend, and delete sits behind RequireConfirmed — so a caller that just wants
+// "an authenticated user" needs the confirmation done for it, or it gets 403s
+// that have nothing to do with what it is testing. The confirmed claim is baked
+// into the access token at signing time, hence the fresh login rather than
+// reusing the signup token.
+func signupFor(t *testing.T, srv *httptest.Server, address string) string {
 	t.Helper()
-	body, _ := json.Marshal(map[string]string{"email": email, "password": "hunter22"})
+	body, _ := json.Marshal(map[string]string{"email": address, "password": "hunter22"})
 	resp, err := http.Post(srv.URL+"/auth/signup", "application/json", bytes.NewReader(body))
 	require.NoError(t, err)
+	resp.Body.Close()
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
-	var su struct {
+
+	confirmInDB(t, address)
+	return loginFor(t, srv, address)
+}
+
+// confirmInDB flips users.confirmed without going through the emailed link.
+// testdb.MustOpen is a per-process singleton, so this shares the pool the
+// server under test is using.
+func confirmInDB(t *testing.T, address string) {
+	t.Helper()
+	q := store.New(testdb.MustOpen(t))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	row, err := q.GetUserByEmail(ctx, address)
+	require.NoError(t, err)
+	require.NoError(t, q.MarkUserConfirmed(ctx, row.ID))
+}
+
+// loginFor mints a fresh access token for an existing user.
+func loginFor(t *testing.T, srv *httptest.Server, address string) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"email": address, "password": "hunter22"})
+	resp, err := http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(body))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var out struct {
 		AccessToken string `json:"access_token"`
 	}
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&su))
-	resp.Body.Close()
-	require.NotEmpty(t, su.AccessToken)
-	return su.AccessToken
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+	require.NotEmpty(t, out.AccessToken)
+	return out.AccessToken
 }
 
 // authedTestServer returns a running server plus an access token for a fresh
@@ -305,9 +338,9 @@ func TestServer_SpotifyExchangeIsRateLimited(t *testing.T) {
 	require.NotEmpty(t, resp.Header.Get("Retry-After"))
 }
 
-// newTestServerWithMode starts a server in the given confirmation mode and
+// newConfirmationTestServer starts a server with the mailer wired up and
 // returns it alongside the fake sender.
-func newTestServerWithMode(t *testing.T, mode config.ConfirmationMode) (*httptest.Server, *email.Fake) {
+func newConfirmationTestServer(t *testing.T) (*httptest.Server, *email.Fake) {
 	t.Helper()
 
 	old := observability.Default
@@ -323,15 +356,14 @@ func newTestServerWithMode(t *testing.T, mode config.ConfirmationMode) (*httptes
 
 	fake := &email.Fake{}
 	s := &hs.Server{
-		DB:                    pool,
-		Queries:               q,
-		JWTSigner:             auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute),
-		RefreshTTL:            time.Hour,
-		DefaultCityID:         uuid.UUID(city.ID.Bytes).String(),
-		EmailConfirmationMode: mode,
-		EmailSender:           fake,
-		AppBaseURL:            "https://app.example.com",
-		APIBaseURL:            "https://api.example.com",
+		DB:            pool,
+		Queries:       q,
+		JWTSigner:     auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute),
+		RefreshTTL:    time.Hour,
+		DefaultCityID: uuid.UUID(city.ID.Bytes).String(),
+		EmailSender:   fake,
+		AppBaseURL:    "https://app.example.com",
+		APIBaseURL:    "https://api.example.com",
 	}
 	srv := httptest.NewServer(s.Router())
 	t.Cleanup(srv.Close)
@@ -377,16 +409,16 @@ func confirmLinkFrom(t *testing.T, text string) string {
 }
 
 // guardedRoutes are authenticated routes behind the confirmation gate. Both
-// return 200 for a confirmed user, so the only thing that changes between modes
-// is the gate — the calendar carries its date range because the handler 400s
-// without one, which would mask the 403-vs-200 contrast these tests exist to show.
+// return 200 for a confirmed user, so the only thing separating 403 from 200 is
+// the gate — the calendar carries its date range because the handler 400s
+// without one, which would mask the contrast these tests exist to show.
 var guardedRoutes = []string{
 	"/me/manual-interests",
 	"/me/calendar?from=2026-01-01&to=2026-01-31",
 }
 
-func TestServer_Enforce_UnconfirmedIsGatedOffGuardedRoutes(t *testing.T) {
-	srv, _ := newTestServerWithMode(t, config.ConfirmationEnforce)
+func TestServer_UnconfirmedIsGatedOffGuardedRoutes(t *testing.T) {
+	srv, _ := newConfirmationTestServer(t)
 	tok := signupOn(t, srv, "gated@example.com")
 
 	for _, route := range guardedRoutes {
@@ -394,8 +426,8 @@ func TestServer_Enforce_UnconfirmedIsGatedOffGuardedRoutes(t *testing.T) {
 	}
 }
 
-func TestServer_Enforce_ExemptRoutesStayReachable(t *testing.T) {
-	srv, _ := newTestServerWithMode(t, config.ConfirmationEnforce)
+func TestServer_ExemptRoutesStayReachable(t *testing.T) {
+	srv, _ := newConfirmationTestServer(t)
 	tok := signupOn(t, srv, "exempt@example.com")
 
 	// What an unconfirmed user needs to get confirmed, or to leave.
@@ -416,22 +448,8 @@ func TestServer_Enforce_ExemptRoutesStayReachable(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 
-// This is the assertion that makes phase 2 safe to merge: with the mode unset
-// or set to send, a route that 403s under enforce must still return 200.
-func TestServer_OffAndSend_GuardedRoutesStayOpen(t *testing.T) {
-	for _, mode := range []config.ConfirmationMode{config.ConfirmationOff, config.ConfirmationSend} {
-		t.Run(string(mode), func(t *testing.T) {
-			srv, _ := newTestServerWithMode(t, mode)
-			tok := signupOn(t, srv, string(mode)+"-open@example.com")
-			for _, route := range guardedRoutes {
-				require.Equal(t, http.StatusOK, authedGet(t, srv, route, tok), route)
-			}
-		})
-	}
-}
-
 func TestServer_ConfirmLinkEndToEnd(t *testing.T) {
-	srv, fake := newTestServerWithMode(t, config.ConfirmationEnforce)
+	srv, fake := newConfirmationTestServer(t)
 	tok := signupOn(t, srv, "e2e-confirm@example.com")
 	require.Equal(t, http.StatusForbidden, authedGet(t, srv, guardedRoutes[0], tok))
 
@@ -447,9 +465,17 @@ func TestServer_ConfirmLinkEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	resp.Body.Close()
 	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Equal(t, "https://app.example.com/?welcome=true", resp.Header.Get("Location"))
+	require.Equal(t, "https://app.example.com/?welcome=true&email=e2e-confirm%40example.com", resp.Header.Get("Location"))
 
 	// The old token still carries confirmed:false — that is the bounded stale
-	// case the SPA self-heals by refreshing. A freshly minted one passes.
+	// case the SPA self-heals by refreshing.
 	require.Equal(t, http.StatusForbidden, authedGet(t, srv, guardedRoutes[0], tok))
+
+	// A freshly minted one passes. This is the other half of the gate: without
+	// it, a gate that rejected everyone would still satisfy every 403 assertion
+	// above.
+	fresh := loginFor(t, srv, "e2e-confirm@example.com")
+	for _, route := range guardedRoutes {
+		require.Equal(t, http.StatusOK, authedGet(t, srv, route, fresh), route)
+	}
 }

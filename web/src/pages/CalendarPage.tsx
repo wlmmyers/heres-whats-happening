@@ -104,7 +104,8 @@ export default function CalendarPage() {
         <div className={s.errorBox}>Couldn't load your calendar.</div>
       ) : events.length === 0 ? (
         <div className={s.emptyState}>
-          No upcoming matches yet. <br /> Try{' '}
+          No upcoming matches yet. <br />
+          <br /> Try{' '}
           {spotifyStatus && !spotifyStatus.connected && (
             <>
               <a

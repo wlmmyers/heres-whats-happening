@@ -32,7 +32,7 @@ export default function ConfirmErrorModal({ onDismiss }: { onDismiss: () => void
         role="dialog"
         aria-label="Confirmation link problem"
         aria-modal="true"
-        className={s.card}
+        className={s.confirmModal}
       >
         <h2 className={s.title}>That link didn&rsquo;t work</h2>
         <p className={s.body}>
@@ -58,14 +58,13 @@ export default function ConfirmErrorModal({ onDismiss }: { onDismiss: () => void
             </>
           ) : (
             <p className={s.body}>
-              <Link to="/login" onClick={onDismiss} className={s.link}>
+              <Link to="/login" onClick={onDismiss} className={c.link}>
                 Sign in
               </Link>{' '}
               and we&rsquo;ll send a new link.
             </p>
           )}
-
-          <button type="button" onClick={onDismiss} className={c.buttonSecondary}>
+          <button type="button" onClick={onDismiss} className={c.linkButton}>
             Close
           </button>
         </div>

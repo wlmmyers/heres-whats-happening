@@ -1,5 +1,6 @@
 import { style } from '@vanilla-extract/css';
-import { border, color, fontSize, fontWeight, radius, shadow } from '../styles/theme';
+import { color, fontSize, fontWeight } from '../styles/theme';
+import { cardNoShadow } from '../styles/common.css';
 
 export const backdrop = style({
   position: 'fixed',
@@ -12,16 +13,15 @@ export const backdrop = style({
   padding: '1rem',
 });
 
-export const card = style({
-  backgroundColor: color.white,
-  boxShadow: shadow.lg,
-  border: border.md,
-  borderRadius: radius.sm,
-  padding: '2rem',
-  maxWidth: '26rem',
-  width: '100%',
-  textAlign: 'center',
-});
+export const confirmModal = style([
+  cardNoShadow,
+  {
+    padding: '2rem',
+    maxWidth: '26rem',
+    width: '100%',
+    textAlign: 'center',
+  },
+]);
 
 export const title = style({
   ...fontSize.xl,
@@ -38,7 +38,6 @@ export const body = style({
 
 export const status = style({
   ...fontSize.sm,
-  minHeight: '1.25rem',
   color: color.gray600,
   marginTop: '0.75rem',
 });
@@ -46,11 +45,5 @@ export const status = style({
 export const actions = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '0.75rem',
-  alignItems: 'center',
-});
-
-export const link = style({
-  color: color.blue600,
-  textDecoration: 'underline',
+  gap: '0.25rem',
 });

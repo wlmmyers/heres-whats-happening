@@ -124,3 +124,21 @@ export const bodySection = style({
   alignItems: 'flex-start',
   gap: '0.5rem',
 });
+
+export const link = style({
+  color: color.blue600,
+  textDecoration: 'underline',
+});
+
+export const linkButton = style({
+  ...fontSize.sm,
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  color: color.gray500,
+  textDecoration: 'underline',
+  cursor: 'pointer',
+  selectors: {
+    '&:hover': { color: color.gray700 },
+  },
+});
