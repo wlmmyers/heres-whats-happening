@@ -50,13 +50,13 @@ describe('confirmation modals', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  // Confirming on a phone with no session is a real case: the SPA is anonymous
-  // and the modal has to render over the login screen.
-  it('shows the welcome modal to an anonymous visitor confirming on another device', () => {
+  // Confirming on a phone with no session is a real case, but there the login
+  // card carries the "your email is confirmed" copy itself (see LoginForm), so
+  // the modal would only stack on top of it.
+  it('leaves the welcome message to the login card for an anonymous visitor', () => {
     mockAuth('anonymous');
     renderLayoutAt('/login?welcome=true');
-    expect(screen.getByRole('dialog', { name: /welcome/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('dismisses the welcome modal and clears the param', async () => {

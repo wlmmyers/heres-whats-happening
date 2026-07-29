@@ -13,10 +13,10 @@ export default function Layout() {
   const { status } = useAuth();
   const authed = status === 'authenticated';
 
-  // The modals live here rather than on a page so they survive the index
-  // route's redirect and still render when the SPA is anonymous — the
-  // confirm link is often opened on a phone with no session.
+  // The modals live here rather than on a page so they survive any redirects
   const [params, setParams] = useSearchParams();
+  // If unauthed, user will be redirected to /login and the welcome message
+  // will be shown within that modal
   const showWelcome = authed && params.get('welcome') === 'true';
   const showConfirmError = params.get('confirmerror') === 'true';
 
