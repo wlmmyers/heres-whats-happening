@@ -1,11 +1,17 @@
 import { style } from '@vanilla-extract/css';
 import { card } from '../styles/common.css';
 import { color, radius, fontSize, fontWeight, transition, textStroke } from '../styles/theme';
+import { phone } from '../styles/breakpoints.css';
 
 export const controls = style({
   display: 'flex',
   alignItems: 'center',
   gap: '0.5rem',
+  '@media': {
+    [phone]: {
+      display: 'none',
+    },
+  },
 });
 
 export const controlLabel = style({
@@ -54,5 +60,13 @@ export const inlineLink = style({
 });
 
 export const list = style({ marginTop: '1rem' });
+export const listCondensed = style({ display: 'flex', flexWrap: 'wrap' });
 
-export const listItem = style({ marginBottom: '0.75rem' });
+export const listItem = style({
+  marginBottom: '0.75rem',
+  container: 'calendarListItem / inline-size',
+});
+export const listItemCondensed = style({
+  minWidth: 'calc(33% - 1rem)',
+  marginRight: '1rem',
+});

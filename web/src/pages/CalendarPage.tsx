@@ -1,14 +1,15 @@
-import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { getCalendar, type CalendarEvent } from '../api/calendar';
 import { markNotInterested } from '../api/notInterested';
 import EventCard from '../components/EventCard';
 import Spinner from '../components/Spinner';
-import clsx from 'clsx';
 import * as s from './CalendarPage.css';
 import * as c from '../styles/common.css';
 import { getSpotifyStatus, startSpotifyConnect } from '../api/spotify';
 import { useAuth } from '../auth/useAuth';
+import { useState } from 'react';
+import clsx from 'clsx';
+import { useScreenSize } from '../hooks/useScreenSize';
 
 // Local calendar date, not the UTC one. toISOString() would roll `from` forward
 // to tomorrow every evening once local time passes midnight UTC, hiding the rest
@@ -19,19 +20,20 @@ function isoDate(d: Date): string {
   return `${d.getFullYear()}-${month}-${day}`;
 }
 
-const RANGE_OPTIONS = [
-  { months: 1, label: '1 month' },
-  { months: 3, label: '3 months' },
-  { months: 6, label: '6 months' },
-] as const;
+const DISPLAY_OPTIONS = ['Full', 'Condensed'] as const;
 
 export default function CalendarPage() {
   const qc = useQueryClient();
+  const { isPhoneWidth } = useScreenSize();
   const { user } = useAuth();
-  const [months, setMonths] = useState(3);
-
+  const [displayStyle, setDisplayStyle] = useState<(typeof DISPLAY_OPTIONS)[number]>(
+    DISPLAY_OPTIONS[0],
+  );
+  const effectiveDisplayStyle: (typeof DISPLAY_OPTIONS)[number] = isPhoneWidth
+    ? 'Full'
+    : displayStyle;
   const today = new Date();
-  const end = new Date(today.getFullYear(), today.getMonth() + months, today.getDate());
+  const end = new Date(today.getFullYear(), today.getMonth() + 6, today.getDate());
   const from = isoDate(today);
   const to = isoDate(end);
 
@@ -80,22 +82,22 @@ export default function CalendarPage() {
       <div className={c.pageHeader}>
         <h1 className={c.pageTitle}>Your Seattle calendar</h1>
         <div className={s.controls}>
-          <span className={s.controlLabel}>Show events for next:</span>
+          <span className={s.controlLabel}>Display style:</span>
           <div className={s.segment}>
-            {RANGE_OPTIONS.map((opt) => {
-              const active = opt.months === months;
+            {DISPLAY_OPTIONS.map((opt) => {
+              const active = opt === displayStyle;
               return (
                 <button
-                  key={opt.months}
+                  key={opt}
                   type="button"
-                  onClick={() => setMonths(opt.months)}
+                  onClick={() => setDisplayStyle(opt)}
                   aria-pressed={active}
                   className={clsx(
                     s.rangeButton,
                     active ? s.rangeButtonActive : s.rangeButtonInactive,
                   )}
                 >
-                  {opt.label}
+                  {opt}
                 </button>
               );
             })}
@@ -132,9 +134,18 @@ export default function CalendarPage() {
           manually.
         </div>
       ) : (
-        <ul className={s.list}>
+        <ul
+          className={clsx(s.list, {
+            [s.listCondensed]: effectiveDisplayStyle === 'Condensed',
+          })}
+        >
           {events.map((e) => (
-            <li key={e.id} className={s.listItem}>
+            <li
+              key={e.id}
+              className={clsx(s.listItem, {
+                [s.listItemCondensed]: effectiveDisplayStyle === 'Condensed',
+              })}
+            >
               <EventCard event={e} interactive onNotInterested={(id) => notInterested.mutate(id)} />
             </li>
           ))}

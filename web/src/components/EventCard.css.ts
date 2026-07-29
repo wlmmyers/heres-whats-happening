@@ -3,6 +3,27 @@ import { clickableCard } from '../styles/common.css';
 import { color, fontSize, fontWeight, radius, transition } from '../styles/theme';
 import { phone } from '../styles/breakpoints.css';
 
+const cardStylesCondensed = {
+  gridTemplateColumns: '6rem auto auto',
+  gridTemplateRows: 'auto',
+  gridTemplateAreas: `
+    'thumbnail main main'
+    'matchScore matchScore notInterested'
+  `,
+  selectors: {
+    '&:not(:has([data-thumbnail]))': {
+      gridTemplateColumns: '0 auto auto',
+    },
+  },
+};
+
+const scoreStylesCondensed = {
+  textAlign: 'left' as const,
+  alignItems: 'flex-end',
+  justifyContent: 'flex-start',
+  ...fontSize.xs,
+};
+
 export const eventCard = style([
   clickableCard,
   {
@@ -14,7 +35,6 @@ export const eventCard = style([
       'thumbnail main notInterested'
     `,
     padding: '1rem',
-    minHeight: '150px',
     ...transition,
     // Collapse the thumbnail column to 0 when no thumbnail is rendered in the DOM.
     selectors: {
@@ -22,19 +42,16 @@ export const eventCard = style([
         gridTemplateColumns: '0 auto auto',
       },
     },
+    '@container': {
+      ['calendarListItem (width < 500px)']: {
+        ...cardStylesCondensed,
+        minHeight: '220px',
+      },
+    },
     '@media': {
       [phone]: {
-        gridTemplateColumns: '6rem auto auto',
-        gridTemplateRows: 'auto',
-        gridTemplateAreas: `
-          'thumbnail main main'
-          'matchScore matchScore notInterested'
-        `,
-        selectors: {
-          '&:not(:has([data-thumbnail]))': {
-            gridTemplateColumns: '0 auto auto',
-          },
-        },
+        ...cardStylesCondensed,
+        minHeight: 'auto !important',
       },
     },
   },
@@ -58,6 +75,12 @@ export const thumbnail = style({
       height: '5rem',
     },
   },
+  '@container': {
+    ['calendarListItem (width < 500px)']: {
+      width: '5rem',
+      height: '5rem',
+    },
+  },
 });
 
 export const title = style({
@@ -65,6 +88,11 @@ export const title = style({
   color: color.gray900,
   ...fontSize.lg,
   lineHeight: '1.5rem',
+  '@container': {
+    ['calendarListItem (width < 500px)']: {
+      ...fontSize.base,
+    },
+  },
 });
 
 export const score = style({
@@ -77,12 +105,10 @@ export const score = style({
   textAlign: 'right',
   ...fontSize.sm,
   '@media': {
-    [phone]: {
-      textAlign: 'left',
-      alignItems: 'flex-end',
-      justifyContent: 'flex-start',
-      ...fontSize.xs,
-    },
+    [phone]: scoreStylesCondensed,
+  },
+  '@container': {
+    ['calendarListItem (width < 500px)']: scoreStylesCondensed,
   },
 });
 
