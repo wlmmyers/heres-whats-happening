@@ -1167,8 +1167,12 @@ import { useCityCalendar } from '../hooks/useCityCalendar';
     queryKey: ['spotify-status', user?.id],
     queryFn: getSpotifyStatus,
   });
+  // Corrected after final review: this plan originally specified
+  // ['manual-interests', user?.id], which shares no cache entry with the key
+  // InterestsPage reads and invalidates (['interests']) — so the fallback
+  // persisted for the 30s staleTime after a user added their first interest.
   const interestsQ = useQuery({
-    queryKey: ['manual-interests', user?.id],
+    queryKey: ['interests', user?.id],
     queryFn: listManualInterests,
   });
 
@@ -1176,8 +1180,14 @@ import { useCityCalendar } from '../hooks/useCityCalendar';
   // waiting on data would leave the page spinning forever. Optional chaining
   // then keeps a failed gate on the matched calendar rather than the city list.
   const gatePending = spotifyQ.isPending || interestsQ.isPending;
+  // !!user?.city_id added after final review: without it an unknown city
+  // renders "Nothing on the calendar in Seattle right now." instead of
+  // falling back to the matched calendar.
   const showCity =
-    !gatePending && spotifyQ.data?.connected === false && interestsQ.data?.length === 0;
+    !gatePending &&
+    spotifyQ.data?.connected === false &&
+    interestsQ.data?.length === 0 &&
+    !!user?.city_id;
 
   const cityQ = useCityCalendar(user?.city_id, from, to, showCity);
 ```

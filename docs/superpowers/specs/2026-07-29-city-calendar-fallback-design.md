@@ -186,17 +186,24 @@ range toggle does not blank the list.
 
 ### 6. `CalendarPage` orchestration
 
-Add a manual-interests query alongside the existing Spotify-status one:
+Add a manual-interests query alongside the existing Spotify-status one. It uses
+the key `['interests', user?.id]` — the same one `InterestsPage` reads and its
+mutations invalidate. A separate key would share no cache entry with them, so
+adding the first interest would not clear the fallback until the 30s `staleTime`
+expired.
 
 ```ts
 const spotifyQ = useQuery({ queryKey: ['spotify-status', user?.id], queryFn: getSpotifyStatus });
-const interestsQ = useQuery({ queryKey: ['manual-interests', user?.id], queryFn: listManualInterests });
+const interestsQ = useQuery({ queryKey: ['interests', user?.id], queryFn: listManualInterests });
 
 // Pending, not `data === undefined`: a *failed* gate query never gets data, and
 // waiting on data would spin forever. isPending clears on error too.
 const gatePending = spotifyQ.isPending || interestsQ.isPending;
 const showCity =
-  !gatePending && spotifyQ.data?.connected === false && interestsQ.data?.length === 0;
+  !gatePending &&
+  spotifyQ.data?.connected === false &&
+  interestsQ.data?.length === 0 &&
+  !!user?.city_id;
 ```
 
 - `useCityCalendar(user?.city_id, from, to, showCity)`.
@@ -208,6 +215,11 @@ const showCity =
   page renders the matched calendar exactly as today — a failed status check
   degrades to current behavior rather than to a city-wide list, and never to a
   stuck spinner.
+- **Unknown city:** `!!user?.city_id` keeps `showCity` false when the city is
+  unknown, so the page falls back to the matched calendar instead of claiming
+  "Nothing on the calendar in Seattle right now." This is reachable in the
+  deploy window where a new web bundle runs against an API that does not yet
+  return `city_id`.
 - **Rendering when `showCity`:** title "Everything happening in Seattle"; the
   explainer banner above the list; `EventCard`s with **no** `onNotInterested`
   (still `interactive`). The range toggle drives `from`/`to` for both queries
