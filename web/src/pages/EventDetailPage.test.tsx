@@ -87,4 +87,32 @@ describe('EventDetailPage', () => {
     renderAt('/events/missing');
     await waitFor(() => expect(screen.getByText(/event not found/i)).toBeInTheDocument());
   });
+
+  it('shows the match score for a matched event', async () => {
+    (calApi.getEvent as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'e1',
+      title: 'PB Live',
+      starts_at: '2026-06-15T20:00:00Z',
+      venue: { name: 'The Bowl' },
+      score: 0.82,
+      matched_because: { performers: ['Phoebe Bridgers'], genres: ['indie'] },
+    });
+    renderAt('/events/e1');
+    await waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
+    expect(screen.getByText(/82% match/)).toBeInTheDocument();
+  });
+
+  it('hides the match score for an unmatched city event', async () => {
+    (calApi.getEvent as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'c1',
+      title: 'Citywide Show',
+      starts_at: '2026-06-15T20:00:00Z',
+      venue: { name: 'Civic Hall' },
+      score: 0,
+      matched_because: { performers: [], genres: [] },
+    });
+    renderAt('/events/c1');
+    await waitFor(() => expect(screen.getByText('Citywide Show')).toBeInTheDocument());
+    expect(screen.queryByText(/% match/)).not.toBeInTheDocument();
+  });
 });

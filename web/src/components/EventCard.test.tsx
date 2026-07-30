@@ -66,4 +66,14 @@ describe('EventCard', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.getByText('PB Live')).toBeInTheDocument();
   });
+
+  it('shows the match score for a matched event', () => {
+    renderCard();
+    expect(screen.getByText(/82% match/)).toBeInTheDocument();
+  });
+
+  it('hides the match score for an unmatched city event', () => {
+    renderCard(undefined, { score: 0, matched_because: { performers: [], genres: [] } });
+    expect(screen.queryByText(/% match/)).not.toBeInTheDocument();
+  });
 });

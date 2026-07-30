@@ -38,7 +38,9 @@ export default function EventCard({
           <div className={s.matched}>Matched because: {matchedBits.join(', ')}</div>
         )}
       </div>
-      <span className={s.score}>{Math.round(event.score * 100)}% match</span>
+      {/* City-wide events carry no match, and "0% match" reads as a bad
+              match rather than as no match at all. */}
+      {event.score > 0 && <span className={s.score}>{Math.round(event.score * 100)}% match</span>}
       {onNotInterested && (
         <div className={s.notInterested}>
           <button

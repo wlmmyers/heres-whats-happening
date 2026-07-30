@@ -43,7 +43,9 @@ export default function EventDetailPage() {
                   {data.venue.name}
                   {data.venue.address && <> · {data.venue.address}</>}
                 </div>
-                <div className={s.score}>{Math.round(data.score * 100)}% match</div>
+                {data.score > 0 && (
+                  <div className={s.score}>{Math.round(data.score * 100)}% match</div>
+                )}
               </div>
             </>
           )}
