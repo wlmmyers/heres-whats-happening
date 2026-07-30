@@ -70,3 +70,13 @@ export const listItemCondensed = style({
   minWidth: 'calc(33% - 1rem)',
   marginRight: '1rem',
 });
+
+export const banner = style([
+  card,
+  {
+    padding: '1rem',
+    marginTop: '1rem',
+    color: color.gray600,
+    ...fontSize.sm,
+  },
+]);

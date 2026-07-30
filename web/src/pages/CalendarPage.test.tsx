@@ -6,6 +6,7 @@ import CalendarPage from './CalendarPage';
 
 vi.mock('../api/calendar', () => ({
   getCalendar: vi.fn(),
+  getCityCalendar: vi.fn(),
   getEvent: vi.fn(),
 }));
 
@@ -16,9 +17,20 @@ vi.mock('../api/notInterested', () => ({
 
 vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
 
+vi.mock('../api/spotify', () => ({
+  getSpotifyStatus: vi.fn(),
+  startSpotifyConnect: vi.fn(),
+}));
+
+vi.mock('../api/manualInterests', () => ({
+  listManualInterests: vi.fn(),
+}));
+
 import * as calApi from '../api/calendar';
 import * as niApi from '../api/notInterested';
 import { useAuth } from '../auth/useAuth';
+import { getSpotifyStatus } from '../api/spotify';
+import { listManualInterests } from '../api/manualInterests';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -36,9 +48,19 @@ function renderPage() {
 beforeEach(() => {
   vi.resetAllMocks();
   localStorage.clear();
+  vi.mocked(getSpotifyStatus).mockResolvedValue({ connected: true });
+  vi.mocked(listManualInterests).mockResolvedValue([
+    {
+      id: 'i1',
+      value: 'indie',
+      normalized_value: 'indie',
+      weight: 1,
+      created_at: '2026-01-01T00:00:00Z',
+    },
+  ]);
   vi.mocked(useAuth).mockReturnValue({
     status: 'authenticated',
-    user: null,
+    user: { id: 'u1', email: 'u@example.com', city_id: 'city-1', confirmed: true },
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),
@@ -138,5 +160,95 @@ describe('CalendarPage', () => {
 
     await waitFor(() => expect(niApi.markNotInterested).toHaveBeenCalledWith('e1'));
     await waitFor(() => expect(screen.queryByText('PB Live')).not.toBeInTheDocument());
+  });
+});
+
+describe('CalendarPage city fallback', () => {
+  const cityEvent = {
+    id: 'c1',
+    title: 'Citywide Show',
+    starts_at: '2026-06-15T20:00:00Z',
+    venue: { name: 'Civic Hall' },
+    score: 0,
+    matched_because: { performers: [], genres: [] },
+  };
+
+  function noInterests() {
+    vi.mocked(getSpotifyStatus).mockResolvedValue({ connected: false });
+    vi.mocked(listManualInterests).mockResolvedValue([]);
+  }
+
+  it('shows every city event when Spotify is disconnected and there are no interests', async () => {
+    noInterests();
+    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+    vi.mocked(calApi.getCityCalendar).mockResolvedValue([cityEvent]);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Citywide Show')).toBeInTheDocument());
+    expect(calApi.getCityCalendar).toHaveBeenCalledWith(
+      'city-1',
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(screen.getByText('Everything happening in Seattle')).toBeInTheDocument();
+    expect(screen.getByText(/Showing everything in Seattle/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Not interested' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/% match/)).not.toBeInTheDocument();
+  });
+
+  it('shows the matched calendar when Spotify is connected', async () => {
+    vi.mocked(getSpotifyStatus).mockResolvedValue({ connected: true });
+    vi.mocked(listManualInterests).mockResolvedValue([]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/no upcoming matches yet/i)).toBeInTheDocument());
+    expect(calApi.getCityCalendar).not.toHaveBeenCalled();
+  });
+
+  it('shows the matched calendar when the user has manual interests', async () => {
+    vi.mocked(getSpotifyStatus).mockResolvedValue({ connected: false });
+    vi.mocked(listManualInterests).mockResolvedValue([
+      {
+        id: 'i1',
+        value: 'indie',
+        normalized_value: 'indie',
+        weight: 1,
+        created_at: '2026-01-01T00:00:00Z',
+      },
+    ]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/no upcoming matches yet/i)).toBeInTheDocument());
+    expect(calApi.getCityCalendar).not.toHaveBeenCalled();
+  });
+
+  // A failed gate query must degrade to today's behavior, not to a stuck
+  // spinner and not to a city-wide list.
+  it('shows the matched calendar when the status query fails', async () => {
+    vi.mocked(getSpotifyStatus).mockRejectedValue(new Error('boom'));
+    vi.mocked(listManualInterests).mockResolvedValue([]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/no upcoming matches yet/i)).toBeInTheDocument());
+    expect(calApi.getCityCalendar).not.toHaveBeenCalled();
+  });
+
+  it('tells the user when the city has no events at all', async () => {
+    noInterests();
+    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+    vi.mocked(calApi.getCityCalendar).mockResolvedValue([]);
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText(/nothing on the calendar in seattle/i)).toBeInTheDocument(),
+    );
   });
 });
