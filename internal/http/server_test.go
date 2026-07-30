@@ -408,13 +408,14 @@ func confirmLinkFrom(t *testing.T, text string) string {
 	return ""
 }
 
-// guardedRoutes are authenticated routes behind the confirmation gate. Both
+// guardedRoutes are authenticated routes behind the confirmation gate. All
 // return 200 for a confirmed user, so the only thing separating 403 from 200 is
-// the gate — the calendar carries its date range because the handler 400s
+// the gate — the calendars carry their date range because the handlers 400
 // without one, which would mask the contrast these tests exist to show.
 var guardedRoutes = []string{
 	"/me/manual-interests",
 	"/me/calendar?from=2026-01-01&to=2026-01-31",
+	"/calendar/00000000-0000-0000-0000-000000000000?from=2026-01-01&to=2026-01-31",
 }
 
 func TestServer_UnconfirmedIsGatedOffGuardedRoutes(t *testing.T) {
