@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css';
-import { sectionTitle } from '../styles/common.css';
-import { color, radius, shadow, fontSize } from '../styles/theme';
+import { cardNoShadow, sectionTitle } from '../styles/common.css';
+import { color, fontSize } from '../styles/theme';
 
 export const backdrop = style({
   position: 'fixed',
@@ -12,14 +12,14 @@ export const backdrop = style({
   backgroundColor: color.blackA40,
 });
 
-export const dialog = style({
-  width: '400px',
-  maxWidth: '90%',
-  borderRadius: radius.sm,
-  backgroundColor: color.white,
-  padding: '1.5rem',
-  boxShadow: shadow.lg,
-});
+export const dialog = style([
+  cardNoShadow,
+  {
+    width: '400px',
+    maxWidth: '90%',
+    padding: '1.5rem',
+  },
+]);
 
 export const title = style([sectionTitle, { marginBottom: '0.5rem' }]);
 

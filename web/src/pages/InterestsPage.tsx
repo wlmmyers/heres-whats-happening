@@ -1,17 +1,13 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import TagInput from '../components/TagInput';
 import TagList from '../components/TagList';
-import {
-  createManualInterest,
-  deleteManualInterest,
-  listManualInterests,
-  type Interest,
-} from '../api/manualInterests';
-import { listSpotifyInterests, type SpotifyInterestGroup } from '../api/spotifyInterests';
-import { getSpotifyStatus, startSpotifyConnect } from '../api/spotify';
-import { useAuth } from '../auth/useAuth';
+import { useManualInterests } from '../hooks/useManualInterests';
+import { useSpotifyStatus } from '../hooks/useSpotifyStatus';
+import { useSpotifyInterests } from '../hooks/useSpotifyInterests';
+import { useConnectSpotify } from '../hooks/useConnectSpotify';
+import { useCreateManualInterest } from '../hooks/useCreateManualInterest';
+import { useDeleteManualInterest } from '../hooks/useDeleteManualInterest';
 import * as s from './InterestsPage.css';
 import * as c from '../styles/common.css';
 
@@ -19,48 +15,20 @@ const COLLAPSE_AT = 20;
 
 export default function InterestsPage() {
   const navigate = useNavigate();
-  const qc = useQueryClient();
-  const { user } = useAuth();
   const [spotifyInterestsExpanded, setSpotifyInterestsExpanded] = useState(false);
   const [spotifyGenresExpanded, setSpotifyGenresExpanded] = useState(false);
 
-  const { data: interests = [] } = useQuery<Interest[]>({
-    queryKey: ['interests', user?.id],
-    queryFn: listManualInterests,
-  });
+  const { data: interests = [] } = useManualInterests();
 
-  const { data: spotifyStatus } = useQuery({
-    queryKey: ['spotify-status', user?.id],
-    queryFn: getSpotifyStatus,
-  });
-  const connectSpotifyMut = useMutation({
-    mutationFn: startSpotifyConnect,
-    onSuccess: (authorizeURL) => {
-      window.location.assign(authorizeURL);
-    },
-  });
+  const { data: spotifyStatus } = useSpotifyStatus();
+  const connectSpotifyMut = useConnectSpotify();
 
   // Loaded independently of status: if groups arrive first we render them
   // immediately rather than blocking on the status request.
-  const { data: spotifyGroups = [], isPending: spotifyGroupsPending } = useQuery<
-    SpotifyInterestGroup[]
-  >({
-    queryKey: ['spotifyInterests', user?.id],
-    queryFn: listSpotifyInterests,
-  });
+  const { data: spotifyGroups = [], isPending: spotifyGroupsPending } = useSpotifyInterests();
 
-  const addMut = useMutation({
-    mutationFn: (value: string) => createManualInterest(value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['interests'] }),
-  });
-  const removeMut = useMutation({
-    mutationFn: (value: string) => {
-      const target = interests.find((i) => i.value === value);
-      if (!target) return Promise.resolve();
-      return deleteManualInterest(target.id);
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['interests'] }),
-  });
+  const addMut = useCreateManualInterest();
+  const removeMut = useDeleteManualInterest();
 
   const values = interests.map((i) => i.value);
 

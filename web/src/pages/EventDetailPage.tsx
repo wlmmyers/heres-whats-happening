@@ -1,19 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { getEvent, type CalendarEvent } from '../api/calendar';
 import Spinner from '../components/Spinner';
-import { useAuth } from '../auth/useAuth';
+import { useEvent } from '../hooks/useEvent';
 import * as s from './EventDetailPage.css';
 import * as c from '../styles/common.css';
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
-  const { data, isLoading, isError } = useQuery<CalendarEvent>({
-    queryKey: ['event', user?.id, id],
-    queryFn: () => getEvent(id!),
-    enabled: !!id,
-  });
+  const { data, isLoading, isError } = useEvent(id);
 
   if (isLoading) return <Spinner />;
   if (isError) return <div className={s.notFound}>Event not found.</div>;

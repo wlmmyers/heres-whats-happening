@@ -1,80 +1,41 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { startSpotifyConnect, disconnectSpotify, getSpotifyStatus } from '../api/spotify';
-import { createIcalToken, revokeIcalToken } from '../api/ical';
-import { getMe } from '../api/auth';
-import { updateMatchThreshold, MIN_THRESHOLD, MAX_THRESHOLD } from '../api/match';
-import { resetNotInterested } from '../api/notInterested';
+import { MIN_THRESHOLD, MAX_THRESHOLD } from '../api/match';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { useAuth } from '../auth/useAuth';
+import { useSpotifyStatus } from '../hooks/useSpotifyStatus';
+import { useMe } from '../hooks/useMe';
+import { useConnectSpotify } from '../hooks/useConnectSpotify';
+import { useDisconnectSpotify } from '../hooks/useDisconnectSpotify';
+import { useUpdateMatchThreshold } from '../hooks/useUpdateMatchThreshold';
+import { useCreateIcalToken } from '../hooks/useCreateIcalToken';
+import { useRevokeIcalToken } from '../hooks/useRevokeIcalToken';
+import { useResetNotInterested } from '../hooks/useResetNotInterested';
 import * as s from './SettingsPage.css';
 import * as c from '../styles/common.css';
 
 export default function SettingsPage() {
-  const qc = useQueryClient();
-  const { user } = useAuth();
-  const { data: spotifyStatus, isLoading: spotifyStatusLoading } = useQuery({
-    queryKey: ['spotify-status', user?.id],
-    queryFn: getSpotifyStatus,
-  });
-  const connectSpotifyMut = useMutation({
-    mutationFn: startSpotifyConnect,
-    onSuccess: (authorizeURL) => {
-      window.location.assign(authorizeURL);
-    },
-  });
-  const disconnectSpotifyMut = useMutation({
-    mutationFn: disconnectSpotify,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['spotify-status'] });
-      qc.invalidateQueries({ queryKey: ['spotifyInterests'] });
-    },
-  });
+  const { data: spotifyStatus, isLoading: spotifyStatusLoading } = useSpotifyStatus();
+  const connectSpotifyMut = useConnectSpotify();
+  const disconnectSpotifyMut = useDisconnectSpotify();
 
-  const { data: me } = useQuery({ queryKey: ['me', user?.id], queryFn: getMe });
+  const { data: me } = useMe();
   const loadedPercent = Math.round((me?.score_threshold ?? 0.3) * 100);
   const [percent, setPercent] = useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const effectivePercent = percent ?? loadedPercent;
 
-  const saveThreshold = useMutation({
-    mutationFn: (threshold: number) => updateMatchThreshold(threshold),
-    onSuccess: () => {
-      setConfirmOpen(false);
-      setPercent(null);
-      setSaveError(false);
-      qc.invalidateQueries({ queryKey: ['me'] });
-      qc.invalidateQueries({ queryKey: ['calendar'] });
-    },
-    onError: () => {
-      setConfirmOpen(false);
-      setSaveError(true);
-    },
-  });
+  const saveThreshold = useUpdateMatchThreshold();
 
   const minPercent = Math.round(MIN_THRESHOLD * 100);
   const maxPercent = Math.round(MAX_THRESHOLD * 100);
   const dirty = percent !== null && percent !== loadedPercent;
 
   const [icalURL, setIcalURL] = useState<string | null>(null);
-  const generateIcal = useMutation({
-    mutationFn: createIcalToken,
-    onSuccess: (data) => setIcalURL(data.url),
-  });
-  const revokeIcal = useMutation({
-    mutationFn: revokeIcalToken,
-    onSuccess: () => setIcalURL(null),
-  });
+  const generateIcal = useCreateIcalToken();
+  const revokeIcal = useRevokeIcalToken();
 
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-  const resetNotInterestedMut = useMutation({
-    mutationFn: resetNotInterested,
-    onSuccess: () => {
-      setResetConfirmOpen(false);
-      qc.invalidateQueries({ queryKey: ['calendar'] });
-    },
-  });
+  const resetNotInterestedMut = useResetNotInterested();
 
   return (
     <div>
@@ -161,10 +122,20 @@ export default function SettingsPage() {
             subscribe to your matched events.
           </p>
           <div className={s.buttonRow}>
-            <button type="button" onClick={() => generateIcal.mutate()} className={c.buttonPrimary}>
+            <button
+              type="button"
+              onClick={() =>
+                generateIcal.mutate(undefined, { onSuccess: (data) => setIcalURL(data.url) })
+              }
+              className={c.buttonPrimary}
+            >
               Generate calendar URL
             </button>
-            <button type="button" onClick={() => revokeIcal.mutate()} className={c.buttonSecondary}>
+            <button
+              type="button"
+              onClick={() => revokeIcal.mutate(undefined, { onSuccess: () => setIcalURL(null) })}
+              className={c.buttonSecondary}
+            >
               Revoke
             </button>
           </div>
@@ -192,14 +163,28 @@ export default function SettingsPage() {
           open={confirmOpen}
           title="Update match threshold?"
           message="Updating your match threshold will recalculate all of your recommended events. Continue?"
-          onConfirm={() => saveThreshold.mutate(effectivePercent / 100)}
+          onConfirm={() =>
+            saveThreshold.mutate(effectivePercent / 100, {
+              onSuccess: () => {
+                setConfirmOpen(false);
+                setPercent(null);
+                setSaveError(false);
+              },
+              onError: () => {
+                setConfirmOpen(false);
+                setSaveError(true);
+              },
+            })
+          }
           onCancel={() => setConfirmOpen(false)}
         />
         <ConfirmDialog
           open={resetConfirmOpen}
           title="Reset not-interested list?"
           message="This clears every event you've marked 'not interested'. They may reappear in your calendar. Continue?"
-          onConfirm={() => resetNotInterestedMut.mutate()}
+          onConfirm={() =>
+            resetNotInterestedMut.mutate(undefined, { onSuccess: () => setResetConfirmOpen(false) })
+          }
           onCancel={() => setResetConfirmOpen(false)}
         />
       </div>

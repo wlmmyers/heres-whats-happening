@@ -35,6 +35,7 @@ function renderPage() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  localStorage.clear();
   vi.mocked(useAuth).mockReturnValue({
     status: 'authenticated',
     user: null,
@@ -62,6 +63,34 @@ describe('CalendarPage', () => {
     expect(screen.getByText(/82% match/)).toBeInTheDocument();
     expect(screen.getByText(/The Bowl/)).toBeInTheDocument();
     expect(screen.getByText(/Phoebe Bridgers, indie/)).toBeInTheDocument();
+  });
+
+  it('persists the selected display style across remounts via localStorage', async () => {
+    (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const first = renderPage();
+    // Defaults to Full when nothing has been persisted yet.
+    expect(screen.getByRole('button', { name: 'Full' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Condensed' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Condensed' }));
+    expect(screen.getByRole('button', { name: 'Condensed' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    first.unmount();
+
+    // A fresh mount should remember the choice from localStorage.
+    renderPage();
+    expect(screen.getByRole('button', { name: 'Condensed' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Full' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('shows empty state when there are no matches', async () => {

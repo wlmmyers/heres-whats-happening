@@ -1,15 +1,14 @@
-import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { getCalendar, type CalendarEvent } from '../api/calendar';
-import { markNotInterested } from '../api/notInterested';
 import EventCard from '../components/EventCard';
 import Spinner from '../components/Spinner';
 import * as s from './CalendarPage.css';
 import * as c from '../styles/common.css';
-import { getSpotifyStatus, startSpotifyConnect } from '../api/spotify';
-import { useAuth } from '../auth/useAuth';
-import { useState } from 'react';
+import { useLocalStorageState } from '../hooks/useLocalStorageState';
 import clsx from 'clsx';
 import { useScreenSize } from '../hooks/useScreenSize';
+import { useSpotifyStatus } from '../hooks/useSpotifyStatus';
+import { useCalendar } from '../hooks/useCalendar';
+import { useConnectSpotify } from '../hooks/useConnectSpotify';
+import { useMarkNotInterested } from '../hooks/useMarkNotInterested';
 
 // Local calendar date, not the UTC one. toISOString() would roll `from` forward
 // to tomorrow every evening once local time passes midnight UTC, hiding the rest
@@ -21,61 +20,28 @@ function isoDate(d: Date): string {
 }
 
 const DISPLAY_OPTIONS = ['Full', 'Condensed'] as const;
+type DisplayStyle = (typeof DISPLAY_OPTIONS)[number];
 
 export default function CalendarPage() {
-  const qc = useQueryClient();
   const { isPhoneWidth } = useScreenSize();
-  const { user } = useAuth();
-  const [displayStyle, setDisplayStyle] = useState<(typeof DISPLAY_OPTIONS)[number]>(
-    DISPLAY_OPTIONS[0],
-  );
-  const effectiveDisplayStyle: (typeof DISPLAY_OPTIONS)[number] = isPhoneWidth
-    ? 'Full'
-    : displayStyle;
+  const { state: persistedDisplayStyle, actions: displayStyleActions } =
+    useLocalStorageState<DisplayStyle>('calendar.displayStyle');
+  const displayStyle = persistedDisplayStyle ?? DISPLAY_OPTIONS[0];
+  const effectiveDisplayStyle: DisplayStyle = isPhoneWidth ? 'Full' : displayStyle;
   const today = new Date();
   const end = new Date(today.getFullYear(), today.getMonth() + 6, today.getDate());
   const from = isoDate(today);
   const to = isoDate(end);
 
-  const calendarKey = ['calendar', user?.id, from, to] as const;
+  const { data: spotifyStatus } = useSpotifyStatus();
 
-  const { data: spotifyStatus } = useQuery({
-    queryKey: ['spotify-status', user?.id],
-    queryFn: getSpotifyStatus,
-  });
+  const connectSpotifyMut = useConnectSpotify();
 
-  const connectSpotifyMut = useMutation({
-    mutationFn: startSpotifyConnect,
-    onSuccess: (authorizeURL) => {
-      window.location.assign(authorizeURL);
-    },
-  });
-
-  const { data, isLoading, isError } = useQuery<CalendarEvent[]>({
-    queryKey: calendarKey,
-    queryFn: () => getCalendar(from, to),
-    placeholderData: keepPreviousData,
-  });
+  const { data, isLoading, isError } = useCalendar(from, to);
 
   const events = data ?? [];
 
-  const notInterested = useMutation({
-    mutationFn: (id: string) => markNotInterested(id),
-    onMutate: async (id: string) => {
-      await qc.cancelQueries({ queryKey: calendarKey });
-      const prev = qc.getQueryData<CalendarEvent[]>(calendarKey);
-      qc.setQueryData<CalendarEvent[]>(calendarKey, (old) =>
-        (old ?? []).filter((e) => e.id !== id),
-      );
-      return { prev };
-    },
-    onError: (_err, _id, ctx) => {
-      if (ctx?.prev) qc.setQueryData(calendarKey, ctx.prev);
-    },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['calendar'] });
-    },
-  });
+  const notInterested = useMarkNotInterested(from, to);
 
   return (
     <div>
@@ -90,7 +56,7 @@ export default function CalendarPage() {
                 <button
                   key={opt}
                   type="button"
-                  onClick={() => setDisplayStyle(opt)}
+                  onClick={() => displayStyleActions.setValue(opt)}
                   aria-pressed={active}
                   className={clsx(
                     s.rangeButton,
