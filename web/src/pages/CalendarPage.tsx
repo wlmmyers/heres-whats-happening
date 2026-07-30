@@ -46,7 +46,10 @@ export default function CalendarPage() {
   // then keeps a failed gate on the matched calendar rather than the city list.
   const gatePending = spotifyQ.isPending || interestsQ.isPending;
   const showCity =
-    !gatePending && spotifyQ.data?.connected === false && interestsQ.data?.length === 0;
+    !gatePending &&
+    spotifyQ.data?.connected === false &&
+    interestsQ.data?.length === 0 &&
+    !!user?.city_id;
 
   const cityQ = useCityCalendar(user?.city_id, from, to, showCity);
 

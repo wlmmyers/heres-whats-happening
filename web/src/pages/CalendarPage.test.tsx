@@ -32,8 +32,9 @@ import { useAuth } from '../auth/useAuth';
 import { getSpotifyStatus } from '../api/spotify';
 import { listManualInterests } from '../api/manualInterests';
 
-function renderPage() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderPage(
+  qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={['/calendar/seattle']}>
@@ -250,5 +251,56 @@ describe('CalendarPage city fallback', () => {
     await waitFor(() =>
       expect(screen.getByText(/nothing on the calendar in seattle/i)).toBeInTheDocument(),
     );
+  });
+
+  it('shows the matched calendar when the interests query fails', async () => {
+    vi.mocked(getSpotifyStatus).mockResolvedValue({ connected: false });
+    vi.mocked(listManualInterests).mockRejectedValue(new Error('boom'));
+    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/no upcoming matches yet/i)).toBeInTheDocument());
+    expect(calApi.getCityCalendar).not.toHaveBeenCalled();
+  });
+
+  it('shows an error box when the city calendar fails to load', async () => {
+    noInterests();
+    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+    vi.mocked(calApi.getCityCalendar).mockRejectedValue(new Error('boom'));
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText(/couldn't load your calendar/i)).toBeInTheDocument(),
+    );
+  });
+
+  it('leaves fallback mode once an added interest invalidates the interests query', async () => {
+    noInterests();
+    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+    vi.mocked(calApi.getCityCalendar).mockResolvedValue([cityEvent]);
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderPage(qc);
+
+    await waitFor(() =>
+      expect(screen.getByText('Everything happening in Seattle')).toBeInTheDocument(),
+    );
+
+    vi.mocked(listManualInterests).mockResolvedValue([
+      {
+        id: 'i1',
+        value: 'indie',
+        normalized_value: 'indie',
+        weight: 1,
+        created_at: '2026-01-01T00:00:00Z',
+      },
+    ]);
+    // The same invalidation InterestsPage's add/remove mutations perform
+    // (InterestsPage.tsx:54, :62) on success.
+    qc.invalidateQueries({ queryKey: ['manual-interests'] });
+
+    await waitFor(() => expect(screen.getByText('Your Seattle calendar')).toBeInTheDocument());
   });
 });

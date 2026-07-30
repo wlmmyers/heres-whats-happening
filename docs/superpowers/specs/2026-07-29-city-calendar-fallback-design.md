@@ -240,7 +240,7 @@ from "no match" without a new field on the response. Nothing else changes;
 3. The city list renders under the "Everything happening in Seattle" title with
    the explainer banner; cards show no `% match` chip and no "Not interested".
 4. The user connects Spotify or adds an interest. That invalidates
-   `['spotify-status']` / `['manual-interests']`, `showCity` flips false, the
+   `['spotify-status']` / `['interests']`, `showCity` flips false, the
    city query goes idle, and the matched calendar renders — no reload needed.
 
 ## Testing (TDD)

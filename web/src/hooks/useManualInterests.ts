@@ -5,7 +5,7 @@ import { useAuth } from '../auth/useAuth';
 export function useManualInterests() {
   const { user } = useAuth();
   return useQuery<Interest[]>({
-    queryKey: ['interests', user?.id],
+    queryKey: ['manual-interests', user?.id],
     queryFn: listManualInterests,
   });
 }
