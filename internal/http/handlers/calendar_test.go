@@ -512,10 +512,8 @@ func TestGetCityCalendar_ReturnsUnmatchedEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
-	from := time.Now().Add(-24 * time.Hour).UTC().Format("2006-01-02")
-	to := time.Now().Add(30 * 24 * time.Hour).UTC().Format("2006-01-02")
 
-	url := "/calendar/" + uuidFromPgCal(city.ID).String() + "?from=" + from + "&to=" + to
+	url := "/calendar/" + uuidFromPgCal(city.ID).String()
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("Authorization", "Bearer "+accessTok)
 	rec := httptest.NewRecorder()
@@ -562,10 +560,8 @@ func TestGetCityCalendar_IncludesNotInterestedEvents(t *testing.T) {
 	}))
 
 	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
-	from := time.Now().Add(-24 * time.Hour).UTC().Format("2006-01-02")
-	to := time.Now().Add(30 * 24 * time.Hour).UTC().Format("2006-01-02")
 
-	url := "/calendar/" + uuidFromPgCal(city.ID).String() + "?from=" + from + "&to=" + to
+	url := "/calendar/" + uuidFromPgCal(city.ID).String()
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("Authorization", "Bearer "+accessTok)
 	rec := httptest.NewRecorder()
@@ -590,7 +586,7 @@ func TestGetCityCalendar_UnknownCityReturnsEmptyList(t *testing.T) {
 	userID, _ := seedCalendarFixture(t, q, ctx)
 
 	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
-	url := "/calendar/" + uuid.New().String() + "?from=2026-01-01&to=2026-12-31"
+	url := "/calendar/" + uuid.New().String()
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("Authorization", "Bearer "+accessTok)
 	rec := httptest.NewRecorder()
@@ -616,7 +612,122 @@ func TestGetCityCalendar_BadCityID_Returns400(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "bad_city_id")
 }
 
-func TestGetCityCalendar_MissingDates_Returns400(t *testing.T) {
+func getCityCalendarPage(t *testing.T, q *store.Queries, signer *auth.JWTSigner, userID, cityID pgtype.UUID, cursor string) pagedCalendarResponse {
+	t.Helper()
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	url := "/calendar/" + uuidFromPgCal(cityID).String()
+	if cursor != "" {
+		url += "?cursor=" + cursor
+	}
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var resp pagedCalendarResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	return resp
+}
+
+func TestGetCityCalendar_FirstPageCapsAt20AndReturnsCursor(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+	seedManyMatchedEvents(t, q, ctx, userID, 25)
+
+	resp := getCityCalendarPage(t, q, signer, userID, city.ID, "")
+
+	require.Len(t, resp.Events, 20)
+	require.NotEmpty(t, resp.NextCursor)
+}
+
+func TestGetCityCalendar_CursorWalksEveryEventExactlyOnce(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+	seedManyMatchedEvents(t, q, ctx, userID, 25)
+
+	seenIDs := map[string]bool{}
+	total := 0
+	cursor := ""
+	for pages := 0; ; pages++ {
+		require.Less(t, pages, 10, "pagination did not terminate")
+		resp := getCityCalendarPage(t, q, signer, userID, city.ID, cursor)
+		require.LessOrEqual(t, len(resp.Events), 20)
+		for _, e := range resp.Events {
+			require.False(t, seenIDs[e.ID], "event %s returned twice", e.ID)
+			seenIDs[e.ID] = true
+			total++
+		}
+		if resp.NextCursor == "" {
+			break
+		}
+		cursor = resp.NextCursor
+	}
+
+	require.Equal(t, 26, total)
+}
+
+// The composite-cursor test at the HTTP layer: events sharing a start instant
+// straddle the page boundary and must not be dropped or repeated.
+func TestGetCityCalendar_TiedStartsAtStraddlingPageBoundary(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Tie Hall", NormalizedName: "tie hall",
+	})
+	require.NoError(t, err)
+
+	// 25 events all at the same instant, so the page boundary at 20 falls in
+	// the middle of the tie group.
+	tied := time.Now().Add(24 * time.Hour)
+	for i := 0; i < 25; i++ {
+		_, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+			SourceID:      src.ID,
+			SourceEventID: fmt.Sprintf("tie-%03d", i),
+			Title:         fmt.Sprintf("Tied %02d", i),
+			Description:   "seeded",
+			StartsAt:      pgtype.Timestamptz{Time: tied, Valid: true},
+			VenueID:       venueID,
+		})
+		require.NoError(t, err)
+	}
+
+	seenIDs := map[string]bool{}
+	total := 0
+	cursor := ""
+	for pages := 0; ; pages++ {
+		require.Less(t, pages, 10, "pagination did not terminate")
+		resp := getCityCalendarPage(t, q, signer, userID, city.ID, cursor)
+		for _, e := range resp.Events {
+			require.False(t, seenIDs[e.ID], "event %s returned twice across a tie", e.ID)
+			seenIDs[e.ID] = true
+			total++
+		}
+		if resp.NextCursor == "" {
+			break
+		}
+		cursor = resp.NextCursor
+	}
+
+	// 25 tied + the fixture's 1.
+	require.Equal(t, 26, total)
+}
+
+func TestGetCityCalendar_BadCursor_Returns400(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
@@ -625,13 +736,35 @@ func TestGetCityCalendar_MissingDates_Returns400(t *testing.T) {
 	city, _ := q.GetDefaultCity(ctx)
 
 	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
-	url := "/calendar/" + uuidFromPgCal(city.ID).String()
+	url := "/calendar/" + uuidFromPgCal(city.ID).String() + "?cursor=!!!not-a-cursor!!!"
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("Authorization", "Bearer "+accessTok)
 	rec := httptest.NewRecorder()
 	cityRouter(q, signer).ServeHTTP(rec, req)
+
 	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Contains(t, rec.Body.String(), "missing_range")
+	require.Contains(t, rec.Body.String(), "bad_cursor")
+}
+
+func TestGetCityCalendar_StaleFromToParamsAreIgnored(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	url := "/calendar/" + uuidFromPgCal(city.ID).String() + "?from=2026-01-01&to=2026-01-02"
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp pagedCalendarResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.Len(t, resp.Events, 1)
 }
 
 func TestGetCityCalendar_NoToken_Returns401(t *testing.T) {

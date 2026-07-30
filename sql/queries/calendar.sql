@@ -47,30 +47,6 @@ LEFT JOIN user_event_match m ON m.event_id = e.id AND m.user_id = $2
 WHERE e.id = $1
   AND e.archived_at IS NULL;
 
--- name: GetCityCalendarInRange :many
--- Every showable event in the city, with no match filtering — this is what the
--- calendar falls back to for a user who has no interests to match against.
-SELECT
-    e.id              AS event_id,
-    e.title,
-    e.description,
-    e.starts_at,
-    e.ends_at,
-    e.image_url,
-    e.url,
-    v.name            AS venue_name,
-    v.address         AS venue_address
-FROM events e
-JOIN venues v ON v.id = e.venue_id
-WHERE v.city_id = $1
-  AND e.archived_at IS NULL
-  AND e.starts_at >= $2
-  AND e.starts_at <  $3
-  -- Same showable rule as GetUserCalendarInRange: a date-only event runs until
-  -- its local day is out, a timed one until it ends.
-  AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
-ORDER BY e.starts_at ASC;
-
 -- name: GetUserCalendarPage :many
 -- One page of the user's matched events. Ordered by (starts_at, id) so the
 -- keyset cursor is stable when several events start at the same instant —
@@ -111,8 +87,8 @@ ORDER BY e.starts_at ASC, e.id ASC
 LIMIT sqlc.arg(page_limit);
 
 -- name: GetCityCalendarPage :many
--- One page of every showable event in the city, with no match filtering and --
--- deliberately -- no not-interested filtering: this endpoint returns an
+-- One page of every showable event in the city, with no match filtering and
+-- (deliberately) no not-interested filtering: this endpoint returns an
 -- identical response for every caller. Same ordering and cursor rules as
 -- GetUserCalendarPage.
 SELECT

@@ -47,28 +47,6 @@ type calendarResponse struct {
 // Fixed server-side: there is no client-supplied limit.
 const calendarPageSize = 20
 
-// parseDateRange reads the from/to query params (YYYY-MM-DD). On bad input it
-// writes the error response and returns ok=false.
-func parseDateRange(w http.ResponseWriter, r *http.Request) (from, to time.Time, ok bool) {
-	fromStr := r.URL.Query().Get("from")
-	toStr := r.URL.Query().Get("to")
-	if fromStr == "" || toStr == "" {
-		httperr.Write(w, http.StatusBadRequest, "missing_range", "from and to query params are required (YYYY-MM-DD)")
-		return time.Time{}, time.Time{}, false
-	}
-	from, err := time.Parse("2006-01-02", fromStr)
-	if err != nil {
-		httperr.Write(w, http.StatusBadRequest, "bad_from", "from must be YYYY-MM-DD")
-		return time.Time{}, time.Time{}, false
-	}
-	to, err = time.Parse("2006-01-02", toStr)
-	if err != nil {
-		httperr.Write(w, http.StatusBadRequest, "bad_to", "to must be YYYY-MM-DD")
-		return time.Time{}, time.Time{}, false
-	}
-	return from, to, true
-}
-
 // parseCursor reads the optional cursor query param into keyset params. Absent
 // cursor yields two invalid pgtypes, which pgx sends as NULL — the query reads
 // that as "first page". On bad input it writes the error response and returns
@@ -148,12 +126,12 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 	}
 }
 
-// GetCityCalendar returns every showable event in the given city whose
-// starts_at falls in [from, to) — no match filtering, so events the caller has
-// no user_event_match row for are included. This is what the calendar page
-// falls back to when the user has no interests to match against, so the
-// response is deliberately identical for every caller: no not-interested
-// filtering, and score/matched_because are always the empty values.
+// GetCityCalendar returns one page of every showable event in the given city —
+// no match filtering, so events the caller has no user_event_match row for are
+// included. This is what the calendar page falls back to when the user has no
+// interests to match against, so the response is deliberately identical for
+// every caller: no not-interested filtering, and score/matched_because are
+// always the empty values. Paginated exactly like GetMyCalendar.
 func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cityUUID, err := uuid.Parse(chi.URLParam(r, "cityId"))
@@ -161,7 +139,7 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 			httperr.Write(w, http.StatusBadRequest, "bad_city_id", "cityId is not a valid uuid")
 			return
 		}
-		from, to, ok := parseDateRange(w, r)
+		cursorStartsAt, cursorEventID, ok := parseCursor(w, r)
 		if !ok {
 			return
 		}
@@ -169,10 +147,11 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
-		rows, err := q.GetCityCalendarInRange(ctx, store.GetCityCalendarInRangeParams{
-			CityID:     pgtype.UUID{Bytes: cityUUID, Valid: true},
-			StartsAt:   pgtype.Timestamptz{Time: from, Valid: true},
-			StartsAt_2: pgtype.Timestamptz{Time: to, Valid: true},
+		rows, err := q.GetCityCalendarPage(ctx, store.GetCityCalendarPageParams{
+			CityID:         pgtype.UUID{Bytes: cityUUID, Valid: true},
+			CursorStartsAt: cursorStartsAt,
+			CursorEventID:  cursorEventID,
+			PageLimit:      calendarPageSize + 1,
 		})
 		if err != nil {
 			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not load city calendar", err)
@@ -180,6 +159,11 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 		}
 
 		out := calendarResponse{Events: make([]calendarEvent, 0, len(rows))}
+		if len(rows) > calendarPageSize {
+			rows = rows[:calendarPageSize]
+			last := rows[len(rows)-1]
+			out.NextCursor = encodeCursor(last.StartsAt.Time, last.EventID)
+		}
 		for _, row := range rows {
 			ev := calendarEvent{
 				ID:          uuidString(row.EventID),
