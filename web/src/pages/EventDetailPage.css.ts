@@ -26,6 +26,7 @@ export const thumbnail = style({
 export const detail = style({
   display: 'flex',
   justifyContent: 'space-between',
+  minHeight: '144px',
   '@media': {
     [phone]: { flexDirection: 'column' },
   },

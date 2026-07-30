@@ -1,5 +1,4 @@
 import EventCard from '../components/EventCard';
-import Spinner from '../components/Spinner';
 import * as s from './CalendarPage.css';
 import * as c from '../styles/common.css';
 import { useLocalStorageState } from '../hooks/useLocalStorageState';
@@ -9,6 +8,7 @@ import { useSpotifyStatus } from '../hooks/useSpotifyStatus';
 import { useCalendar } from '../hooks/useCalendar';
 import { useConnectSpotify } from '../hooks/useConnectSpotify';
 import { useMarkNotInterested } from '../hooks/useMarkNotInterested';
+import SkeletonCard from '../components/SkeletonCard';
 
 // Local calendar date, not the UTC one. toISOString() would roll `from` forward
 // to tomorrow every evening once local time passes midnight UTC, hiding the rest
@@ -72,7 +72,13 @@ export default function CalendarPage() {
       </div>
 
       {isLoading ? (
-        <Spinner />
+        <ul className={s.list}>
+          {Array.from({ length: 5 }, (_, i) => ({ id: `loading-${i}` })).map((e) => (
+            <li key={e.id} className={s.listItem}>
+              <SkeletonCard height={150} />
+            </li>
+          ))}
+        </ul>
       ) : isError ? (
         <div className={s.errorBox}>Couldn't load your calendar.</div>
       ) : events.length === 0 ? (

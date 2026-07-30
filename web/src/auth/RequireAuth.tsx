@@ -1,7 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import { useAuth } from './useAuth';
-import Spinner from '../components/Spinner';
 
 /**
  * RequireAuth gates a route on being signed in and — unless allowUnconfirmed is
@@ -21,7 +20,6 @@ export default function RequireAuth({
 }) {
   const { status, user } = useAuth();
   const location = useLocation();
-  if (status === 'loading') return <Spinner />;
   if (status === 'anonymous') {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
