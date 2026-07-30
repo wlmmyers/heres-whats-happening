@@ -13,7 +13,10 @@ import Layout from './Layout';
 function mockAuth(status: 'authenticated' | 'anonymous') {
   vi.mocked(useAuth).mockReturnValue({
     status,
-    user: status === 'authenticated' ? { id: 'u1', email: 'a@x.com', confirmed: true } : null,
+    user:
+      status === 'authenticated'
+        ? { id: 'u1', email: 'a@x.com', city_id: 'city-1', confirmed: true }
+        : null,
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),

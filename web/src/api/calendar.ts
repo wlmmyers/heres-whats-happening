@@ -27,3 +27,17 @@ export async function getCalendar(from: string, to: string): Promise<CalendarEve
 export async function getEvent(id: string): Promise<CalendarEvent> {
   return apiFetch<CalendarEvent>(`/events/${id}`);
 }
+
+// Every event in a city, unfiltered by match score. The calendar falls back to
+// this when the user has nothing to match against yet.
+export async function getCityCalendar(
+  cityId: string,
+  from: string,
+  to: string,
+): Promise<CalendarEvent[]> {
+  const params = new URLSearchParams({ from, to });
+  const out = await apiFetch<{ events: CalendarEvent[] }>(
+    `/calendar/${cityId}?${params.toString()}`,
+  );
+  return out.events;
+}

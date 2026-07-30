@@ -11,7 +11,10 @@ import RequireAuth from './RequireAuth';
 function mockAuth(status: 'loading' | 'authenticated' | 'anonymous', confirmed = true) {
   vi.mocked(useAuth).mockReturnValue({
     status,
-    user: status === 'authenticated' ? { id: 'u1', email: 'a@x.com', confirmed } : null,
+    user:
+      status === 'authenticated'
+        ? { id: 'u1', email: 'a@x.com', city_id: 'city-1', confirmed }
+        : null,
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),
