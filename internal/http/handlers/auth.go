@@ -33,6 +33,7 @@ type signupResponse struct {
 type userOut struct {
 	ID             string   `json:"id"`
 	Email          string   `json:"email"`
+	CityID         string   `json:"city_id"`
 	Confirmed      bool     `json:"confirmed"`
 	ScoreThreshold *float64 `json:"score_threshold,omitempty"`
 }
@@ -124,7 +125,12 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 
 		writeJSON(w, http.StatusCreated, signupResponse{
 			AccessToken: access,
-			User:        userOut{ID: row.ID.String(), Email: row.Email, Confirmed: row.Confirmed},
+			User: userOut{
+				ID:        row.ID.String(),
+				Email:     row.Email,
+				CityID:    row.CityID.String(),
+				Confirmed: row.Confirmed,
+			},
 		})
 	}
 }
