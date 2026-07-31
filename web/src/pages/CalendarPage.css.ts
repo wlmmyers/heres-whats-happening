@@ -20,8 +20,6 @@ export const controlLabel = style({
   ...textStroke('4px'),
 });
 
-export const segment = style({ display: 'inline-flex', padding: '0.125rem' });
-
 export const rangeButton = style({
   borderRadius: radius.sm,
   paddingInline: '0.75rem',
@@ -32,11 +30,8 @@ export const rangeButton = style({
   whiteSpace: 'nowrap',
 });
 
-export const rangeButtonActive = style({
-  backgroundColor: color.blue600,
-  color: color.white,
-});
-
+// The selected item is indicated by HorizontalSelector's fill (which also whitens
+// the active text), so only the inactive colour is set here.
 export const rangeButtonInactive = style({
   color: color.gray600,
   ':hover': { color: color.gray900 },

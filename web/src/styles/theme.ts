@@ -1,6 +1,6 @@
 export const color = {
   white: '#ffffff',
-  whiteA60: 'rgb(255 255 255 / 0.6)',
+  whiteA70: 'rgb(255 255 255 / 0.7)',
   blackA40: 'rgb(0 0 0 / 0.4)',
   gray50: '#f9fafb',
   gray100: '#f3f4f6',

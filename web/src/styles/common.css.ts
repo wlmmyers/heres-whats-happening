@@ -16,7 +16,7 @@ export const cardNoShadow = style({
 });
 
 export const cardTranslucent = style({
-  backgroundColor: color.whiteA60,
+  backgroundColor: color.whiteA70,
   borderRadius: radius.sm,
   border: border.sm,
 });

@@ -11,6 +11,7 @@ import { useManualInterests } from '../hooks/useManualInterests';
 import { useAuth } from '../auth/useAuth';
 import { CalendarEventsAllCity } from '../components/CalendarEventsAllCity';
 import { CalendarEventsUser } from '../components/CalendarEventsUser';
+import HorizontalSelector from '../components/HorizontalSelector';
 import { InfoIcon } from '../components/InfoIcon';
 
 const DISPLAY_OPTIONS = ['Full', 'Condensed'] as const;
@@ -37,6 +38,17 @@ export default function CalendarPage() {
     interestsQ.data?.length === 0 &&
     !!user?.city_id;
 
+  const displayItems = DISPLAY_OPTIONS.map((opt) => ({
+    key: opt,
+    // Active item is left uncolored so it inherits the white text that fill mode
+    // applies over the blue fill; inactive items keep their muted color.
+    content: (
+      <span className={clsx(s.rangeButton, opt !== displayStyle && s.rangeButtonInactive)}>
+        {opt}
+      </span>
+    ),
+  }));
+
   return (
     <div>
       <div className={c.pageHeader}>
@@ -45,25 +57,12 @@ export default function CalendarPage() {
         </h1>
         <div className={s.controls}>
           <span className={s.controlLabel}>Display style:</span>
-          <div className={s.segment}>
-            {DISPLAY_OPTIONS.map((opt) => {
-              const active = opt === displayStyle;
-              return (
-                <button
-                  key={opt}
-                  type="button"
-                  onClick={() => displayStyleActions.setValue(opt)}
-                  aria-pressed={active}
-                  className={clsx(
-                    s.rangeButton,
-                    active ? s.rangeButtonActive : s.rangeButtonInactive,
-                  )}
-                >
-                  {opt}
-                </button>
-              );
-            })}
-          </div>
+          <HorizontalSelector
+            itemStyle="fill"
+            items={displayItems}
+            activeKey={displayStyle}
+            onSelect={(key) => displayStyleActions.setValue(key as DisplayStyle)}
+          />
         </div>
       </div>
 

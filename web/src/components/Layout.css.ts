@@ -76,7 +76,6 @@ export const navLink = style({
 });
 
 export const navLinkActive = style({
-  backgroundColor: color.blue100,
   color: color.blue800,
 });
 

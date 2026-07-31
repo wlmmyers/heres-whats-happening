@@ -52,3 +52,11 @@ globalStyle('code, pre', {
   fontFamily: 'ui-monospace, monospace',
   fontSize: '1em',
 });
+
+globalStyle('input', {
+  '@media': {
+    ['screen and (max-width: 768px)']: {
+      fontSize: '16px',
+    },
+  },
+});
