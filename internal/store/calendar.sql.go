@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getCityCalendarInRange = `-- name: GetCityCalendarInRange :many
+const getCityCalendarPage = `-- name: GetCityCalendarPage :many
 SELECT
     e.id              AS event_id,
     e.title,
@@ -26,21 +26,28 @@ FROM events e
 JOIN venues v ON v.id = e.venue_id
 WHERE v.city_id = $1
   AND e.archived_at IS NULL
-  AND e.starts_at >= $2
-  AND e.starts_at <  $3
-  -- Same showable rule as GetUserCalendarInRange: a date-only event runs until
-  -- its local day is out, a timed one until it ends.
   AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
-ORDER BY e.starts_at ASC
+  -- cursor_starts_at and cursor_event_id are all-or-nothing: passing one
+  -- non-NULL and the other NULL makes the row comparison evaluate to NULL for
+  -- rows tied on starts_at, silently dropping them. parseCursor always sets
+  -- both or neither.
+  AND (
+      $2::timestamptz IS NULL
+      OR (e.starts_at, e.id) > ($2::timestamptz,
+                                $3::uuid)
+  )
+ORDER BY e.starts_at ASC, e.id ASC
+LIMIT $4
 `
 
-type GetCityCalendarInRangeParams struct {
-	CityID     pgtype.UUID        `json:"city_id"`
-	StartsAt   pgtype.Timestamptz `json:"starts_at"`
-	StartsAt_2 pgtype.Timestamptz `json:"starts_at_2"`
+type GetCityCalendarPageParams struct {
+	CityID         pgtype.UUID        `json:"city_id"`
+	CursorStartsAt pgtype.Timestamptz `json:"cursor_starts_at"`
+	CursorEventID  pgtype.UUID        `json:"cursor_event_id"`
+	PageLimit      int32              `json:"page_limit"`
 }
 
-type GetCityCalendarInRangeRow struct {
+type GetCityCalendarPageRow struct {
 	EventID      pgtype.UUID        `json:"event_id"`
 	Title        string             `json:"title"`
 	Description  string             `json:"description"`
@@ -52,17 +59,24 @@ type GetCityCalendarInRangeRow struct {
 	VenueAddress *string            `json:"venue_address"`
 }
 
-// Every showable event in the city, with no match filtering — this is what the
-// calendar falls back to for a user who has no interests to match against.
-func (q *Queries) GetCityCalendarInRange(ctx context.Context, arg GetCityCalendarInRangeParams) ([]GetCityCalendarInRangeRow, error) {
-	rows, err := q.db.Query(ctx, getCityCalendarInRange, arg.CityID, arg.StartsAt, arg.StartsAt_2)
+// One page of every showable event in the city, with no match filtering and
+// (deliberately) no not-interested filtering: this endpoint returns an
+// identical response for every caller. Same ordering and cursor rules as
+// GetUserCalendarPage.
+func (q *Queries) GetCityCalendarPage(ctx context.Context, arg GetCityCalendarPageParams) ([]GetCityCalendarPageRow, error) {
+	rows, err := q.db.Query(ctx, getCityCalendarPage,
+		arg.CityID,
+		arg.CursorStartsAt,
+		arg.CursorEventID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []GetCityCalendarInRangeRow{}
+	items := []GetCityCalendarPageRow{}
 	for rows.Next() {
-		var i GetCityCalendarInRangeRow
+		var i GetCityCalendarPageRow
 		if err := rows.Scan(
 			&i.EventID,
 			&i.Title,
@@ -202,6 +216,108 @@ func (q *Queries) GetUserCalendarInRange(ctx context.Context, arg GetUserCalenda
 	items := []GetUserCalendarInRangeRow{}
 	for rows.Next() {
 		var i GetUserCalendarInRangeRow
+		if err := rows.Scan(
+			&i.EventID,
+			&i.Title,
+			&i.Description,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.ImageUrl,
+			&i.Url,
+			&i.VenueName,
+			&i.VenueAddress,
+			&i.Score,
+			&i.ScoreBreakdown,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUserCalendarPage = `-- name: GetUserCalendarPage :many
+SELECT
+    e.id              AS event_id,
+    e.title,
+    e.description,
+    e.starts_at,
+    e.ends_at,
+    e.image_url,
+    e.url,
+    v.name            AS venue_name,
+    v.address         AS venue_address,
+    m.score,
+    m.score_breakdown
+FROM user_event_match m
+JOIN events e ON e.id = m.event_id
+JOIN venues v ON v.id = e.venue_id
+WHERE m.user_id = $1
+  AND e.archived_at IS NULL
+  -- Still showable: a date-only event runs until its local day is out, a timed
+  -- one until it ends. With the from/to window gone this is also the feed's
+  -- lower bound — there is no upper bound.
+  AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
+  AND NOT EXISTS (
+      SELECT 1 FROM user_event_not_interested ni
+      WHERE ni.user_id = m.user_id AND ni.event_id = e.id
+  )
+  -- A NULL cursor means "first page": the guard short-circuits and every row
+  -- qualifies. Otherwise this is a strict row-comparison keyset seek.
+  -- cursor_starts_at and cursor_event_id are all-or-nothing: passing one
+  -- non-NULL and the other NULL makes the row comparison evaluate to NULL for
+  -- rows tied on starts_at, silently dropping them. parseCursor always sets
+  -- both or neither.
+  AND (
+      $2::timestamptz IS NULL
+      OR (e.starts_at, e.id) > ($2::timestamptz,
+                                $3::uuid)
+  )
+ORDER BY e.starts_at ASC, e.id ASC
+LIMIT $4
+`
+
+type GetUserCalendarPageParams struct {
+	UserID         pgtype.UUID        `json:"user_id"`
+	CursorStartsAt pgtype.Timestamptz `json:"cursor_starts_at"`
+	CursorEventID  pgtype.UUID        `json:"cursor_event_id"`
+	PageLimit      int32              `json:"page_limit"`
+}
+
+type GetUserCalendarPageRow struct {
+	EventID        pgtype.UUID        `json:"event_id"`
+	Title          string             `json:"title"`
+	Description    string             `json:"description"`
+	StartsAt       pgtype.Timestamptz `json:"starts_at"`
+	EndsAt         pgtype.Timestamptz `json:"ends_at"`
+	ImageUrl       *string            `json:"image_url"`
+	Url            *string            `json:"url"`
+	VenueName      string             `json:"venue_name"`
+	VenueAddress   *string            `json:"venue_address"`
+	Score          float64            `json:"score"`
+	ScoreBreakdown []byte             `json:"score_breakdown"`
+}
+
+// One page of the user's matched events. Ordered by (starts_at, id) so the
+// keyset cursor is stable when several events start at the same instant —
+// ordering on starts_at alone would drop or repeat rows at page boundaries.
+func (q *Queries) GetUserCalendarPage(ctx context.Context, arg GetUserCalendarPageParams) ([]GetUserCalendarPageRow, error) {
+	rows, err := q.db.Query(ctx, getUserCalendarPage,
+		arg.UserID,
+		arg.CursorStartsAt,
+		arg.CursorEventID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetUserCalendarPageRow{}
+	for rows.Next() {
+		var i GetUserCalendarPageRow
 		if err := rows.Scan(
 			&i.EventID,
 			&i.Title,

@@ -39,33 +39,35 @@ type calendarMatch struct {
 }
 
 type calendarResponse struct {
-	Events []calendarEvent `json:"events"`
+	Events     []calendarEvent `json:"events"`
+	NextCursor string          `json:"next_cursor,omitempty"`
 }
 
-// parseDateRange reads the from/to query params (YYYY-MM-DD). On bad input it
-// writes the error response and returns ok=false.
-func parseDateRange(w http.ResponseWriter, r *http.Request) (from, to time.Time, ok bool) {
-	fromStr := r.URL.Query().Get("from")
-	toStr := r.URL.Query().Get("to")
-	if fromStr == "" || toStr == "" {
-		httperr.Write(w, http.StatusBadRequest, "missing_range", "from and to query params are required (YYYY-MM-DD)")
-		return time.Time{}, time.Time{}, false
+// calendarPageSize is the maximum number of events in one calendar response.
+// Fixed server-side: there is no client-supplied limit.
+const calendarPageSize = 20
+
+// parseCursor reads the optional cursor query param into keyset params. Absent
+// cursor yields two invalid pgtypes, which pgx sends as NULL — the query reads
+// that as "first page". On bad input it writes the error response and returns
+// ok=false.
+func parseCursor(w http.ResponseWriter, r *http.Request) (startsAt pgtype.Timestamptz, eventID pgtype.UUID, ok bool) {
+	raw := r.URL.Query().Get("cursor")
+	if raw == "" {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, true
 	}
-	from, err := time.Parse("2006-01-02", fromStr)
+	ts, id, err := decodeCursor(raw)
 	if err != nil {
-		httperr.Write(w, http.StatusBadRequest, "bad_from", "from must be YYYY-MM-DD")
-		return time.Time{}, time.Time{}, false
+		httperr.Write(w, http.StatusBadRequest, "bad_cursor", "cursor is not valid")
+		return pgtype.Timestamptz{}, pgtype.UUID{}, false
 	}
-	to, err = time.Parse("2006-01-02", toStr)
-	if err != nil {
-		httperr.Write(w, http.StatusBadRequest, "bad_to", "to must be YYYY-MM-DD")
-		return time.Time{}, time.Time{}, false
-	}
-	return from, to, true
+	return pgtype.Timestamptz{Time: ts, Valid: true}, pgtype.UUID{Bytes: id, Valid: true}, true
 }
 
-// GetMyCalendar returns the authenticated user's matched events whose
-// starts_at falls in [from, to). Dates are YYYY-MM-DD.
+// GetMyCalendar returns one page of the authenticated user's matched events,
+// ordered by start time, beginning at the optional cursor. At most
+// calendarPageSize events come back; next_cursor is present only when more
+// exist.
 func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid, ok := middleware.UserIDFromContext(r.Context())
@@ -73,7 +75,7 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
 			return
 		}
-		from, to, ok := parseDateRange(w, r)
+		cursorStartsAt, cursorEventID, ok := parseCursor(w, r)
 		if !ok {
 			return
 		}
@@ -81,10 +83,12 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
-		rows, err := q.GetUserCalendarInRange(ctx, store.GetUserCalendarInRangeParams{
-			UserID:     pgtype.UUID{Bytes: uid, Valid: true},
-			StartsAt:   pgtype.Timestamptz{Time: from, Valid: true},
-			StartsAt_2: pgtype.Timestamptz{Time: to, Valid: true},
+		// One more than the page size: if it comes back, there is a next page.
+		rows, err := q.GetUserCalendarPage(ctx, store.GetUserCalendarPageParams{
+			UserID:         pgtype.UUID{Bytes: uid, Valid: true},
+			CursorStartsAt: cursorStartsAt,
+			CursorEventID:  cursorEventID,
+			PageLimit:      calendarPageSize + 1,
 		})
 		if err != nil {
 			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not load calendar", err)
@@ -92,6 +96,11 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 		}
 
 		out := calendarResponse{Events: make([]calendarEvent, 0, len(rows))}
+		if len(rows) > calendarPageSize {
+			rows = rows[:calendarPageSize]
+			last := rows[len(rows)-1]
+			out.NextCursor = encodeCursor(last.StartsAt.Time, last.EventID)
+		}
 		for _, row := range rows {
 			bd := parseBreakdown(row.ScoreBreakdown)
 			ev := calendarEvent{
@@ -117,12 +126,12 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 	}
 }
 
-// GetCityCalendar returns every showable event in the given city whose
-// starts_at falls in [from, to) — no match filtering, so events the caller has
-// no user_event_match row for are included. This is what the calendar page
-// falls back to when the user has no interests to match against, so the
-// response is deliberately identical for every caller: no not-interested
-// filtering, and score/matched_because are always the empty values.
+// GetCityCalendar returns one page of every showable event in the given city —
+// no match filtering, so events the caller has no user_event_match row for are
+// included. This is what the calendar page falls back to when the user has no
+// interests to match against, so the response is deliberately identical for
+// every caller: no not-interested filtering, and score/matched_because are
+// always the empty values. Paginated exactly like GetMyCalendar.
 func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cityUUID, err := uuid.Parse(chi.URLParam(r, "cityId"))
@@ -130,7 +139,7 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 			httperr.Write(w, http.StatusBadRequest, "bad_city_id", "cityId is not a valid uuid")
 			return
 		}
-		from, to, ok := parseDateRange(w, r)
+		cursorStartsAt, cursorEventID, ok := parseCursor(w, r)
 		if !ok {
 			return
 		}
@@ -138,10 +147,11 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
-		rows, err := q.GetCityCalendarInRange(ctx, store.GetCityCalendarInRangeParams{
-			CityID:     pgtype.UUID{Bytes: cityUUID, Valid: true},
-			StartsAt:   pgtype.Timestamptz{Time: from, Valid: true},
-			StartsAt_2: pgtype.Timestamptz{Time: to, Valid: true},
+		rows, err := q.GetCityCalendarPage(ctx, store.GetCityCalendarPageParams{
+			CityID:         pgtype.UUID{Bytes: cityUUID, Valid: true},
+			CursorStartsAt: cursorStartsAt,
+			CursorEventID:  cursorEventID,
+			PageLimit:      calendarPageSize + 1,
 		})
 		if err != nil {
 			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not load city calendar", err)
@@ -149,6 +159,11 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 		}
 
 		out := calendarResponse{Events: make([]calendarEvent, 0, len(rows))}
+		if len(rows) > calendarPageSize {
+			rows = rows[:calendarPageSize]
+			last := rows[len(rows)-1]
+			out.NextCursor = encodeCursor(last.StartsAt.Time, last.EventID)
+		}
 		for _, row := range rows {
 			ev := calendarEvent{
 				ID:          uuidString(row.EventID),

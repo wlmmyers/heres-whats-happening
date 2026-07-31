@@ -175,10 +175,16 @@ make db-up && make run
 
 ### Read your matched calendar
 
+Both `/me/calendar` and `/calendar/{cityId}` are cursor-paginated: at most 20
+events per response. Omit `cursor` for the first page; when more results
+exist the response includes `next_cursor`, which you pass back as
+`?cursor=...` to fetch the next page. A malformed cursor is a 400 with code
+`bad_cursor`.
+
 ```bash
 ACCESS=...  # JWT from /auth/login
 curl -s -H "Authorization: Bearer $ACCESS" \
-  "http://localhost:8080/me/calendar?from=2026-05-20&to=2026-08-01" \
+  "http://localhost:8080/me/calendar" \
   | python3 -m json.tool | head -40
 ```
 
