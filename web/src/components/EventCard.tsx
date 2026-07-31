@@ -1,15 +1,18 @@
 import { useNavigate } from 'react-router-dom';
 import type { CalendarEvent } from '../api/calendar';
 import * as s from './EventCard.css';
+import clsx from 'clsx';
 
 export default function EventCard({
   event,
   onNotInterested,
   interactive = true,
+  shorterMinHeight,
 }: {
   event: CalendarEvent;
   onNotInterested?: (id: string) => void;
   interactive?: boolean;
+  shorterMinHeight?: boolean;
 }) {
   const navigate = useNavigate();
   const date = new Date(event.starts_at);
@@ -19,11 +22,12 @@ export default function EventCard({
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    ...(date.getFullYear() > new Date().getFullYear() && { year: 'numeric' }),
   });
   const matchedBits = [...event.matched_because.performers, ...event.matched_because.genres];
   return (
     <div
-      className={s.eventCard}
+      className={clsx(s.eventCard, { [s.shorterMinHeight]: shorterMinHeight })}
       onClick={interactive ? () => navigate(`/events/${event.id}`) : undefined}
     >
       {event.image_url && (
@@ -38,7 +42,9 @@ export default function EventCard({
           <div className={s.matched}>Matched because: {matchedBits.join(', ')}</div>
         )}
       </div>
-      <span className={s.score}>{Math.round(event.score * 100)}% match</span>
+      {/* City-wide events carry no match, and "0% match" reads as a bad
+          match rather than as no match at all. */}
+      {event.score > 0 && <span className={s.score}>{Math.round(event.score * 100)}% match</span>}
       {onNotInterested && (
         <div className={s.notInterested}>
           <button

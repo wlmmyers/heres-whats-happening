@@ -3,15 +3,10 @@ import { useEvent } from '../hooks/useEvent';
 import * as s from './EventDetailPage.css';
 import * as c from '../styles/common.css';
 import { Skeleton } from '../components/Skeleton';
+import type { CalendarEvent } from '../api/calendar';
 
-export default function EventDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const { data, isLoading, isError } = useEvent(id);
-
-  if (isError) return <div className={s.notFound}>Event not found.</div>;
-  if (!data) return null;
-
-  const date = new Date(data.starts_at);
+const EventContent = ({ event }: { event: CalendarEvent }) => {
+  const date = new Date(event.starts_at);
   const dateLabel = date.toLocaleString(undefined, {
     weekday: 'long',
     month: 'long',
@@ -20,49 +15,64 @@ export default function EventDetailPage() {
     hour: 'numeric',
     minute: '2-digit',
   });
-  const matchedBits = [...data.matched_because.performers, ...data.matched_because.genres];
-
+  const matchedBits = [...event.matched_because.performers, ...event.matched_because.genres];
   return (
-    <article>
-      <Link to="/calendar/seattle" className={s.backLink}>
-        {`< Calendar`}
-      </Link>
-
+    <>
       <div className={c.cardTranslucent}>
         <div className={s.detail}>
-          {isLoading ? (
-            <Skeleton />
-          ) : (
-            <>
-              {' '}
-              {data.image_url && <img src={data.image_url} alt="" className={s.thumbnail} />}
-              <div className={s.detailText}>
-                <h1 className={s.title}>{data.title}</h1>
-                <div className={s.date}>{dateLabel}</div>
-                <div className={s.venue}>
-                  {data.venue.name}
-                  {data.venue.address && <> · {data.venue.address}</>}
-                </div>
-                <div className={s.score}>{Math.round(data.score * 100)}% match</div>
-              </div>
-            </>
-          )}
+          {' '}
+          {event.image_url && <img src={event.image_url} alt="" className={s.thumbnail} />}
+          <div className={s.detailText}>
+            <h1 className={s.title}>{event.title}</h1>
+            <div className={s.date}>{dateLabel}</div>
+            <div className={s.venue}>
+              {event.venue.name}
+              {event.venue.address && <> · {event.venue.address}</>}
+            </div>
+            {event.score > 0 && (
+              <div className={s.score}>{Math.round(event.score * 100)}% match</div>
+            )}
+          </div>
         </div>
       </div>
 
       {matchedBits.length > 0 && (
         <div className={s.matched}>Matched because: {matchedBits.join(', ')}</div>
       )}
-      {data.description && (
+      {event.description && (
         <section className={c.section}>
           <h2 className={c.sectionTitle}>From the venue</h2>
-          <p className={s.description}>{data.description}</p>
+          <p className={s.description}>{event.description}</p>
         </section>
       )}
-      {data.url && (
-        <a href={data.url} target="_blank" rel="noreferrer" className={s.viewEvent}>
+      {event.url && (
+        <a href={event.url} target="_blank" rel="noreferrer" className={s.viewEvent}>
           View event
         </a>
+      )}
+    </>
+  );
+};
+
+export default function EventDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const { data, isError } = useEvent(id);
+
+  return (
+    <article>
+      <Link to="/calendar/seattle" className={s.backLink}>
+        {`< Calendar`}
+      </Link>
+      {data ? (
+        <EventContent event={data} />
+      ) : isError ? (
+        <div>Event Not Found</div>
+      ) : (
+        <div className={c.cardTranslucent}>
+          <div className={s.detail}>
+            <Skeleton />
+          </div>
+        </div>
       )}
     </article>
   );

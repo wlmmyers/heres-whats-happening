@@ -9,6 +9,7 @@ export const backLink = style({
   color: color.blue600,
   fontWeight: fontWeight.medium,
   marginBottom: '0.625rem',
+  height: '30px',
   ...textStroke('4px'),
   ':hover': { textDecorationLine: 'underline' },
 });
@@ -25,6 +26,7 @@ export const thumbnail = style({
 
 export const detail = style({
   display: 'flex',
+  position: 'relative',
   justifyContent: 'space-between',
   minHeight: '144px',
   '@media': {
@@ -42,7 +44,7 @@ export const detailText = style({
 });
 
 export const title = style({
-  ...fontSize['3xl'],
+  ...fontSize['2xl'],
   fontWeight: fontWeight.semibold,
 });
 

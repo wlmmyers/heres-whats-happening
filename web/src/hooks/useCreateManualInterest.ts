@@ -5,6 +5,6 @@ export function useCreateManualInterest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (value: string) => createManualInterest(value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['interests'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['manual-interests'] }),
   });
 }

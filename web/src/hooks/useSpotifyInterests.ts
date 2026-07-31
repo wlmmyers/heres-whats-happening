@@ -7,5 +7,7 @@ export function useSpotifyInterests() {
   return useQuery<SpotifyInterestGroup[]>({
     queryKey: ['spotifyInterests', user?.id],
     queryFn: listSpotifyInterests,
+    // Keyed on user.id — stay idle until it is known. See useSpotifyStatus.
+    enabled: !!user,
   });
 }

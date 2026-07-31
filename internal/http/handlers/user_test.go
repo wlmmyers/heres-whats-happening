@@ -51,11 +51,13 @@ func TestGetMe_ReturnsCurrentUser(t *testing.T) {
 	mw(handlers.GetMe(q)).ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 	var out struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
+		ID     string `json:"id"`
+		Email  string `json:"email"`
+		CityID string `json:"city_id"`
 	}
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&out))
 	require.Equal(t, "getme@example.com", out.Email)
+	require.Equal(t, cityID, out.CityID)
 }
 
 func TestDeleteMe_SoftDeletes(t *testing.T) {
@@ -150,4 +152,26 @@ func TestGetMe_ReturnsConfirmed(t *testing.T) {
 	require.Equal(t, false, call()["confirmed"])
 	require.NoError(t, q.MarkUserConfirmed(ctx, row.ID))
 	require.Equal(t, true, call()["confirmed"])
+}
+
+func TestSignup_ReturnsCityID(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	cityID := defaultCityID(t, q)
+
+	body, _ := json.Marshal(map[string]string{"email": "citysignup@example.com", "password": "hunter22"})
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handlers.Signup(q, signer, time.Hour, cityID, handlers.ConfirmationDeps{Sender: &emailpkg.Fake{}})(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	var resp struct {
+		User struct {
+			CityID string `json:"city_id"`
+		} `json:"user"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.NotEmpty(t, resp.User.CityID)
 }

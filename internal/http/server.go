@@ -165,6 +165,10 @@ func (s *Server) Router() http.Handler {
 		r.Get("/integrations/spotify/connect", handlers.SpotifyConnect(s.SpotifyClient, s.OAuthHMACKey))
 		r.Get("/integrations/spotify/status", handlers.SpotifyStatus(s.Queries))
 		r.Get("/me/calendar", handlers.GetMyCalendar(s.Queries))
+		// Every event in a city, unfiltered by match. The calendar page falls
+		// back to this for users with no interests yet. Covered by the group's
+		// authed net; no dedicated limiter.
+		r.Get("/calendar/{cityId}", handlers.GetCityCalendar(s.Queries))
 		r.Get("/events/{id}", handlers.GetEventByIDForUser(s.Queries))
 
 		// Writes. A nested group states the limiter once; chi composes it with

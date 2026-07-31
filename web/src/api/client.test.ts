@@ -64,6 +64,55 @@ describe('apiFetch', () => {
     );
   });
 
+  // On a cold page load the in-memory access token is null, so every request in
+  // the first burst 401s at once. Without a shared promise that is one
+  // /auth/refresh per request, which burns the IP-keyed 30/min refresh budget.
+  it('shares one refresh across concurrent 401s', async () => {
+    setAccessToken('expired');
+    let refreshCalls = 0;
+    global.fetch = vi.fn().mockImplementation((url: string, init: RequestInit) => {
+      if (String(url).endsWith('/auth/refresh')) {
+        refreshCalls += 1;
+        return new Promise((resolve) =>
+          setTimeout(() => resolve(mockJsonResponse(200, { access_token: 'fresh' })), 10),
+        );
+      }
+      const headers = init.headers as Headers;
+      if (headers.get('Authorization') === 'Bearer fresh') {
+        return Promise.resolve(mockJsonResponse(200, { ok: true }));
+      }
+      return Promise.resolve(mockJsonResponse(401, { error: { code: 'invalid_token' } }));
+    });
+
+    const out = await Promise.all([
+      apiFetch<{ ok: boolean }>('/me'),
+      apiFetch<{ ok: boolean }>('/me/calendar'),
+      apiFetch<{ ok: boolean }>('/me/manual-interests'),
+    ]);
+
+    expect(refreshCalls).toBe(1);
+    expect(out).toEqual([{ ok: true }, { ok: true }, { ok: true }]);
+  });
+
+  // The shared promise must be released once it settles, or the token can never
+  // be renewed again for the life of the page.
+  it('starts a new refresh for a 401 that arrives after the shared one settles', async () => {
+    setAccessToken('expired');
+    let refreshCalls = 0;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (String(url).endsWith('/auth/refresh')) {
+        refreshCalls += 1;
+        return Promise.resolve(mockJsonResponse(200, { access_token: `fresh-${refreshCalls}` }));
+      }
+      if (refreshCalls >= 2) return Promise.resolve(mockJsonResponse(200, { ok: true }));
+      return Promise.resolve(mockJsonResponse(401, { error: { code: 'invalid_token' } }));
+    });
+
+    await apiFetch('/me').catch(() => {});
+    await apiFetch('/me');
+    expect(refreshCalls).toBe(2);
+  });
+
   it('throws when refresh itself fails', async () => {
     setAccessToken('expired');
     global.fetch = vi.fn().mockImplementation((url: string) => {

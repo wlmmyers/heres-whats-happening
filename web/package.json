@@ -10,6 +10,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "preview": "vite preview",
+    "start:prod": "vite build && vite preview",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "deploy": "./scripts/deploy.sh"

@@ -49,7 +49,7 @@ export default function LoginForm() {
         ) : (
           <>
             An AI-backed event calendar based on you
-            <aside className={s.aside}>Note: only supporting the Seattle area currently</aside>
+            <aside className={s.aside}>Currently only supporting the Seattle area</aside>
           </>
         )}
       </div>

@@ -14,6 +14,6 @@ export function useDeleteManualInterest() {
       if (!target) return Promise.resolve();
       return deleteManualInterest(target.id);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['interests'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['manual-interests'] }),
   });
 }

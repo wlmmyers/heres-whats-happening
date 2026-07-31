@@ -1,22 +1,20 @@
 import {
   keepPreviousData,
-  useInfiniteQuery,
-  useQueryClient,
   type InfiniteData,
+  useQueryClient,
+  useInfiniteQuery,
 } from '@tanstack/react-query';
-import { getCalendar, type CalendarResponse, type PageParam } from '../api/calendar';
+import { getCityCalendar, type CalendarResponse, type PageParam } from '../api/calendar';
 import { useAuth } from '../auth/useAuth';
 
-type QueryKey = readonly ['calendar', string | undefined];
+type QueryKey = readonly ['city-calendar', string | undefined];
 
-export function calendarQueryKey(userId: string | undefined) {
-  return ['calendar', userId] as const;
-}
-
-export function useCalendar() {
+// Every event in a city, for the calendar's no-interests fallback. `enabled`
+// keeps it idle until the caller knows the fallback applies; the query stays
+// idle while the city is unknown.
+export function useCityCalendar(cityId?: string) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-
   return useInfiniteQuery<
     CalendarResponse,
     Error,
@@ -24,9 +22,9 @@ export function useCalendar() {
     QueryKey,
     PageParam
   >({
-    queryKey: ['calendar', user?.id],
+    queryKey: ['city-calendar', cityId],
     queryFn: async ({ pageParam }) => {
-      const response = await getCalendar(pageParam);
+      const response = await getCityCalendar(cityId!, pageParam);
       // Seed the event query cache
       response.events.forEach((event) => {
         queryClient.setQueryData(['event', user?.id, event.id], event);
@@ -37,7 +35,6 @@ export function useCalendar() {
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     getPreviousPageParam: () => null,
     placeholderData: keepPreviousData,
-    // Keyed on user.id — stay idle until it is known. See useSpotifyStatus.
-    enabled: !!user,
+    enabled: !!cityId,
   });
 }

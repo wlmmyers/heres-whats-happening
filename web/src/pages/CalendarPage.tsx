@@ -1,52 +1,48 @@
-import EventCard from '../components/EventCard';
 import * as s from './CalendarPage.css';
 import * as c from '../styles/common.css';
 import { useLocalStorageState } from '../hooks/useLocalStorageState';
 import clsx from 'clsx';
 import { useScreenSize } from '../hooks/useScreenSize';
 import { useSpotifyStatus } from '../hooks/useSpotifyStatus';
-import { useCalendar } from '../hooks/useCalendar';
-import { useConnectSpotify } from '../hooks/useConnectSpotify';
-import { useMarkNotInterested } from '../hooks/useMarkNotInterested';
-import SkeletonCard from '../components/SkeletonCard';
 
-// Local calendar date, not the UTC one. toISOString() would roll `from` forward
-// to tomorrow every evening once local time passes midnight UTC, hiding the rest
-// of today's events.
-function isoDate(d: Date): string {
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${month}-${day}`;
-}
+import { useConnectSpotify } from '../hooks/useConnectSpotify';
+import { useManualInterests } from '../hooks/useManualInterests';
+
+import { useAuth } from '../auth/useAuth';
+import { CalendarEventsAllCity } from '../components/CalendarEventsAllCity';
+import { CalendarEventsUser } from '../components/CalendarEventsUser';
+import { InfoIcon } from '../components/InfoIcon';
 
 const DISPLAY_OPTIONS = ['Full', 'Condensed'] as const;
 type DisplayStyle = (typeof DISPLAY_OPTIONS)[number];
 
 export default function CalendarPage() {
   const { isPhoneWidth } = useScreenSize();
+  const { user } = useAuth();
   const { state: persistedDisplayStyle, actions: displayStyleActions } =
     useLocalStorageState<DisplayStyle>('calendar.displayStyle');
   const displayStyle = persistedDisplayStyle ?? DISPLAY_OPTIONS[0];
   const effectiveDisplayStyle: DisplayStyle = isPhoneWidth ? 'Full' : displayStyle;
-  const today = new Date();
-  const end = new Date(today.getFullYear(), today.getMonth() + 6, today.getDate());
-  const from = isoDate(today);
-  const to = isoDate(end);
-
-  const { data: spotifyStatus } = useSpotifyStatus();
-
   const connectSpotifyMut = useConnectSpotify();
+  const spotifyQ = useSpotifyStatus();
+  const interestsQ = useManualInterests();
 
-  const { data, isLoading, isError } = useCalendar(from, to);
-
-  const events = data ?? [];
-
-  const notInterested = useMarkNotInterested(from, to);
+  // Pending, not `data === undefined`: a failed gate query never gets data, and
+  // waiting on data would leave the page spinning forever. Optional chaining
+  // then keeps a failed gate on the matched calendar rather than the city list.
+  const gatePending = spotifyQ.isPending || interestsQ.isPending;
+  const showAllForCity =
+    !gatePending &&
+    spotifyQ.data?.connected === false &&
+    interestsQ.data?.length === 0 &&
+    !!user?.city_id;
 
   return (
     <div>
       <div className={c.pageHeader}>
-        <h1 className={c.pageTitle}>Your Seattle calendar</h1>
+        <h1 className={c.pageTitle}>
+          {showAllForCity ? "What's happening in Seattle" : 'Your Seattle calendar'}
+        </h1>
         <div className={s.controls}>
           <span className={s.controlLabel}>Display style:</span>
           <div className={s.segment}>
@@ -71,57 +67,40 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {isLoading ? (
-        <ul className={s.list}>
-          {Array.from({ length: 5 }, (_, i) => ({ id: `loading-${i}` })).map((e) => (
-            <li key={e.id} className={s.listItem}>
-              <SkeletonCard height={150} />
-            </li>
-          ))}
-        </ul>
-      ) : isError ? (
-        <div className={s.errorBox}>Couldn't load your calendar.</div>
-      ) : events.length === 0 ? (
-        <div className={s.emptyState}>
-          No upcoming matches yet. <br />
-          <br /> Try{' '}
-          {spotifyStatus && !spotifyStatus.connected && (
-            <>
-              <a
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  connectSpotifyMut.mutate();
-                }}
-                className={s.inlineLink}
-              >
-                connecting your Spotify
-              </a>{' '}
-              to supercharge your matches or{' '}
-            </>
-          )}
-          <a href="/interests" className={s.inlineLink}>
-            adding some interests
-          </a>{' '}
-          manually.
-        </div>
-      ) : (
-        <ul
-          className={clsx(s.list, {
-            [s.listCondensed]: effectiveDisplayStyle === 'Condensed',
-          })}
-        >
-          {events.map((e) => (
-            <li
-              key={e.id}
-              className={clsx(s.listItem, {
-                [s.listItemCondensed]: effectiveDisplayStyle === 'Condensed',
-              })}
+      {showAllForCity && (
+        <div className={s.banner}>
+          <InfoIcon />
+          <div>
+            Showing all events in Seattle.{' '}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                connectSpotifyMut.mutate();
+              }}
+              className={s.inlineLink}
             >
-              <EventCard event={e} interactive onNotInterested={(id) => notInterested.mutate(id)} />
-            </li>
-          ))}
-        </ul>
+              Connect your Spotify
+            </a>{' '}
+            or{' '}
+            <a href="/interests" className={s.inlineLink}>
+              add some interests
+            </a>{' '}
+            to get a calendar matched to your taste.
+          </div>
+        </div>
+      )}
+      {showAllForCity ? (
+        <CalendarEventsAllCity displayStyle={effectiveDisplayStyle} gatePending={gatePending} />
+      ) : (
+        <CalendarEventsUser
+          onSpotifyConnect={() => {
+            connectSpotifyMut.mutate();
+          }}
+          spotifyConnected={!!spotifyQ.data?.connected}
+          displayStyle={effectiveDisplayStyle}
+          gatePending={gatePending}
+        />
       )}
     </div>
   );

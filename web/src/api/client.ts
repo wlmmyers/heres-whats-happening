@@ -52,13 +52,30 @@ async function rawFetch(path: string, init: RequestInit): Promise<Response> {
   });
 }
 
-async function refresh(): Promise<boolean> {
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function doRefresh(): Promise<boolean> {
   const resp = await rawFetch('/auth/refresh', { method: 'POST' });
   if (!resp.ok) return false;
   const body = (await resp.json()) as { access_token?: string };
   if (!body.access_token) return false;
   accessToken = body.access_token;
   return true;
+}
+
+/**
+ * refresh mints a new access token, collapsing concurrent callers onto one
+ * request. The access token lives only in memory, so a cold page load 401s on
+ * every request in the first burst at once — without this that is one
+ * /auth/refresh per request, against an IP-keyed 30/min budget shared by
+ * everyone behind the same NAT. The slot is released once the request settles
+ * so a later 401 can still renew the token.
+ */
+function refresh(): Promise<boolean> {
+  refreshInFlight ??= doRefresh().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
 }
 
 /**

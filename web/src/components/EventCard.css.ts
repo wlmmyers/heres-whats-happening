@@ -57,6 +57,15 @@ export const eventCard = style([
   },
 ]);
 
+export const shorterMinHeight = style({
+  '@container': {
+    ['calendarListItem (width < 500px)']: {
+      ...cardStylesCondensed,
+      minHeight: '180px !important',
+    },
+  },
+});
+
 export const main = style({
   gridArea: 'main',
 });
@@ -66,7 +75,6 @@ export const thumbnail = style({
   flexShrink: 0,
   width: '7rem',
   height: '7rem',
-  marginBottom: '0.5rem',
   objectFit: 'cover',
   borderRadius: radius.sm,
   '@media': {
