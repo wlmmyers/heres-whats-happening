@@ -65,8 +65,16 @@ resource "aws_instance" "bastion" {
   # Stopping/starting the instance out-of-band (the intended workflow) is not drift:
   # the AMI ID only matters at create time, so ignore it to avoid replacement when the
   # AL2023 SSM parameter advances to a newer image.
+  #
+  # associate_public_ip_address is ignored for the same reason, and it is load-bearing:
+  # stopping the instance releases the auto-assigned public IP, so a refresh against a
+  # stopped bastion reads it back as false. That is a ForceNew attribute, so the plan
+  # would plan a replacement — and since a fresh instance boots running, every apply
+  # that landed while the bastion was stopped left it running (and changed its ID).
+  # ignore_changes applies to updates only; a create still gets a public IP, which the
+  # SSM agent needs for egress.
   lifecycle {
-    ignore_changes = [ami]
+    ignore_changes = [ami, associate_public_ip_address]
   }
 
   tags = { Name = "${var.app_name_prefix}-bastion" }

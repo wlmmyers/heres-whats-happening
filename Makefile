@@ -172,22 +172,36 @@ bootstrap-terraform-apply:
 
 # --- Prod DB bastion (SSM tunnel to private RDS) --------------------------------
 # Prereqs (once): brew install --cask session-manager-plugin
-# Values come from .env (gitignored): BASTION_INSTANCE_ID, PROD_DB_HOST, PROD_SECRET_ARN
+# Values come from .env (gitignored): PROD_DB_HOST, PROD_SECRET_ARN
 # NOTE: use host=127.0.0.1 (not localhost) — macOS resolves localhost to ::1 (IPv6)
 # but the SSM tunnel binds on 127.0.0.1 (IPv4). Use sslmode=require — RDS enforces SSL.
 
+# The instance is looked up by Name tag rather than pinned to an ID: Terraform can
+# replace the bastion (see the lifecycle block in terraform/prod/bastion.tf), and a
+# hardcoded ID silently goes stale the next time it does. Terminated instances linger
+# in the API for ~an hour, so filter on the live states.
+BASTION_NAME ?= hwh-bastion
+BASTION_LOOKUP = aws ec2 describe-instances --profile $(AWS_PROFILE) --region $(PROD_REGION) \
+    --filters "Name=tag:Name,Values=$(BASTION_NAME)" \
+              "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+    --query 'Reservations[].Instances[].InstanceId' --output text
+
 bastion-start:
-	@echo "Starting bastion $(BASTION_INSTANCE_ID)..."
+	@ID=$$($(BASTION_LOOKUP)); \
+	test -n "$$ID" || { echo "No EC2 instance tagged Name=$(BASTION_NAME)"; exit 1; }; \
+	echo "Starting bastion $$ID..."; \
 	aws ec2 start-instances --profile $(AWS_PROFILE) --region $(PROD_REGION) \
-	    --instance-ids $(BASTION_INSTANCE_ID)
+	    --instance-ids $$ID; \
 	aws ec2 wait instance-running --profile $(AWS_PROFILE) --region $(PROD_REGION) \
-	    --instance-ids $(BASTION_INSTANCE_ID)
+	    --instance-ids $$ID
 	@echo "Instance running — wait ~30s for the SSM agent to register, then run: make bastion-tunnel"
 
 bastion-tunnel:
-	@echo "Opening port-forward to $(PROD_DB_HOST):5432 on localhost:5432 (leave this running)..."
+	@ID=$$($(BASTION_LOOKUP)); \
+	test -n "$$ID" || { echo "No EC2 instance tagged Name=$(BASTION_NAME)"; exit 1; }; \
+	echo "Opening port-forward to $(PROD_DB_HOST):5432 on localhost:5432 (leave this running)..."; \
 	aws ssm start-session --profile $(AWS_PROFILE) --region $(PROD_REGION) \
-	    --target $(BASTION_INSTANCE_ID) \
+	    --target $$ID \
 	    --document-name AWS-StartPortForwardingSessionToRemoteHost \
 	    --parameters '{"host":["$(PROD_DB_HOST)"],"portNumber":["5432"],"localPortNumber":["5432"]}'
 
@@ -202,5 +216,8 @@ bastion-psql:
 	psql "host=127.0.0.1 port=5432 dbname=appdb user=app sslmode=require"
 
 bastion-stop:
+	@ID=$$($(BASTION_LOOKUP)); \
+	test -n "$$ID" || { echo "No EC2 instance tagged Name=$(BASTION_NAME)"; exit 1; }; \
+	echo "Stopping bastion $$ID..."; \
 	aws ec2 stop-instances --profile $(AWS_PROFILE) --region $(PROD_REGION) \
-	    --instance-ids $(BASTION_INSTANCE_ID)
+	    --instance-ids $$ID
