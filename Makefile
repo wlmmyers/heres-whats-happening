@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-all queue-up queue-down queue-reset scrape-ticketmaster scrape-spotify tei-up tei-down tei-seed match test-scripts hooks hooks-uninstall bastion-start bastion-tunnel bastion-creds bastion-stop bastion-psql
+.PHONY: db-up db-down db-reset migrate migrate-test migrate-prod migrate-prod-status test run run-web run-web-prod run-all queue-up queue-down queue-reset scrape-ticketmaster scrape-spotify tei-up tei-down tei-seed match test-scripts hooks hooks-uninstall bastion-start bastion-tunnel bastion-creds bastion-stop bastion-psql
 
 ifneq (,$(wildcard .env))
     include .env
@@ -111,6 +111,11 @@ run:
 
 run-web:
 	cd web && pnpm dev
+
+# Production React build (minified, no HMR/dev warnings) served from dist/ on
+# :4173. Rebuilds each run, so restart it to pick up source changes.
+run-web-prod:
+	cd web && pnpm start:prod
 
 run-all:
 	@trap 'kill 0' INT TERM EXIT; \

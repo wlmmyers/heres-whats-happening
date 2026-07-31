@@ -71,16 +71,18 @@ beforeEach(() => {
 
 describe('CalendarPage', () => {
   it('renders matched events', async () => {
-    (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
-      {
-        id: 'e1',
-        title: 'PB Live',
-        starts_at: '2026-06-15T20:00:00Z',
-        venue: { name: 'The Bowl' },
-        score: 0.82,
-        matched_because: { performers: ['Phoebe Bridgers'], genres: ['indie'] },
-      },
-    ]);
+    (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      events: [
+        {
+          id: 'e1',
+          title: 'PB Live',
+          starts_at: '2026-06-15T20:00:00Z',
+          venue: { name: 'The Bowl' },
+          score: 0.82,
+          matched_because: { performers: ['Phoebe Bridgers'], genres: ['indie'] },
+        },
+      ],
+    });
     renderPage();
     await waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
     expect(screen.getByText(/82% match/)).toBeInTheDocument();
@@ -89,7 +91,7 @@ describe('CalendarPage', () => {
   });
 
   it('persists the selected display style across remounts via localStorage', async () => {
-    (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValue({ events: [] });
 
     const first = renderPage();
     // Defaults to Full when nothing has been persisted yet.
@@ -117,41 +119,36 @@ describe('CalendarPage', () => {
   });
 
   it('shows empty state when there are no matches', async () => {
-    (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ events: [] });
     renderPage();
     await waitFor(() => expect(screen.getByText(/no upcoming matches yet/i)).toBeInTheDocument());
   });
 
-  it('requests from the local calendar date, not the UTC date', async () => {
-    // 5pm Pacific on 7/25 is already 7/26 in UTC. Deriving `from` from the UTC
-    // date drops every event left in the local day.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date('2026-07-25T17:00:00-07:00'));
-    try {
-      const getCal = calApi.getCalendar as ReturnType<typeof vi.fn>;
-      getCal.mockResolvedValue([]);
-      renderPage();
+  it('requests the first page without a cursor', async () => {
+    const getCal = calApi.getCalendar as ReturnType<typeof vi.fn>;
+    getCal.mockResolvedValue({ events: [] });
+    renderPage();
 
-      await waitFor(() => expect(getCal).toHaveBeenCalled());
-      expect(getCal.mock.calls[0][0]).toBe('2026-07-25');
-    } finally {
-      vi.useRealTimers();
-    }
+    await waitFor(() => expect(getCal).toHaveBeenCalled());
+    expect(getCal).toHaveBeenCalledWith(undefined);
   });
 
   it('removes a card and calls the API when Not interested is clicked', async () => {
     (calApi.getCalendar as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce([
-        {
-          id: 'e1',
-          title: 'PB Live',
-          starts_at: '2026-06-15T20:00:00Z',
-          venue: { name: 'The Bowl' },
-          score: 0.82,
-          matched_because: { performers: [], genres: [] },
-        },
-      ])
-      .mockResolvedValue([]); // refetch after dismissal returns the server-filtered list
+      .mockResolvedValueOnce({
+        events: [
+          {
+            id: 'e1',
+            title: 'PB Live',
+            starts_at: '2026-06-15T20:00:00Z',
+            venue: { name: 'The Bowl' },
+            score: 0.82,
+            matched_because: { performers: [], genres: [] },
+          },
+        ],
+      })
+      // refetch after dismissal returns the server-filtered list
+      .mockResolvedValue({ events: [] });
     (niApi.markNotInterested as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
     renderPage();
@@ -181,19 +178,15 @@ describe('CalendarPage city fallback', () => {
 
   it('shows every city event when Spotify is disconnected and there are no interests', async () => {
     noInterests();
-    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
-    vi.mocked(calApi.getCityCalendar).mockResolvedValue([cityEvent]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue({ events: [] });
+    vi.mocked(calApi.getCityCalendar).mockResolvedValue({ events: [cityEvent] });
 
     renderPage();
 
     await waitFor(() => expect(screen.getByText('Citywide Show')).toBeInTheDocument());
-    expect(calApi.getCityCalendar).toHaveBeenCalledWith(
-      'city-1',
-      expect.any(String),
-      expect.any(String),
-    );
-    expect(screen.getByText('Everything happening in Seattle')).toBeInTheDocument();
-    expect(screen.getByText(/Showing everything in Seattle/)).toBeInTheDocument();
+    expect(calApi.getCityCalendar).toHaveBeenCalledWith('city-1', undefined);
+    expect(screen.getByText("What's happening in Seattle")).toBeInTheDocument();
+    expect(screen.getByText(/Showing all events in Seattle/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Not interested' })).not.toBeInTheDocument();
     expect(screen.queryByText(/% match/)).not.toBeInTheDocument();
   });
@@ -201,7 +194,7 @@ describe('CalendarPage city fallback', () => {
   it('shows the matched calendar when Spotify is connected', async () => {
     vi.mocked(getSpotifyStatus).mockResolvedValue({ connected: true });
     vi.mocked(listManualInterests).mockResolvedValue([]);
-    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue({ events: [] });
 
     renderPage();
 
@@ -220,7 +213,7 @@ describe('CalendarPage city fallback', () => {
         created_at: '2026-01-01T00:00:00Z',
       },
     ]);
-    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue({ events: [] });
 
     renderPage();
 
@@ -233,7 +226,7 @@ describe('CalendarPage city fallback', () => {
   it('shows the matched calendar when the status query fails', async () => {
     vi.mocked(getSpotifyStatus).mockRejectedValue(new Error('boom'));
     vi.mocked(listManualInterests).mockResolvedValue([]);
-    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue({ events: [] });
 
     renderPage();
 
@@ -243,8 +236,8 @@ describe('CalendarPage city fallback', () => {
 
   it('tells the user when the city has no events at all', async () => {
     noInterests();
-    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
-    vi.mocked(calApi.getCityCalendar).mockResolvedValue([]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue({ events: [] });
+    vi.mocked(calApi.getCityCalendar).mockResolvedValue({ events: [] });
 
     renderPage();
 
@@ -256,7 +249,7 @@ describe('CalendarPage city fallback', () => {
   it('shows the matched calendar when the interests query fails', async () => {
     vi.mocked(getSpotifyStatus).mockResolvedValue({ connected: false });
     vi.mocked(listManualInterests).mockRejectedValue(new Error('boom'));
-    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue({ events: [] });
 
     renderPage();
 
@@ -266,7 +259,7 @@ describe('CalendarPage city fallback', () => {
 
   it('shows an error box when the city calendar fails to load', async () => {
     noInterests();
-    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue({ events: [] });
     vi.mocked(calApi.getCityCalendar).mockRejectedValue(new Error('boom'));
 
     renderPage();
@@ -278,14 +271,14 @@ describe('CalendarPage city fallback', () => {
 
   it('leaves fallback mode once an added interest invalidates the interests query', async () => {
     noInterests();
-    vi.mocked(calApi.getCalendar).mockResolvedValue([]);
-    vi.mocked(calApi.getCityCalendar).mockResolvedValue([cityEvent]);
+    vi.mocked(calApi.getCalendar).mockResolvedValue({ events: [] });
+    vi.mocked(calApi.getCityCalendar).mockResolvedValue({ events: [cityEvent] });
 
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     renderPage(qc);
 
     await waitFor(() =>
-      expect(screen.getByText('Everything happening in Seattle')).toBeInTheDocument(),
+      expect(screen.getByText("What's happening in Seattle")).toBeInTheDocument(),
     );
 
     vi.mocked(listManualInterests).mockResolvedValue([

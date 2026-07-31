@@ -21,6 +21,7 @@ export const color = {
   green600: '#16a34a',
   green700: '#15803d',
   red600: '#dc2626',
+  yellow100: '#fffdea',
 } as const;
 
 export const fontSize = {

@@ -42,7 +42,7 @@ export const rangeButtonInactive = style({
   ':hover': { color: color.gray900 },
 });
 
-export const errorBox = style({ color: color.red600, marginTop: '1rem' });
+export const errorBox = style({ color: color.red600, marginTop: '1rem', ...textStroke('4px') });
 
 export const emptyState = style([
   card,
@@ -74,9 +74,11 @@ export const listItemCondensed = style({
 export const banner = style([
   card,
   {
+    display: 'flex',
     padding: '1rem',
     marginTop: '1rem',
     color: color.gray600,
+    backgroundColor: color.yellow100,
     ...fontSize.sm,
   },
 ]);

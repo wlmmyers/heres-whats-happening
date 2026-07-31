@@ -5,6 +5,8 @@ export interface MatchedBecause {
   genres: string[];
 }
 
+export type PageParam = string | undefined;
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -18,10 +20,19 @@ export interface CalendarEvent {
   matched_because: MatchedBecause;
 }
 
-export async function getCalendar(from: string, to: string): Promise<CalendarEvent[]> {
-  const params = new URLSearchParams({ from, to });
-  const out = await apiFetch<{ events: CalendarEvent[] }>(`/me/calendar?${params.toString()}`);
-  return out.events;
+export interface CalendarResponse {
+  events: CalendarEvent[];
+  // Omitted by the server (`json:"next_cursor,omitempty"`) on the last page,
+  // which is what stops react-query from paging forever.
+  next_cursor?: string;
+}
+
+export async function getCalendar(cursor?: string): Promise<CalendarResponse> {
+  const params = cursor ? new URLSearchParams({ cursor }) : null;
+  const result = await apiFetch<CalendarResponse>(
+    `/me/calendar${params ? '?' + params.toString() : ''}`,
+  );
+  return result;
 }
 
 export async function getEvent(id: string): Promise<CalendarEvent> {
@@ -30,14 +41,10 @@ export async function getEvent(id: string): Promise<CalendarEvent> {
 
 // Every event in a city, unfiltered by match score. The calendar falls back to
 // this when the user has nothing to match against yet.
-export async function getCityCalendar(
-  cityId: string,
-  from: string,
-  to: string,
-): Promise<CalendarEvent[]> {
-  const params = new URLSearchParams({ from, to });
-  const out = await apiFetch<{ events: CalendarEvent[] }>(
-    `/calendar/${cityId}?${params.toString()}`,
+export async function getCityCalendar(cityId: string, cursor?: string): Promise<CalendarResponse> {
+  const params = cursor ? new URLSearchParams({ cursor }) : null;
+  const result = await apiFetch<CalendarResponse>(
+    `/calendar/${cityId}${params ? '?' + params.toString() : ''}`,
   );
-  return out.events;
+  return result;
 }

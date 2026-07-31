@@ -1,25 +1,41 @@
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getCalendar, type CalendarEvent } from '../api/calendar';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQueryClient,
+  type InfiniteData,
+} from '@tanstack/react-query';
+import { getCalendar, type CalendarResponse, type PageParam } from '../api/calendar';
 import { useAuth } from '../auth/useAuth';
 
-export function calendarQueryKey(userId: string | undefined, from: string, to: string) {
-  return ['calendar', userId, from, to] as const;
+type QueryKey = readonly ['calendar', string | undefined];
+
+export function calendarQueryKey(userId: string | undefined) {
+  return ['calendar', userId] as const;
 }
 
-export function useCalendar(from: string, to: string) {
+export function useCalendar() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  return useQuery<CalendarEvent[]>({
-    queryKey: calendarQueryKey(user?.id, from, to),
-    queryFn: async () => {
-      const events = await getCalendar(from, to);
+  return useInfiniteQuery<
+    CalendarResponse,
+    Error,
+    InfiniteData<CalendarResponse, PageParam>,
+    QueryKey,
+    PageParam
+  >({
+    queryKey: ['calendar', user?.id],
+    queryFn: async ({ pageParam }) => {
+      const response = await getCalendar(pageParam);
       // Seed the event query cache
-      events.forEach((event) => {
+      response.events.forEach((event) => {
         queryClient.setQueryData(['event', user?.id, event.id], event);
       });
-      return events;
+      return response;
     },
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
+    getPreviousPageParam: () => null,
     placeholderData: keepPreviousData,
   });
 }
