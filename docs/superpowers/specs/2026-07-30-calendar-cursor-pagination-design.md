@@ -35,7 +35,7 @@ GET /me/calendar?cursor=<opaque>          cursor optional
 GET /calendar/{cityId}?cursor=<opaque>    cursor optional
 
 200 → {"events": [ …≤20… ], "next_cursor": "MjAyNi0w…"}
-400 → {"code": "bad_cursor", …}
+400 → {"error": {"code": "bad_cursor", "message": "…"}}
 ```
 
 `next_cursor` is omitted (`json:",omitempty"`) when the page just returned is the
@@ -125,9 +125,10 @@ iCal feed at `internal/http/handlers/ical.go:108`, which wants one unpaginated
 it alone means the feed's behavior cannot regress as part of this change.
 
 `GetCityCalendarInRange` has no caller left once `GetCityCalendar` moves to the
-paged query, so it and its store tests (`internal/store/city_calendar_test.go`)
-are deleted rather than left as dead code. Its test coverage moves to the new
-paged query.
+paged query, so the query itself is deleted rather than left as dead code. Its
+store tests (`internal/store/city_calendar_test.go`) are not deleted — they are
+retargeted in place onto the paged query, keeping their coverage of the city
+calendar's filtering behavior.
 
 ## Handlers
 

@@ -78,6 +78,10 @@ WHERE m.user_id = sqlc.arg(user_id)
   )
   -- A NULL cursor means "first page": the guard short-circuits and every row
   -- qualifies. Otherwise this is a strict row-comparison keyset seek.
+  -- cursor_starts_at and cursor_event_id are all-or-nothing: passing one
+  -- non-NULL and the other NULL makes the row comparison evaluate to NULL for
+  -- rows tied on starts_at, silently dropping them. parseCursor always sets
+  -- both or neither.
   AND (
       sqlc.narg(cursor_starts_at)::timestamptz IS NULL
       OR (e.starts_at, e.id) > (sqlc.narg(cursor_starts_at)::timestamptz,
@@ -106,6 +110,10 @@ JOIN venues v ON v.id = e.venue_id
 WHERE v.city_id = sqlc.arg(city_id)
   AND e.archived_at IS NULL
   AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
+  -- cursor_starts_at and cursor_event_id are all-or-nothing: passing one
+  -- non-NULL and the other NULL makes the row comparison evaluate to NULL for
+  -- rows tied on starts_at, silently dropping them. parseCursor always sets
+  -- both or neither.
   AND (
       sqlc.narg(cursor_starts_at)::timestamptz IS NULL
       OR (e.starts_at, e.id) > (sqlc.narg(cursor_starts_at)::timestamptz,

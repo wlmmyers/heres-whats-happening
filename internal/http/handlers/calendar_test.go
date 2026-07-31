@@ -229,6 +229,31 @@ func TestGetMyCalendar_ExactlyFullPageOmitsCursor(t *testing.T) {
 	require.Empty(t, resp.NextCursor)
 }
 
+// A user with no matched events must get {"events":[]}, not {"events":null}.
+// This is a JSON-level assertion rather than require.Empty on a decoded slice
+// because a decoded [] and null both satisfy require.Empty — the whole point
+// here is to pin the wire shape, not just the length.
+func TestGetMyCalendar_NoMatchedEventsReturnsEmptyList(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	city, _ := q.GetDefaultCity(ctx)
+	userRow, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email: "no-matches@example.com", PasswordHash: "stub", CityID: city.ID,
+	})
+	require.NoError(t, err)
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userRow.ID), true)
+	req := httptest.NewRequest(http.MethodGet, "/me/calendar", nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	middleware.RequireAuth(signer)(handlers.GetMyCalendar(q)).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"events":[]}`, rec.Body.String())
+}
+
 func TestGetMyCalendar_BadCursor_Returns400(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
@@ -643,6 +668,28 @@ func TestGetCityCalendar_FirstPageCapsAt20AndReturnsCursor(t *testing.T) {
 
 	require.Len(t, resp.Events, 20)
 	require.NotEmpty(t, resp.NextCursor)
+}
+
+// A page that is exactly full but has nothing after it must not advertise a
+// next page. Mirrors TestGetMyCalendar_ExactlyFullPageOmitsCursor for the city
+// endpoint, whose page-boundary check (len(rows) > calendarPageSize) has no
+// other test that lands on an exactly-full final page.
+func TestGetCityCalendar_ExactlyFullPageOmitsCursor(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+	// 19 + the fixture's 1 = exactly 20. The city endpoint counts every
+	// showable city event regardless of match, same as GetMyCalendar counts
+	// matched ones here.
+	seedManyMatchedEvents(t, q, ctx, userID, 19)
+
+	resp := getCityCalendarPage(t, q, signer, userID, city.ID, "")
+
+	require.Len(t, resp.Events, 20)
+	require.Empty(t, resp.NextCursor)
 }
 
 func TestGetCityCalendar_CursorWalksEveryEventExactlyOnce(t *testing.T) {

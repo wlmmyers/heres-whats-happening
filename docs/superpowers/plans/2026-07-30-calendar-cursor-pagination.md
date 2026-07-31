@@ -1178,7 +1178,7 @@ git commit -m "Paginate GET /calendar/{cityId} and drop the from/to range code"
 - `from`/`to` are gone from the handlers and from `sql/queries/calendar.sql`'s city query; sending them is a 200, not a 400.
 - A malformed cursor is a 400 `bad_cursor`.
 - `internal/http/handlers/ical.go` and `GetUserCalendarInRange` are byte-for-byte unchanged.
-- Nothing under `web/` is modified — confirm with `git diff --stat master.. -- web/` returning empty.
+- Nothing under `web/` is modified — confirm with `git diff --stat f159e4bb..HEAD -- web/` returning empty.
 - `make test` passes.
 
 ## Follow-ups explicitly out of scope
