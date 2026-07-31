@@ -7,5 +7,7 @@ export function useMe() {
   return useQuery({
     queryKey: ['me', user?.id],
     queryFn: getMe,
+    // Keyed on user.id — stay idle until it is known. See useSpotifyStatus.
+    enabled: !!user,
   });
 }

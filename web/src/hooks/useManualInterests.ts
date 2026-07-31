@@ -7,5 +7,7 @@ export function useManualInterests() {
   return useQuery<Interest[]>({
     queryKey: ['manual-interests', user?.id],
     queryFn: listManualInterests,
+    // Keyed on user.id — stay idle until it is known. See useSpotifyStatus.
+    enabled: !!user,
   });
 }

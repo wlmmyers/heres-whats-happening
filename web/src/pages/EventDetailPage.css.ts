@@ -26,6 +26,7 @@ export const thumbnail = style({
 
 export const detail = style({
   display: 'flex',
+  position: 'relative',
   justifyContent: 'space-between',
   minHeight: '144px',
   '@media': {

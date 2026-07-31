@@ -7,5 +7,8 @@ export function useSpotifyStatus() {
   return useQuery({
     queryKey: ['spotify-status', user?.id],
     queryFn: getSpotifyStatus,
+    // Keyed on user.id, so running before AuthProvider resolves would cache
+    // under `undefined` and refetch under the real id a moment later.
+    enabled: !!user,
   });
 }

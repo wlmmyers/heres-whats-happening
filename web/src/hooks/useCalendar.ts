@@ -37,5 +37,7 @@ export function useCalendar() {
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     getPreviousPageParam: () => null,
     placeholderData: keepPreviousData,
+    // Keyed on user.id — stay idle until it is known. See useSpotifyStatus.
+    enabled: !!user,
   });
 }
