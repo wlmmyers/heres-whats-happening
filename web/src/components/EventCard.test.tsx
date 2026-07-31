@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import EventCard from './EventCard';
+import * as s from './EventCard.css';
 import type { CalendarEvent } from '../api/calendar';
 
 const event: CalendarEvent = {
@@ -21,7 +22,29 @@ function renderCard(onNotInterested?: (id: string) => void, overrides?: Partial<
   );
 }
 
+// ICU pads its range patterns with thin and narrow no-break spaces; compare
+// against plain spaces so the expectations stay readable.
+function dateLine(container: HTMLElement) {
+  return container.querySelector(`.${s.date}`)?.textContent?.replace(/[\u2009\u202f\u00a0]/g, ' ');
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('EventCard', () => {
+  it('shows only the start time when the event has no ends_at', () => {
+    vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
+    const { container } = renderCard();
+    expect(dateLine(container)).toBe('Mon, Jun 15, 1:00 PM · The Bowl');
+  });
+
+  it('shows the start–end range when the event has an ends_at', () => {
+    vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
+    const { container } = renderCard(undefined, { ends_at: '2026-06-15T23:30:00Z' });
+    expect(dateLine(container)).toBe('Mon, Jun 15, 1:00 – 4:30 PM · The Bowl');
+  });
+
   it('navigates to the event detail page when clicked', () => {
     render(
       <MemoryRouter initialEntries={['/']}>

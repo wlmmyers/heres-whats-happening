@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import type { CalendarEvent } from '../api/calendar';
+import { formatEventDate } from '../utils/eventDate';
 import * as s from './EventCard.css';
 import clsx from 'clsx';
 
@@ -15,15 +16,7 @@ export default function EventCard({
   shorterMinHeight?: boolean;
 }) {
   const navigate = useNavigate();
-  const date = new Date(event.starts_at);
-  const dateLabel = date.toLocaleString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    ...(date.getFullYear() > new Date().getFullYear() && { year: 'numeric' }),
-  });
+  const dateLabel = formatEventDate(event, 'short');
   const matchedBits = [...event.matched_because.performers, ...event.matched_because.genres];
   return (
     <div

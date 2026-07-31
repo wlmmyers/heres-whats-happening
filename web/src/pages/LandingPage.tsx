@@ -7,6 +7,7 @@ import { useAuth } from '../auth/useAuth';
 import { Navigate, useLocation } from 'react-router-dom';
 import SkeletonCard from '../components/SkeletonCard';
 import { useLayoutEffect, useState } from 'react';
+import { LANDING_PAGE_KILL_ANIMATION } from '../constants/windowEvents';
 
 export default function LandingPage({ children }: { children?: React.ReactNode }) {
   const { status } = useAuth();
@@ -50,28 +51,35 @@ export default function LandingPage({ children }: { children?: React.ReactNode }
 
     // User interaction pauses the pan; after RESUME_DELAY of quiet we pick up
     // again from wherever they left the page.
-    const pause = () => {
+    const pause = (shouldResume: boolean) => () => {
       paused = true;
       setSpacerHeight(0);
       clearTimeout(resumeTimer);
-      resumeTimer = setTimeout(() => {
-        pos = window.scrollY;
-        lastTs = 0;
-        paused = false;
-      }, RESUME_DELAY);
+      if (shouldResume) {
+        resumeTimer = setTimeout(() => {
+          pos = window.scrollY;
+          lastTs = 0;
+          paused = false;
+        }, RESUME_DELAY);
+      }
     };
+    const pauseThenResume = pause(true);
+    const pauseForGood = pause(false);
 
     const passive: AddEventListenerOptions = { passive: true };
-    window.addEventListener('wheel', pause, passive);
-    window.addEventListener('touchmove', pause, passive);
+    window.addEventListener('wheel', pauseThenResume, passive);
+    window.addEventListener('touchmove', pauseThenResume, passive);
+    // Kills the animation when dispatched from a child component
+    window.addEventListener(LANDING_PAGE_KILL_ANIMATION, pauseForGood);
 
     rafId = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(rafId);
       clearTimeout(resumeTimer);
-      window.removeEventListener('wheel', pause, passive);
-      window.removeEventListener('touchmove', pause, passive);
+      window.removeEventListener('wheel', pauseThenResume, passive);
+      window.removeEventListener('touchmove', pauseThenResume, passive);
+      window.removeEventListener(LANDING_PAGE_KILL_ANIMATION, pauseForGood);
 
       // reset scroll position to top when leaving the page, so that the next time the user visits the landing page they see the top of the list
       window.scrollTo(0, 0);

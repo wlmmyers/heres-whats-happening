@@ -4,17 +4,10 @@ import * as s from './EventDetailPage.css';
 import * as c from '../styles/common.css';
 import { Skeleton } from '../components/Skeleton';
 import type { CalendarEvent } from '../api/calendar';
+import { formatEventDate } from '../utils/eventDate';
 
 const EventContent = ({ event }: { event: CalendarEvent }) => {
-  const date = new Date(event.starts_at);
-  const dateLabel = date.toLocaleString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const dateLabel = formatEventDate(event, 'long');
   const matchedBits = [...event.matched_because.performers, ...event.matched_because.genres];
   return (
     <>

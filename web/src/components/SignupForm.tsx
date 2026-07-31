@@ -4,8 +4,11 @@ import { useAuth } from '../auth/useAuth';
 import RotatingLogo from './RotatingLogo';
 import * as s from './SignupForm.css';
 import * as c from '../styles/common.css';
+import { useScreenSize } from '../hooks/useScreenSize';
+import { LANDING_PAGE_KILL_ANIMATION } from '../constants/windowEvents';
 
 export default function SignupForm({ onSuccess }: { onSuccess?: () => void }) {
+  const { isPhoneWidth } = useScreenSize();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +38,13 @@ export default function SignupForm({ onSuccess }: { onSuccess?: () => void }) {
     }
   }
 
+  const handleInputFocus = () => {
+    if (isPhoneWidth) {
+      // Kill landing page animation since it messes with the UI when phone keyboard is active
+      window.dispatchEvent(new Event(LANDING_PAGE_KILL_ANIMATION));
+    }
+  };
+
   return (
     <div className={s.signupCard}>
       <RotatingLogo />
@@ -51,6 +61,7 @@ export default function SignupForm({ onSuccess }: { onSuccess?: () => void }) {
             autoComplete="email"
             required
             className={c.textInput}
+            onFocus={handleInputFocus}
           />
         </label>
 
@@ -64,6 +75,7 @@ export default function SignupForm({ onSuccess }: { onSuccess?: () => void }) {
             minLength={8}
             required
             className={c.textInput}
+            onFocus={handleInputFocus}
           />
         </label>
 

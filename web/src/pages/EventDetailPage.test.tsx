@@ -39,7 +39,42 @@ beforeEach(() => {
   });
 });
 
+// ICU pads its range patterns with thin and narrow no-break spaces; compare
+// against plain spaces so the expectations stay readable.
+function dateLine(container: HTMLElement) {
+  return container.querySelector(`.${s.date}`)?.textContent?.replace(/[\u2009\u202f\u00a0]/g, ' ');
+}
+
 describe('EventDetailPage', () => {
+  it('shows only the start time when the event has no ends_at', async () => {
+    (calApi.getEvent as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'e1',
+      title: 'PB Live',
+      starts_at: '2026-06-15T20:00:00Z',
+      venue: { name: 'The Bowl' },
+      score: 0,
+      matched_because: { performers: [], genres: [] },
+    });
+    const { container } = renderAt('/events/e1');
+    await waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
+    expect(dateLine(container)).toBe('Monday, June 15, 2026 at 1:00 PM');
+  });
+
+  it('shows the start–end range when the event has an ends_at', async () => {
+    (calApi.getEvent as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'e1',
+      title: 'PB Live',
+      starts_at: '2026-06-15T20:00:00Z',
+      ends_at: '2026-06-15T23:30:00Z',
+      venue: { name: 'The Bowl' },
+      score: 0,
+      matched_because: { performers: [], genres: [] },
+    });
+    const { container } = renderAt('/events/e1');
+    await waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
+    expect(dateLine(container)).toBe('Monday, June 15, 2026, 1:00 – 4:30 PM');
+  });
+
   it('renders the event detail', async () => {
     (calApi.getEvent as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       id: 'e1',

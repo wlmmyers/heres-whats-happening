@@ -4,9 +4,12 @@ import { useAuth } from '../auth/useAuth';
 import RotatingLogo from './RotatingLogo';
 import * as s from './LoginForm.css';
 import * as c from '../styles/common.css';
+import { useScreenSize } from '../hooks/useScreenSize';
+import { LANDING_PAGE_KILL_ANIMATION } from '../constants/windowEvents';
 
 export default function LoginForm() {
   const navigate = useNavigate();
+  const { isPhoneWidth } = useScreenSize();
   const [params] = useSearchParams();
   const isWelcome = params.get('welcome') === 'true';
   const prefilledEmail = params.get('email');
@@ -37,6 +40,13 @@ export default function LoginForm() {
     }
   }
 
+  const handleInputFocus = () => {
+    if (isPhoneWidth) {
+      // Kill landing page animation since it messes with the UI when phone keyboard is active
+      window.dispatchEvent(new Event(LANDING_PAGE_KILL_ANIMATION));
+    }
+  };
+
   return (
     <div className={s.loginCard}>
       <RotatingLogo />
@@ -65,6 +75,7 @@ export default function LoginForm() {
             autoComplete="email"
             required
             className={c.textInput}
+            onFocus={handleInputFocus}
           />
         </label>
 
@@ -77,6 +88,7 @@ export default function LoginForm() {
             autoComplete="current-password"
             required
             className={c.textInput}
+            onFocus={handleInputFocus}
           />
         </label>
 
