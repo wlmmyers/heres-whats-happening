@@ -69,15 +69,15 @@ variable "api_memory" {
 }
 
 variable "tei_cpu" {
-  description = "ECS Fargate CPU units for the TEI task. TEI is CPU-bound and benefits from headroom."
+  description = "ECS Fargate CPU units for the TEI task. TEI is CPU-bound, but observed peak CPU is <6% at 1024, so right-sized to 512 (0.5 vCPU) — still ~8x headroom. Bump back up if real embedding load arrives."
   type        = number
-  default     = 1024
+  default     = 512
 }
 
 variable "tei_memory" {
-  description = "ECS Fargate memory in MiB for the TEI task."
+  description = "ECS Fargate memory in MiB for the TEI task. Observed peak <307 MiB; 1024 keeps generous headroom. Valid pairing for 512 CPU (min 1024)."
   type        = number
-  default     = 2048
+  default     = 1024
 }
 
 variable "tei_image" {
