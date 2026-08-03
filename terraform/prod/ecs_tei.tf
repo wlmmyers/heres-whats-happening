@@ -35,7 +35,21 @@ resource "aws_ecs_service" "tei" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.tei.arn
   desired_count   = 1
-  launch_type     = "FARGATE"
+
+  # Fargate Spot: ~70% cheaper than on-demand. TEI is a stateless embedding server
+  # behind service discovery; a Spot reclaim → ECS launches a replacement task
+  # (desired_count stays 1). Callers tolerate the brief gap: the tei client retries
+  # transient failures (connection refused / 5xx) with backoff, so a short blip is
+  # ridden through in-request. Beyond that, the user-facing handler enqueues rather
+  # than calling TEI inline and the SQS interest consumer redelivers on error (embeds
+  # are idempotent), so real-time embeds retry; the nightly match job re-selects
+  # unembedded/stale rows on its next run, so a longer outage only delays embeddings,
+  # it doesn't drop them. capacity_provider_strategy and launch_type are mutually
+  # exclusive, so this replaces the previous launch_type = "FARGATE".
+  capacity_provider_strategy {
+    capacity_provider = "FARGATE_SPOT"
+    weight            = 1
+  }
 
   network_configuration {
     subnets          = aws_subnet.public[*].id
