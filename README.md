@@ -43,6 +43,12 @@ the hook aborts the commit and tells you so. Bypass a single commit with
 Note the checks run against the working tree, not the staged snapshot — if you
 stage only part of your changes, what runs is what is on disk.
 
+To run the same checks without committing (and without installing the hooks):
+
+```bash
+make check
+```
+
 ## Backend quickstart
 
 ```bash
