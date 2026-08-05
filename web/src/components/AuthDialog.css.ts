@@ -1,18 +1,11 @@
 import { style } from '@vanilla-extract/css';
-import { errorText, buttonSubmit, cardNoShadow } from '../styles/common.css';
+import { errorText, buttonSubmit } from '../styles/common.css';
 import { color, fontSize, fontWeight } from '../styles/theme';
+import { dialogCard, dialogWrapper } from './Dialog.css';
 
-export const loginCard = style([
-  cardNoShadow,
-  {
-    width: '100%',
-    maxWidth: '24rem',
-    padding: '1.5rem',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-  },
-]);
+export const wrapper = style([dialogWrapper]);
+
+export const authCard = style([dialogCard]);
 
 export const form = style({
   width: '100%',
@@ -44,14 +37,15 @@ export const switchText = style({
   marginTop: '1rem',
 });
 
-export const switchLink = style({
-  color: color.blue600,
-  ':hover': { textDecorationLine: 'underline' },
-});
-
 export const aside = style({
   ...fontSize.xs,
   color: color.gray500,
   display: 'block',
   marginTop: '0.5rem',
+});
+
+export const aboutLinkSection = style({
+  fontSize: '0.875rem',
+  width: '100%',
+  textAlign: 'right',
 });
