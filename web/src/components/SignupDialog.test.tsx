@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
 
 import { useAuth } from '../auth/useAuth';
-import SignupForm from './SignupForm';
+import SignupDialog from './SignupDialog';
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -23,7 +23,19 @@ function mockSignup(signup: ReturnType<typeof vi.fn>) {
   });
 }
 
-describe('SignupForm', () => {
+describe('SignupDialog', () => {
+  it('renders a sign-up dialog with the signup form', () => {
+    mockSignup(vi.fn());
+    render(
+      <MemoryRouter>
+        <SignupDialog />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('dialog', { name: /sign up/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /sign in/i })).toHaveAttribute('href', '/login');
+  });
+
   it('shows a friendly message when rate limited', async () => {
     const err = Object.assign(new Error('too many requests, please try again later'), {
       code: 'rate_limited',
@@ -31,7 +43,7 @@ describe('SignupForm', () => {
     mockSignup(vi.fn().mockRejectedValueOnce(err));
     render(
       <MemoryRouter>
-        <SignupForm />
+        <SignupDialog />
       </MemoryRouter>,
     );
     await userEvent.type(screen.getByLabelText(/email/i), 'a@x.com');

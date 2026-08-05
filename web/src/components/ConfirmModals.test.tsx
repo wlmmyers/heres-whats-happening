@@ -54,7 +54,7 @@ describe('confirmation modals', () => {
   });
 
   // Confirming on a phone with no session is a real case, but there the login
-  // card carries the "your email is confirmed" copy itself (see LoginForm), so
+  // card carries the "your email is confirmed" copy itself (see LoginDialog), so
   // the modal would only stack on top of it.
   it('leaves the welcome message to the login card for an anonymous visitor', () => {
     mockAuth('anonymous');

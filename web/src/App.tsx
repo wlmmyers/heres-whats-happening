@@ -11,11 +11,16 @@ import LandingPage from './pages/LandingPage';
 import ConfirmEmailPage from './pages/ConfirmEmailPage';
 import LoginDialog from './components/LoginDialog';
 import SignupDialog from './components/SignupDialog';
+import AboutDialog from './components/AboutDialog';
+
+const SCROLL_TOP_EXCEPTION_PATHS = ['/signup', '/login', '/about'];
 
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => {
-    window.scrollTo(0, 0);
+    if (!SCROLL_TOP_EXCEPTION_PATHS.includes(pathname)) {
+      window.scrollTo(0, 0);
+    }
   }, [pathname]);
   return null;
 }
@@ -48,6 +53,14 @@ export default function App() {
             element={
               <LandingPage>
                 <SignupDialog />
+              </LandingPage>
+            }
+          />
+          <Route
+            path="about"
+            element={
+              <LandingPage>
+                <AboutDialog />
               </LandingPage>
             }
           />
