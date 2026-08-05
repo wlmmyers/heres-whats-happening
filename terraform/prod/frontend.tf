@@ -33,6 +33,13 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
   signing_protocol                  = "sigv4"
 }
 
+resource "aws_cloudfront_origin_access_control" "poster_fn" {
+  name                              = "${var.app_name_prefix}-poster-fn-oac"
+  origin_access_control_origin_type = "lambda"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
 resource "aws_cloudfront_distribution" "frontend" {
   enabled             = true
   is_ipv6_enabled     = true
@@ -46,6 +53,18 @@ resource "aws_cloudfront_distribution" "frontend" {
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
     origin_id                = "s3-frontend"
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
+  }
+
+  origin {
+    domain_name              = replace(replace(aws_lambda_function_url.mastra_handler.function_url, "https://", ""), "/", "")
+    origin_id                = "lambda-poster"
+    origin_access_control_id = aws_cloudfront_origin_access_control.poster_fn.id
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
   }
 
   default_cache_behavior {
@@ -65,6 +84,18 @@ resource "aws_cloudfront_distribution" "frontend" {
     max_ttl     = 86400
   }
 
+  ordered_cache_behavior {
+    path_pattern             = "/api/poster*"
+    target_origin_id         = "lambda-poster"
+    viewer_protocol_policy   = "redirect-to-https"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods           = ["GET", "HEAD"]
+    cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # Managed-CachingDisabled
+    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac" # Managed-AllViewerExceptHostHeader
+  }
+
+  # NOTE (spec §8): these 403/404 -> index.html rewrites are distribution-wide and
+  # also apply to /api/poster*. The poster handler therefore emits ONLY 400/422/500.
   # SPA: 404s on dynamic routes are normal — return index.html so client-side routing works.
   custom_error_response {
     error_code         = 403

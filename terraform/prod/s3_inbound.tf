@@ -55,7 +55,7 @@ resource "aws_s3_bucket_policy" "inbound_email" {
 resource "aws_s3_bucket_notification" "inbound_email" {
   bucket = aws_s3_bucket.inbound_email.id
   lambda_function {
-    lambda_function_arn = aws_lambda_function.email_parser.arn
+    lambda_function_arn = aws_lambda_function.mastra_handler.arn
     events              = ["s3:ObjectCreated:*"]
     filter_prefix       = "raw/"
   }

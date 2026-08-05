@@ -83,9 +83,9 @@ output "email_ingest_recipient" {
   value       = local.ingest_recipient
 }
 
-output "email_parser_ecr_repo" {
-  description = "ECR repo URL for the email-parser Lambda image (owned by the bootstrap stack)."
-  value       = data.aws_ecr_repository.email_parser.repository_url
+output "mastra_handler_ecr_repo" {
+  description = "ECR repo URL for the mastra-handler Lambda image (owned by the bootstrap stack)."
+  value       = data.aws_ecr_repository.mastra_handler.repository_url
 }
 
 output "email_inbound_bucket" {
@@ -100,7 +100,7 @@ output "email_post_apply_steps" {
 
     1. Seed the model key (Mastra reads ANTHROPIC_API_KEY):
        aws secretsmanager put-secret-value \
-         --secret-id ${var.app_name_prefix}/email-llm-api-key \
+         --secret-id ${var.app_name_prefix}/mastra-handler-llm-api-key \
          --secret-string "<your-anthropic-api-key>"
 
     2. Confirm DNS: inbound.${var.domain_name} MX + 3 DKIM CNAMEs resolve, and
@@ -108,16 +108,16 @@ output "email_post_apply_steps" {
 
     3. The ECR repo + lambda CodeBuild pipeline live in the bootstrap stack.
        BEFORE applying this stack, apply bootstrap and push a bootstrap image to
-       ${data.aws_ecr_repository.email_parser.repository_url}:bootstrap (the
+       ${data.aws_ecr_repository.mastra_handler.repository_url}:bootstrap (the
        aws_lambda_function references that tag on first create). After this stack
        applies, the ${var.app_name_prefix}-lambda-pipeline rebuilds + deploys the
        image on each push via aws lambda update-function-code.
 
     4. Send a test newsletter to ${local.ingest_recipient}; check the
-       ${var.app_name_prefix}-email-parser CloudWatch logs, then confirm a new
+       ${var.app_name_prefix}-mastra-handler CloudWatch logs, then confirm a new
        row with source = email_newsletter in the events table.
 
-    5. Watch the ${var.app_name_prefix}-email-parser-dlq-depth alarm — depth >= 1
+    5. Watch the ${var.app_name_prefix}-mastra-handler-dlq-depth alarm — depth >= 1
        means emails are failing to parse.
   EOT
 }
