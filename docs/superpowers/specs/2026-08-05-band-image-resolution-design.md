@@ -36,10 +36,14 @@ genuinely different candidates to judge on each attempt.
 
 ## Scope boundary
 
-Confined to the band-image acquisition path in `lambda/mastra-handler`. The
-compose/critique loop, `PosterLoopStateSchema`, `finalizeStep`,
-`PosterWorkflowOutputSchema`, the HTTP handler, and the poster sink are all
-untouched. `BandImageSchema` keeps its exact shape and merely changes file.
+Confined to `lambda/mastra-handler`. The compose/critique loop's logic, the
+poster sink, and the S3 artifact layout are untouched.
+
+`PosterLoopStateSchema`, `finalizeStep`, `PosterWorkflowOutputSchema`,
+`PosterResult`, and `posterHttpResponse` each gain **additive** fields so that
+provenance (which MusicBrainz artist, which Commons image, under what licence)
+reaches the API response. No existing field changes shape or meaning.
+`BandImageSchema` keeps its existing fields and gains an optional `credit`.
 
 ## Upstream API behavior (verified 2026-08-05)
 
@@ -75,7 +79,8 @@ resolveBandCandidatesStep (once per run)
       mbid --[wikidata haswbstatement:P434]--> QID      (skip artist if none)
       QID  --[wbgetclaims P18]-->  canonical file
       QID  --[wbgetclaims P373]--> category --[categorymembers]--> files
-      files --[commons imageinfo, batched, iiurlwidth=1080]--> url/w/h/mime
+      files --[commons imageinfo, batched, iiurlwidth=1080]
+              -> url/w/h/mime + descriptionurl + extmetadata (licensing)
     stop at the first artist yielding >= 1 candidate
   -> { artist, candidates[] }   metadata only, NO image bytes
 
@@ -101,11 +106,16 @@ the 1 req/sec MusicBrainz budget recomputing an identical answer.
 Shared shapes, extracted so the tools and the workflow do not import each other.
 
 ```ts
-BandImageSchema      // moved verbatim from web-scrape.tool.ts
-  = { imageBase64, contentType, width, height, sourceUrl? }
+BandImageSchema      // moved from web-scrape.tool.ts, gains `credit`
+  = { imageBase64, contentType, width, height, sourceUrl?, credit? }
+
+ImageCreditSchema
+  = { file, descriptionUrl, artist?, credit?, license?, licenseShortName?,
+      licenseUrl?, usageTerms?, attributionRequired: boolean }
 
 ImageCandidateSchema
-  = { file, url, width, height, contentType, source: "p18" | "category" }
+  = { file, url, width, height, contentType, source: "p18" | "category",
+      credit: ImageCreditSchema }
 
 ArtistMatchSchema
   = { mbid, name, score, disambiguation?, type?, country?, beginYear? }
@@ -174,6 +184,35 @@ in slot 1 — a panel-discussion photo. With rule 4 the pool becomes:
 
 so attempt 2 gets another live band photo instead of the panel shot.
 
+**Licensing capture.** The same batched `imageinfo` call carries the attribution
+data, so it costs no extra request:
+
+```
+iiprop=url|size|mime|extmetadata
+iiextmetadatafilter=License|LicenseShortName|LicenseUrl|UsageTerms
+                   |Artist|Credit|AttributionRequired|Restrictions
+```
+
+Verified against the three La Luz candidates — all three returned complete
+licensing, and all three had `AttributionRequired: true`:
+
+| file | license | artist |
+|---|---|---|
+| P18, Siberia 5 March 2015 | CC BY-SA 4.0 | Shark2000br |
+| Shana Cleveland.jpg | CC BY-SA 2.0 | Joe Mabel |
+| WideAwake250524 (74 of 209) | CC BY 2.0 | Raph_PH |
+
+`extmetadata` values may contain HTML — `Credit` for `Shana Cleveland.jpg` comes
+back as `<a rel="nofollow" class="external free" href="...">...</a>`, and `Artist`
+is commonly wrapped in `<a>` or `<span>` too. Both fields are run through
+`html-to-text` (already a dependency, used by the email path) rather than a
+regex.
+
+Fields are optional because public-domain files legitimately lack them;
+`attributionRequired` defaults to `false` when the key is absent. `descriptionUrl`
+comes from `iiprop=url` as `descriptionurl` and is the human-readable Commons
+file page — the durable link for attribution, as opposed to the thumbnail URL.
+
 Thumbnails are requested at `iiurlwidth=1080`, matching the poster canvas width
 in `svg-author.agent.ts` (1080x1350). The image is embedded as a base64 data URI
 inside the SVG, so anything wider is carried through workflow state and into
@@ -224,7 +263,51 @@ spin the step against an empty slot until `MAX_IMAGE_ATTEMPTS`.
 `MAX_IMAGE_ATTEMPTS` stays at 3, so the 12-candidate pool bounds reachable
 candidates, not vision calls.
 
-### g) Deletions
+### g) Surfacing provenance in the output
+
+Which artist was matched and which image was used must not stay buried in loop
+state. This matters most in the fall-through case: if the top MusicBrainz match
+has no Wikidata entry, the resolver advances to the next, and for "la luz" that
+means a Belgian house group. Without `artist` in the output, the pipeline would
+return a confident poster for the wrong band with no signal that it substituted.
+
+Threaded additively along the existing path:
+
+```
+ImageLoopState { artist, image.credit }
+  -> seed2 .map()      carries artist + credit into PosterLoopState
+  -> PosterLoopStateSchema  gains  artist?, credit?
+  -> finalizeStep      emits both on BOTH branches
+  -> PosterWorkflowOutputSchema  gains  artist?, credit?
+  -> processPosterRequest (poster.ts:34)  passes through
+  -> PosterResult      gains artist?/credit? on ok, artist? on failure
+  -> posterHttpResponse (poster.ts:44)    includes them in the body
+```
+
+`finalizeStep` emitting on the **failure** branch is deliberate: a
+`failureStage: "image"` result is far more actionable when it says which MB
+artist was resolved and which candidates were rejected than when it says only
+"no acceptable band image found".
+
+The 200 body gains `artist` and `credit`; the 422 body gains `artist` when one
+was resolved. Both are additive, so existing consumers are unaffected.
+
+### h) Attribution is captured, not rendered
+
+This design **returns** licensing data; it does not draw a credit line on the
+poster. `svg-author.agent.ts` and the compose loop are unchanged.
+
+Flagged rather than decided, because it is a judgment call outside the scope of
+wiring up the tools: every La Luz candidate carries `AttributionRequired: true`,
+and two of the three are CC BY-**SA**. Share-Alike is copyleft — a derivative
+work incorporating the photo is expected to be licensed on the same terms, and a
+generated poster is plainly a derivative. Capturing the metadata is a
+precondition for handling that; it is not by itself compliance. Options worth
+considering later: render a credit line into the SVG, prefer CC BY / public
+domain candidates over CC BY-SA during ordering, or emit attribution alongside
+the artifact in the sink.
+
+### i) Deletions
 
 - `web-scrape.tool.ts` and `web-scrape.tool.test.ts` — deleted.
 - `acquire-band-image.step.ts` — replaced by (d) and (e).
@@ -289,6 +372,14 @@ first with `source: "p18"`; joins imageinfo by title with deliberately shuffled
 applies the rule-4 ordering; caps at 12; returns `[]` when there is neither P18
 nor P373.
 
+Licensing, from a recorded `extmetadata` payload: maps License /
+LicenseShortName / LicenseUrl / UsageTerms / Artist / Credit;
+`html-to-text`-strips the anchor-wrapped `Credit` from `Shana Cleveland.jpg` down
+to the bare URL; sets `attributionRequired` from the flag and defaults it to
+`false` when the key is absent; tolerates a public-domain file with no `Artist`
+or `License` without dropping the candidate; populates `descriptionUrl` from
+`descriptionurl`, not from `thumburl`.
+
 **`resolve-band-candidates.step.test.ts`** — falls through when artist 1 has no
 QID; stops at the first artist yielding >= 1 candidate; bounded at 3 artists;
 network failure sets a reason and does not throw.
@@ -301,6 +392,16 @@ failure still counts as an attempt; artist hints reach the agent prompt.
 three rejections judge **three distinct candidates**, `iterationCount` is 3, and
 the terminal output is `failureStage: "image"`. Plus accept-on-attempt-2 exits
 the loop with the image carried into compose.
+
+Provenance: `artist` and `credit` survive the seed2 `.map()` into
+`PosterLoopState` — the boundary where loop-1 state is rebuilt and fields are
+easiest to drop silently. `artist` is present on the `failureStage: "image"`
+output, not only on success. And when fall-through substitutes artist 2, the
+`artist` in the output is artist 2, not the top match.
+
+**`poster.test.ts`** (existing, extended) — `processPosterRequest` passes
+`artist`/`credit` through to `PosterResult`; the 200 body carries both and the
+422 body carries `artist`.
 
 **Live integration test**, gated behind an env var and skipped by default, hitting
 real MusicBrainz/Wikidata/Commons for "La Luz" and asserting >= 2 candidates with
@@ -322,4 +423,10 @@ spec.
   generation is on-demand and low-volume.
 - Image search beyond Wikimedia. Performers without a Wikidata entry will fail
   the image stage with a clear reason, which is the existing, working behavior.
-- Any change to the compose/critique loop.
+- Any change to compose/critique *logic*. `PosterLoopStateSchema` gains two
+  optional carrier fields, but `composePosterStep` neither reads nor writes
+  them.
+- Acting on the licensing data: no credit line rendered into the SVG, no
+  licence-aware candidate ordering, no attribution written to the sink. See
+  component (h) — the data is captured so those choices become possible, and
+  capture alone is not CC BY-SA compliance.
