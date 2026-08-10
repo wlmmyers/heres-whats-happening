@@ -1,13 +1,7 @@
 import { createTool } from "@mastra/core/tools";
 import { convert as htmlToText } from "html-to-text";
 import { z } from "zod";
-import {
-  ImageCandidateSchema,
-  USER_AGENT,
-  type BandImage,
-  type ImageCandidate,
-  type ImageCredit,
-} from "./band-image.js";
+import { ImageCandidateSchema, USER_AGENT, type ImageCandidate, type ImageCredit } from "./band-image.js";
 import type { FetchFn } from "./musicbrainz.tool.js";
 
 const DEFAULT_WIKIDATA_BASE_URL = "https://www.wikidata.org";
@@ -47,7 +41,8 @@ export interface WikimediaOptions {
 
 export interface WikimediaClient {
   resolveImageCandidates(mbid: string, opts?: { artistName?: string }): Promise<ImageCandidate[]>;
-  fetchImageBytes(candidate: ImageCandidate): Promise<BandImage>;
+  /** Raw bytes of the candidate's thumbnail. The caller decides where they land. */
+  fetchImageBytes(candidate: ImageCandidate): Promise<Buffer>;
 }
 
 interface RawImageInfo {
@@ -237,15 +232,7 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!res.ok) throw new Error(`commons ${res.status} fetching ${candidate.file}`);
-      const bytes = Buffer.from(await res.arrayBuffer());
-      return {
-        imageBase64: bytes.toString("base64"),
-        contentType: candidate.contentType,
-        width: candidate.width,
-        height: candidate.height,
-        sourceUrl: candidate.credit.descriptionUrl || candidate.url,
-        credit: candidate.credit,
-      };
+      return Buffer.from(await res.arrayBuffer());
     },
   };
 }
@@ -257,7 +244,7 @@ export function resolveImageCandidates(mbid: string, opts?: { artistName?: strin
   return wikimediaClient.resolveImageCandidates(mbid, opts);
 }
 
-export function fetchImageBytes(candidate: ImageCandidate): Promise<BandImage> {
+export function fetchImageBytes(candidate: ImageCandidate): Promise<Buffer> {
   return wikimediaClient.fetchImageBytes(candidate);
 }
 

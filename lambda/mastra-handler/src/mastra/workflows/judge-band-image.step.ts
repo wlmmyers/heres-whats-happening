@@ -1,6 +1,7 @@
 import { createStep } from "@mastra/core/workflows";
 import { type z } from "zod";
 import { ImageAnalysisSchema, imageAnalysisAgent } from "../agents/image-analysis.agent.js";
+import { artifactStore } from "../tools/artifact-store.js";
 import type { ArtistMatch } from "../tools/band-image.js";
 import { fetchImageBytes } from "../tools/wikimedia.tool.js";
 import { ImageLoopStateSchema } from "./poster.schemas.js";
@@ -25,14 +26,15 @@ function describeArtist(artist: ArtistMatch | undefined, fallback: string): stri
     .join(", ");
 }
 
-// One iteration: fetch the indexed candidate's bytes, then a vision agent judges
-// it. Output shape == input shape so .dountil can loop. `candidateIndex` advances
-// on every iteration regardless of verdict, so the next attempt sees a NEW photo.
+// One iteration: fetch the indexed candidate's bytes, write them to the run's
+// artifact directory, then a vision agent judges them. The BYTES never enter
+// workflow state — only an ImageRef does. `candidateIndex` advances on every
+// iteration regardless of verdict, so the next attempt sees a NEW photo.
 export const judgeBandImageStep = createStep({
   id: "judge-band-image",
   inputSchema: ImageLoopStateSchema,
   outputSchema: ImageLoopStateSchema,
-  execute: async ({ inputData }) => {
+  execute: async ({ inputData, runId }) => {
     const candidate = inputData.candidates[inputData.candidateIndex];
     // Cheap short-circuit: nothing to judge, so spend no attempt and no LLM call.
     if (!candidate) {
@@ -42,9 +44,9 @@ export const judgeBandImageStep = createStep({
     const attempts = inputData.attempts + 1;
     const candidateIndex = inputData.candidateIndex + 1;
 
-    let image;
+    let bytes: Buffer;
     try {
-      image = await fetchImageBytes(candidate);
+      bytes = await fetchImageBytes(candidate);
     } catch (e) {
       return {
         ...inputData,
@@ -55,12 +57,34 @@ export const judgeBandImageStep = createStep({
       };
     }
 
+    let image;
+    try {
+      const store = artifactStore(runId);
+      const ext = candidate.contentType === "image/png" ? "png" : "jpg";
+      const ref = await store.write(`band-${attempts}.${ext}`, bytes, candidate.contentType);
+      image = {
+        ...ref,
+        width: candidate.width,
+        height: candidate.height,
+        sourceUrl: candidate.credit.descriptionUrl || candidate.url,
+        credit: candidate.credit,
+      };
+    } catch (e) {
+      return {
+        ...inputData,
+        attempts,
+        candidateIndex,
+        accepted: false,
+        reason: `could not store ${candidate.file}: ${message(e)}`,
+      };
+    }
+
     const who = describeArtist(inputData.artist, inputData.performer);
     const res = await imageAnalysisAgent.generate([
       {
         role: "user",
         content: [
-          { type: "image", image: Buffer.from(image.imageBase64, "base64"), mimeType: image.contentType },
+          { type: "image", image: bytes, mimeType: candidate.contentType },
           { type: "text", text: `Performer: ${who}. Is this a usable photo of this performer for a concert poster?` },
         ],
       },

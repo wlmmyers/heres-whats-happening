@@ -309,18 +309,10 @@ describe("fetchImageBytes", () => {
     },
   };
 
-  it("returns base64 bytes with the candidate's dimensions and credit", async () => {
+  it("returns the raw bytes so the caller decides where they land", async () => {
     const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
     const { c } = client([{ match: /upload\.wikimedia/, body: bytes }]);
-    const img = await c.fetchImageBytes(candidate);
-
-    expect(Buffer.from(img.imageBase64, "base64")).toEqual(bytes);
-    expect(img.contentType).toBe("image/jpeg");
-    expect(img.width).toBe(1080);
-    expect(img.height).toBe(810);
-    // sourceUrl is the durable Commons file page, not the thumbnail URL.
-    expect(img.sourceUrl).toBe("https://commons.wikimedia.org/wiki/File:La_Luz.jpg");
-    expect(img.credit?.artist).toBe("Shark2000br");
+    expect(await c.fetchImageBytes(candidate)).toEqual(bytes);
   });
 
   it("throws on a non-2xx so the caller can count it as a failed attempt", async () => {

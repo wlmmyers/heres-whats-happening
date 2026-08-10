@@ -23,8 +23,8 @@ live("live MusicBrainz + Wikimedia", () => {
       expect(candidates[0].width).toBe(1080);
       expect(candidates[0].credit.licenseShortName).toBeTruthy();
 
-      const image = await wm.fetchImageBytes(candidates[0]);
-      expect(Buffer.from(image.imageBase64, "base64").subarray(0, 2).toString("hex")).toBe("ffd8"); // JPEG SOI
+      const bytes = await wm.fetchImageBytes(candidates[0]);
+      expect(bytes.subarray(0, 2).toString("hex")).toBe("ffd8"); // JPEG SOI
     },
     60_000,
   );

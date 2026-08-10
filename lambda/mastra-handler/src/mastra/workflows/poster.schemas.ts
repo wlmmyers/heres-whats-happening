@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ArtistMatchSchema, BandImageSchema, ImageCandidateSchema, ImageCreditSchema } from "../tools/band-image.js";
+import { ArtistMatchSchema, ImageCandidateSchema, ImageCreditSchema, ImageRefSchema } from "../tools/band-image.js";
 
 // Loop-1 state: input and output of the judge-band-image step are the SAME shape,
 // so the step's output can feed straight back as the next iteration's input.
@@ -11,7 +11,7 @@ export const ImageLoopStateSchema = z.object({
   attempts: z.number(),
   accepted: z.boolean(),
   reason: z.string().optional(),
-  image: BandImageSchema.optional(),
+  image: ImageRefSchema.optional(),
   colors: z.array(z.string()).default([]),
   artist: ArtistMatchSchema.optional(),
   candidates: z.array(ImageCandidateSchema).default([]),
@@ -28,7 +28,7 @@ export const PosterLoopStateSchema = z.object({
   date: z.string(),
   imageOk: z.boolean(),
   imageReason: z.string().optional(),
-  image: BandImageSchema.optional(),
+  image: ImageRefSchema.optional(),
   colors: z.array(z.string()).default([]),
   attempts: z.number(),
   accepted: z.boolean(),
