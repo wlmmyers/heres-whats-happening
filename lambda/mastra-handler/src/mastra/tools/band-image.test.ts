@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ArtistMatchSchema, BandImageSchema, ImageCreditSchema, USER_AGENT } from "./band-image.js";
+import { ArtistMatchSchema, ImageCreditSchema, ImageRefSchema, USER_AGENT } from "./band-image.js";
 
 describe("ImageCreditSchema", () => {
   it("defaults attributionRequired to false when absent (public-domain files omit it)", () => {
@@ -29,15 +29,19 @@ describe("ImageCreditSchema", () => {
   });
 });
 
-describe("BandImageSchema", () => {
-  it("keeps credit optional so the shape stays backward compatible", () => {
-    const img = BandImageSchema.parse({
-      imageBase64: "AAAA",
+describe("ImageRefSchema", () => {
+  it("carries a path and a byte count instead of base64", () => {
+    const ref = ImageRefSchema.parse({
+      path: "/tmp/hwh-poster/run-1/band-1.jpg",
       contentType: "image/jpeg",
+      bytes: 257_432,
       width: 1080,
       height: 810,
     });
-    expect(img.credit).toBeUndefined();
+    expect(ref.path).toContain("band-1.jpg");
+    expect(ref.bytes).toBe(257_432);
+    expect("imageBase64" in ref).toBe(false);
+    expect(ref.credit).toBeUndefined();
   });
 });
 

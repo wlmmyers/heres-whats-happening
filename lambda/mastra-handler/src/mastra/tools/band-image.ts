@@ -21,17 +21,24 @@ export const ImageCreditSchema = z.object({
 });
 export type ImageCredit = z.infer<typeof ImageCreditSchema>;
 
-// The bytes actually embedded in the poster SVG. Shape is unchanged from the
-// former web-scrape.tool.ts except for the added optional `credit`.
-export const BandImageSchema = z.object({
-  imageBase64: z.string(),
+// A file on local disk. `bytes` is the SIZE, not the content — it feeds S3's
+// ContentLength so artifacts can stream from disk without being buffered.
+export const ArtifactRefSchema = z.object({
+  path: z.string(),
   contentType: z.string(),
+  bytes: z.number(),
+});
+export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
+
+// The band photo, as a reference rather than 335 KB of base64. Replaces the
+// former BandImageSchema; every field except imageBase64 -> path/bytes is the same.
+export const ImageRefSchema = ArtifactRefSchema.extend({
   width: z.number(),
   height: z.number(),
   sourceUrl: z.string().optional(),
   credit: ImageCreditSchema.optional(),
 });
-export type BandImage = z.infer<typeof BandImageSchema>;
+export type ImageRef = z.infer<typeof ImageRefSchema>;
 
 // A resolved image the loop MAY judge. Metadata only — no bytes. width/height
 // are the THUMBNAIL dimensions, since the thumbnail URL is what gets fetched.
