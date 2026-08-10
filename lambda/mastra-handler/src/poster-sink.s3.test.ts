@@ -14,12 +14,35 @@ const provenance = {
   credit: { file: "File:K.jpg", descriptionUrl: "https://commons/K", attributionRequired: true },
 };
 
-/** Records every command; GetObject serves whatever `objects` holds. */
+/**
+ * Records every command; GetObject serves whatever `objects` holds.
+ *
+ * `send` crosses TWO real microtask boundaries before recording the call, and
+ * tracks how many `send` invocations are in flight at once (`maxInFlight`).
+ * This is deliberate: an `async send(){ sent.push(cmd); ... }` with no await
+ * before the push runs synchronously to completion on invocation, so `sent`
+ * would only ever capture INVOCATION order — `Promise.all([a(), b(), c()])`
+ * invokes a, b, c synchronously in that order too, so a naive fake can't tell
+ * "sequential" from "concurrent" apart. Forcing a real suspension point (and
+ * counting concurrent in-flight calls across it) makes `maxInFlight > 1`
+ * observable when three sends are fired concurrently instead of awaited one
+ * at a time.
+ */
 function fakeS3(objects: Record<string, string> = {}) {
   const sent: any[] = [];
+  let inFlight = 0;
+  let maxInFlight = 0;
   const client = {
     sent,
+    get maxInFlight() {
+      return maxInFlight;
+    },
     async send(cmd: any) {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await Promise.resolve();
+      await Promise.resolve();
+      inFlight--;
       sent.push(cmd);
       const name = cmd.constructor.name;
       if (name === "GetObjectCommand") {
@@ -79,6 +102,12 @@ describe("S3PosterSink.put", () => {
       "posters/v1/khruangbin/the-fillmore-2026-08-15.png",
       "posters/v1/khruangbin/the-fillmore-2026-08-15.json",
     ]);
+    // Key order alone doesn't prove sequencing: Promise.all([a(),b(),c()])
+    // invokes a, b, c synchronously in that same order even though all three
+    // run concurrently. maxInFlight pins that each write only started after
+    // the previous one's send() had fully resolved — i.e. the sidecar really
+    // can't land before svg+png are both durable.
+    expect(s3.maxInFlight).toBe(1);
   });
 
   it("returns signed urls plus the provenance it stored", async () => {
