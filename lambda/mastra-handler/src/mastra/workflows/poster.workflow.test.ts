@@ -54,7 +54,7 @@ function candidate(file: string): ImageCandidate {
 // Raw thumbnail bytes as fetchImageBytes now returns them (a Buffer, not the
 // old BandImage/base64 shape). Credit comes from the candidate, not this.
 const imageBytes = Buffer.from("fake-band-photo-bytes");
-const request = { performer: "la luz", venue: "Occidental Square", date: "Thursday, August 20" };
+const request = { performer: "la luz", venue: "Occidental Square", date: "Thursday, August 20", force: false };
 
 async function runWorkflow() {
   const run = await posterWorkflow.createRun();

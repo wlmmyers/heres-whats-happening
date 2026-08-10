@@ -1,24 +1,7 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { APIGatewayProxyEventV2, S3Event } from "aws-lambda";
 import { StubPosterSink } from "./poster-sink.js";
 import { handlePosterHttp, isFunctionUrlEvent } from "./handler.js";
-
-/** processPosterRequest now reads render refs off disk, so tests need real files. */
-async function renderFixture(svg: string, pngBase64 = "AAAA") {
-  const dir = await mkdtemp(join(tmpdir(), "handler-poster-test-"));
-  const svgPath = join(dir, "poster.svg");
-  const pngPath = join(dir, "poster.png");
-  const png = Buffer.from(pngBase64, "base64");
-  await writeFile(svgPath, svg, "utf8");
-  await writeFile(pngPath, png);
-  return {
-    svg: { path: svgPath, contentType: "image/svg+xml", bytes: Buffer.byteLength(svg) },
-    png: { path: pngPath, contentType: "image/png", bytes: png.byteLength },
-  };
-}
 
 function fnUrlEvent(body: unknown): APIGatewayProxyEventV2 {
   return {
@@ -45,12 +28,23 @@ describe("isFunctionUrlEvent", () => {
 });
 
 describe("handlePosterHttp", () => {
-  const deps = { sink: new StubPosterSink(), runWorkflow: async () => ({ ok: true, render: await renderFixture("<svg/>") }) };
+  const deps = {
+    sink: new StubPosterSink(),
+    runWorkflow: async () => ({
+      ok: true,
+      render: {
+        svg: { path: "/tmp/x/p.svg", contentType: "image/svg+xml", bytes: 10 },
+        png: { path: "/tmp/x/p.png", contentType: "image/png", bytes: 20 },
+      },
+      artifactDir: "/tmp/x",
+    }),
+  };
 
   it("returns 200 for a valid request", async () => {
     const res = await handlePosterHttp(fnUrlEvent({ performer: "K", venue: "F", date: "2026-08-15" }), deps);
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).svg).toBe("<svg/>");
+    expect(JSON.parse(res.body).svgUrl).toBeTruthy();
+    expect("svg" in JSON.parse(res.body)).toBe(false);
   });
 
   it("returns 400 for an invalid body", async () => {

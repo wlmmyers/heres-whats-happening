@@ -8,7 +8,7 @@ vi.mock("@aws-sdk/s3-request-presigner", () => ({
   getSignedUrl: vi.fn(async (_c: unknown, cmd: any) => `https://signed.test/${cmd.input.Key}`),
 }));
 
-const req = { performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15" };
+const req = { performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15", force: false };
 const provenance = {
   artist: { mbid: "mb", name: "Khruangbin", score: 100 },
   credit: { file: "File:K.jpg", descriptionUrl: "https://commons/K", attributionRequired: true },

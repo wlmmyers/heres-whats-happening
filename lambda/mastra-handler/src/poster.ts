@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { PosterRequestSchema, type PosterRequest, type PosterResult } from "./poster-schema.js";
 import type { PosterSink } from "./poster-sink.js";
 import type { PosterWorkflowOutput } from "./mastra/workflows/poster.schemas.js";
@@ -31,40 +31,59 @@ export function parsePosterRequest(body: string | undefined, isBase64: boolean):
   return parsed.data;
 }
 
-/** Run the workflow; on success persist artifacts via the sink. Never persists on failure. */
+/**
+ * Serve an existing poster when there is one; otherwise run the workflow, upload,
+ * and clean up the run's scratch directory. Never persists on failure.
+ */
 export async function processPosterRequest(req: PosterRequest, deps: PosterDeps): Promise<PosterResult> {
-  const out = await deps.runWorkflow(req);
-  if (!out.ok || !out.render) {
-    return {
-      ok: false,
-      stage: out.failureStage ?? "svg",
-      reason: out.reason ?? "unknown failure",
-      artist: out.artist,
-    };
+  if (!req.force) {
+    try {
+      const hit = await deps.sink.find(req);
+      if (hit) return { ok: true, cached: true, ...hit };
+    } catch {
+      // A cache must never fail a request that would otherwise succeed.
+    }
   }
-  // The response still carries the raw svg text (URL-only response is a later
-  // task's scope), so that's the one read left; the sink now takes the file
-  // refs directly and streams them itself.
-  const svg = await readFile(out.render.svg.path, "utf8");
-  const artifacts = await deps.sink.put(req, out.render.svg, out.render.png, {
-    artist: out.artist,
-    credit: out.credit,
-  });
-  return { ok: true, svg, svgUrl: artifacts.svgUrl, pngUrl: artifacts.pngUrl, artist: artifacts.artist, credit: artifacts.credit };
+
+  let out: PosterWorkflowOutput | undefined;
+  try {
+    out = await deps.runWorkflow(req);
+    if (!out.ok || !out.render) {
+      return {
+        ok: false,
+        stage: out.failureStage ?? "svg",
+        reason: out.reason ?? "unknown failure",
+        artist: out.artist,
+      };
+    }
+    const artifacts = await deps.sink.put(req, out.render.svg, out.render.png, {
+      artist: out.artist,
+      credit: out.credit,
+    });
+    return { ok: true, cached: false, ...artifacts };
+  } finally {
+    // Lambda's /tmp persists across warm invocations, so this is not optional.
+    // Studio never calls this function, which is exactly why its runs keep their
+    // artifacts for inspection.
+    if (out?.artifactDir) {
+      await rm(out.artifactDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
 }
 
 const JSON_HEADERS = { "content-type": "application/json" };
 
 export function posterHttpResponse(result: PosterResult): { statusCode: number; headers: Record<string, string>; body: string } {
   if (result.ok) {
-    // JSON.stringify drops undefined keys, so provenance is simply absent when unknown.
+    // URLs, not bytes. JSON.stringify drops undefined keys, so provenance is
+    // simply absent when unknown.
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
       body: JSON.stringify({
-        svg: result.svg,
         svgUrl: result.svgUrl,
         pngUrl: result.pngUrl,
+        cached: result.cached,
         artist: result.artist,
         credit: result.credit,
       }),

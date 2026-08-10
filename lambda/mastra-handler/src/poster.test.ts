@@ -1,11 +1,11 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { StubPosterSink } from "./poster-sink.js";
 import { BadRequestError, parsePosterRequest, posterHttpResponse, processPosterRequest } from "./poster.js";
 
-const req = { performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15" };
+const req = { performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15", force: false };
 
 /** processPosterRequest now reads render refs off disk, so tests need real files. */
 async function renderFixture(svg: string, pngBase64 = "AAAA") {
@@ -22,7 +22,7 @@ async function renderFixture(svg: string, pngBase64 = "AAAA") {
 }
 
 describe("processPosterRequest", () => {
-  it("on success writes to the sink and returns urls + svg", async () => {
+  it("on a cache miss runs the workflow, writes to the sink, and returns urls", async () => {
     const sink = new StubPosterSink();
     const res = await processPosterRequest(req, {
       sink,
@@ -30,7 +30,7 @@ describe("processPosterRequest", () => {
     });
     expect(res.ok).toBe(true);
     if (res.ok) {
-      expect(res.svg).toBe("<svg/>");
+      expect(res.cached).toBe(false);
       expect(res.svgUrl).toContain("posters/v1/khruangbin");
     }
     expect(sink.calls).toHaveLength(1);
@@ -65,9 +65,9 @@ describe("parsePosterRequest", () => {
 
 describe("posterHttpResponse", () => {
   it("maps ok -> 200 json", () => {
-    const r = posterHttpResponse({ ok: true, svg: "<svg/>", svgUrl: "u1", pngUrl: "u2" });
+    const r = posterHttpResponse({ ok: true, svgUrl: "u1", pngUrl: "u2", cached: false });
     expect(r.statusCode).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ svg: "<svg/>", svgUrl: "u1", pngUrl: "u2" });
+    expect(JSON.parse(r.body)).toEqual({ svgUrl: "u1", pngUrl: "u2", cached: false });
   });
   it("maps failure -> 422 with stage", () => {
     const r = posterHttpResponse({ ok: false, stage: "svg", reason: "ugly" });
@@ -110,9 +110,9 @@ describe("provenance passthrough", () => {
   it("includes artist and credit in the 200 body", () => {
     const out = posterHttpResponse({
       ok: true,
-      svg: "<svg/>",
       svgUrl: "https://x/s.svg",
       pngUrl: "https://x/p.png",
+      cached: false,
       artist,
       credit,
     });
@@ -133,5 +133,128 @@ describe("provenance passthrough", () => {
   it("omits the keys entirely when provenance is unknown", () => {
     const out = posterHttpResponse({ ok: false, stage: "svg", reason: "bad svg" });
     expect(Object.keys(JSON.parse(out.body))).toEqual(["error", "stage"]);
+  });
+});
+
+const artifactRefs = {
+  render: {
+    svg: { path: "/tmp/run/p.svg", contentType: "image/svg+xml", bytes: 10 },
+    png: { path: "/tmp/run/p.png", contentType: "image/png", bytes: 20 },
+  },
+  artifactDir: "/tmp/run",
+};
+
+describe("repeat requests", () => {
+  const artist = { mbid: "mb", name: "Khruangbin", score: 100 };
+  const credit = { file: "File:K.jpg", descriptionUrl: "https://commons/K", attributionRequired: true };
+
+  it("serves an existing poster WITHOUT running the workflow", async () => {
+    const sink = new StubPosterSink();
+    await sink.put(req, artifactRefs.render.svg, artifactRefs.render.png, { artist, credit });
+    const runWorkflow = vi.fn();
+
+    const res = await processPosterRequest(req, { sink, runWorkflow });
+
+    expect(runWorkflow).not.toHaveBeenCalled();
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.cached).toBe(true);
+      // A hit must be indistinguishable from a fresh run — attribution included.
+      expect(res.artist).toEqual(artist);
+      expect(res.credit).toEqual(credit);
+    }
+  });
+
+  it("marks a fresh generation as not cached", async () => {
+    const sink = new StubPosterSink();
+    const res = await processPosterRequest(req, {
+      sink,
+      runWorkflow: async () => ({ ok: true, ...artifactRefs, artist, credit }),
+    });
+    expect(res.ok && res.cached).toBe(false);
+  });
+
+  it("force: true bypasses the cache and reruns the workflow", async () => {
+    const sink = new StubPosterSink();
+    await sink.put(req, artifactRefs.render.svg, artifactRefs.render.png, { artist, credit });
+    const runWorkflow = vi.fn(async () => ({ ok: true, ...artifactRefs, artist, credit }));
+
+    const res = await processPosterRequest({ ...req, force: true }, { sink, runWorkflow });
+
+    expect(runWorkflow).toHaveBeenCalledTimes(1);
+    expect(res.ok && res.cached).toBe(false);
+  });
+
+  it("treats a failing find as a miss rather than failing the request", async () => {
+    const sink = new StubPosterSink();
+    sink.find = async () => {
+      throw new Error("S3 unreachable");
+    };
+    const res = await processPosterRequest(req, {
+      sink,
+      runWorkflow: async () => ({ ok: true, ...artifactRefs, artist, credit }),
+    });
+    expect(res.ok).toBe(true);
+  });
+});
+
+describe("artifact cleanup", () => {
+  it("deletes the run directory after a successful put", async () => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = await mkdtemp(join(tmpdir(), "cleanup-test-"));
+    await writeFile(join(dir, "poster-1.png"), "x");
+
+    await processPosterRequest(req, {
+      sink: new StubPosterSink(),
+      runWorkflow: async () => ({
+        ok: true,
+        render: artifactRefs.render,
+        artifactDir: dir,
+      }),
+    });
+
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("deletes the run directory even when the sink throws", async () => {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = await mkdtemp(join(tmpdir(), "cleanup-fail-test-"));
+    const sink = new StubPosterSink();
+    sink.put = async () => {
+      throw new Error("s3 down");
+    };
+
+    await expect(
+      processPosterRequest(req, {
+        sink,
+        runWorkflow: async () => ({ ok: true, render: artifactRefs.render, artifactDir: dir }),
+      }),
+    ).rejects.toThrow(/s3 down/);
+
+    expect(existsSync(dir)).toBe(false);
+  });
+});
+
+describe("URL-only response", () => {
+  it("omits the svg body and includes cached", () => {
+    const out = posterHttpResponse({
+      ok: true,
+      svgUrl: "https://x/s.svg",
+      pngUrl: "https://x/p.png",
+      cached: true,
+    });
+    const body = JSON.parse(out.body);
+    expect(out.statusCode).toBe(200);
+    expect("svg" in body).toBe(false);
+    expect(body.svgUrl).toBe("https://x/s.svg");
+    expect(body.cached).toBe(true);
   });
 });
