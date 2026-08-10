@@ -431,16 +431,17 @@ In `ImageLoopStateSchema` and `PosterLoopStateSchema`, replace `image: BandImage
 
 - [ ] **Step 5: Write the failing judge-step test**
 
-In `src/mastra/workflows/judge-band-image.step.test.ts`, replace the `image` fixture and add coverage. Change the top of the file to mock the store as well:
+In `src/mastra/workflows/judge-band-image.step.test.ts`, replace the `image` fixture and add coverage. Change the top of the file to redirect the store as well:
 
 ```ts
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readFile } from "node:fs/promises";
 
 const fetchImageBytes = vi.fn<(c: ImageCandidate) => Promise<Buffer>>();
 const generate = vi.fn();
+
+/** Assigned in beforeEach; the mock below reads it at CALL time, not import time. */
 let root: string;
 
 vi.mock("../tools/wikimedia.tool.js", () => ({ fetchImageBytes }));
@@ -448,15 +449,24 @@ vi.mock("../agents/image-analysis.agent.js", () => ({
   imageAnalysisAgent: { generate },
   ImageAnalysisSchema: {},
 }));
+// The step calls artifactStore(runId) with the default root. Redirect it at the
+// module seam — the same mechanism already used for the two mocks above — so
+// production needs no test-only parameter.
+vi.mock("../tools/artifact-store.js", async () => {
+  const actual = await vi.importActual<typeof import("../tools/artifact-store.js")>(
+    "../tools/artifact-store.js",
+  );
+  return { ...actual, artifactStore: (runId: string) => actual.artifactStore(runId, { root }) };
+});
 ```
 
-Delete the old `const image: BandImage = ...` fixture. Replace the run helper so it supplies a `runId` and a scratch root:
+Delete the old `const image: BandImage = ...` fixture. Replace the run helper so it supplies a `runId`:
 
 ```ts
 const PHOTO = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 
 const run = (data: Record<string, unknown>) =>
-  judgeBandImageStep.execute({ inputData: data, runId: "run-test", artifactRoot: root } as never) as Promise<any>;
+  judgeBandImageStep.execute({ inputData: data, runId: "run-test" } as never) as Promise<any>;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "judge-step-test-"));
@@ -498,16 +508,13 @@ Then replace the "accepts a good candidate" test and add two new ones:
 
   it("counts a failed store write as a used attempt and never throws", async () => {
     generate.mockResolvedValue({ object: { acceptable: true, reason: "ok", dominantColors: [] } });
-    // A path that cannot be created: the root is an existing FILE, not a dir.
-    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    // Point the store at a root that cannot hold a directory: an existing FILE.
+    // `root` is read by the module mock at call time, so reassigning it here works.
     const blocked = join(await mkdtemp(join(tmpdir(), "blocked-")), "not-a-dir");
     await writeFile(blocked, "x");
+    root = blocked;
 
-    const out = await (judgeBandImageStep.execute({
-      inputData: base,
-      runId: "run-test",
-      artifactRoot: blocked,
-    } as never) as Promise<any>);
+    const out = await run(base);
 
     expect(out.attempts).toBe(1);
     expect(out.candidateIndex).toBe(1);
@@ -565,7 +572,7 @@ export const judgeBandImageStep = createStep({
   id: "judge-band-image",
   inputSchema: ImageLoopStateSchema,
   outputSchema: ImageLoopStateSchema,
-  execute: async ({ inputData, runId, artifactRoot }: any) => {
+  execute: async ({ inputData, runId }) => {
     const candidate = inputData.candidates[inputData.candidateIndex];
     // Cheap short-circuit: nothing to judge, so spend no attempt and no LLM call.
     if (!candidate) {
@@ -590,7 +597,7 @@ export const judgeBandImageStep = createStep({
 
     let image;
     try {
-      const store = artifactStore(runId, { root: artifactRoot });
+      const store = artifactStore(runId);
       const ext = candidate.contentType === "image/png" ? "png" : "jpg";
       const ref = await store.write(`band-${attempts}.${ext}`, bytes, candidate.contentType);
       image = {
@@ -646,7 +653,11 @@ export const judgeBandImageStep = createStep({
 });
 ```
 
-Note the `: any` on the destructure: Mastra's execute params include `runId` but not a custom `artifactRoot`. `artifactRoot` is a test-only injection passed through the same object; production never sets it, so `artifactStore` falls back to `defaultRoot()`.
+Note there is no `any` and no test-only parameter. `runId` is part of Mastra's
+typed execute params — verified: destructuring it compiles under `strict`. The
+step always uses the default root; tests redirect it by mocking the store
+module (see Step 5), which is the same seam the tests already use for
+`wikimedia.tool.js` and the agents.
 
 - [ ] **Step 8: Run tests**
 
@@ -690,7 +701,18 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+/** Assigned in beforeEach; the mock below reads it at CALL time, not import time. */
 let root: string;
+
+// The step calls artifactStore(runId) with the default root. Redirect it at the
+// module seam, the same way this file already mocks the agents and rasterizer,
+// so production needs no test-only parameter.
+vi.mock("../tools/artifact-store.js", async () => {
+  const actual = await vi.importActual<typeof import("../tools/artifact-store.js")>(
+    "../tools/artifact-store.js",
+  );
+  return { ...actual, artifactStore: (runId: string) => actual.artifactStore(runId, { root }) };
+});
 ```
 
 Change the `base` fixture's `image` and the `run` helper:
@@ -711,16 +733,17 @@ const PHOTO = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 
 const run = (data: Record<string, unknown>) =>
-  composePosterStep.execute({ inputData: data, runId: "run-test", artifactRoot: root } as never) as Promise<any>;
+  composePosterStep.execute({ inputData: data, runId: "run-test" } as never) as Promise<any>;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "compose-step-test-"));
   authorGenerate.mockReset();
   critiqueGenerate.mockReset();
   rasterizeSvg.mockReset();
-  // Give the step a real band-photo file to read.
+  // Give the step a real band-photo file to read. This import returns the MOCKED
+  // artifactStore, which is already rooted at `root`.
   const { artifactStore } = await import("../tools/artifact-store.js");
-  const ref = await artifactStore("run-test", { root }).write("band-1.jpg", PHOTO, "image/jpeg");
+  const ref = await artifactStore("run-test").write("band-1.jpg", PHOTO, "image/jpeg");
   base.image = { ...ref, width: 1080, height: 810 };
 });
 ```
@@ -781,7 +804,7 @@ Expected: FAIL — `out.render` is undefined.
 Replace the `execute` in `src/mastra/workflows/compose-poster.step.ts`:
 
 ```ts
-  execute: async ({ inputData, runId, artifactRoot }: any) => {
+  execute: async ({ inputData, runId }) => {
     // Cheap short-circuit: if image acquisition failed, do no LLM work.
     // `attempts` still advances so the loop stays bounded on THIS path too. The
     // dountil condition is `accepted || !imageOk || attempts >= MAX_SVG_ATTEMPTS`;
@@ -798,7 +821,7 @@ Replace the `execute` in `src/mastra/workflows/compose-poster.step.ts`:
 
     const attempts = inputData.attempts + 1;
     const { image } = inputData;
-    const store = artifactStore(runId, { root: artifactRoot });
+    const store = artifactStore(runId);
 
     // Read the photo BEFORE spending an LLM call on authoring.
     let photo: Buffer;
@@ -1003,7 +1026,9 @@ describe("posterWorkflow keeps blobs OUT of state", () => {
 
     expect(out.ok).toBe(true);
     expect(out.render.png.path).toContain("poster-1.png");
-    expect(out.artifactDir).toContain("run");
+    // finalizeStep only computes the path — artifactStore does not mkdir until a
+    // write — so the real default root is fine here and nothing is created.
+    expect(out.artifactDir).toContain("hwh-poster");
     expect("svg" in out).toBe(false);
     expect("pngBase64" in out).toBe(false);
   });
@@ -1033,10 +1058,10 @@ const finalizeStep = createStep({
   id: "finalize-poster",
   inputSchema: PosterLoopStateSchema,
   outputSchema: PosterWorkflowOutputSchema,
-  execute: async ({ inputData, runId, artifactRoot }: any) => {
+  execute: async ({ inputData, runId }) => {
     const provenance = { artist: inputData.artist, credit: inputData.credit };
     // Emitted on every branch so the caller can always clean up the run dir.
-    const artifactDir = artifactStore(runId, { root: artifactRoot }).dir;
+    const artifactDir = artifactStore(runId).dir;
 
     if (!inputData.imageOk) {
       return {
@@ -1734,7 +1759,27 @@ Run: `git status --short`. Report the suite results. **Do not commit.**
 
 ## Notes for the implementer
 
-**On `artifactRoot`.** Steps destructure `{ inputData, runId, artifactRoot }: any`. `runId` is genuinely provided by Mastra (verified). `artifactRoot` is not — it is a test-only injection riding on the same params object so tests can point at a scratch directory. Production never sets it, so `artifactStore` falls back to `defaultRoot()`.
+**On redirecting the store in tests.** Production steps call `artifactStore(runId)`
+with no injected root and no `any` — `runId` is part of Mastra's typed execute
+params (verified: it compiles under `strict`). Tests point the store at a scratch
+directory by mocking the module:
+
+```ts
+let testRoot: string;   // assigned in beforeEach, read at call time
+
+vi.mock("../tools/artifact-store.js", async () => {
+  const actual = await vi.importActual<typeof import("../tools/artifact-store.js")>(
+    "../tools/artifact-store.js",
+  );
+  return { ...actual, artifactStore: (runId: string) => actual.artifactStore(runId, { root: testRoot }) };
+});
+```
+
+This reuses the seam the step tests already rely on for `wikimedia.tool.js` and
+the agents, so there is no production-only affordance existing purely for tests.
+`artifactStore`'s `root` option stays — `artifact-store.test.ts` uses it directly,
+which is a legitimate parameter of the unit under test rather than a back door
+into the steps.
 
 **On what "no blobs in state" means.** Bytes still exist transiently: the vision agent receives a Buffer, resvg receives an SVG string. That is unavoidable and fine. The invariant is that they are never *stored* in state, copied by a seed map, or persisted into a run snapshot. The guard test in Task 5 is what enforces it.
 
