@@ -27,12 +27,14 @@ phases:
       - echo "IMAGE_URI=${IMAGE_URI}"
       - aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-      # Lambda unit + contract tests (the two ElasticMQ-dependent specs — sqs.test.ts
-      # and handler.e2e.test.ts — are excluded here; they run in local dev).
+      # Lambda unit + contract tests. No file list to maintain: vitest.config.ts
+      # excludes *.integration.test.ts (the ElasticMQ-dependent specs, which need
+      # the docker-compose stack and run via `pnpm test:integration` in local dev).
+      # Any new spec is therefore picked up here automatically.
       - cd lambda/mastra-handler
       - pnpm install --frozen-lockfile --ignore-scripts
       - pnpm typecheck
-      - pnpm vitest run src/schema.test.ts src/hash.test.ts src/map.test.ts src/email.test.ts src/extractor.test.ts src/handler.test.ts src/poster-schema.test.ts src/poster.test.ts src/poster-sink.test.ts src/handler.poster.test.ts src/mastra/tools/web-scrape.tool.test.ts src/mastra/tools/svg-parse.tool.test.ts src/mastra/tools/rasterize.tool.test.ts
+      - pnpm test
       - cd ../..
 
       # Skip build+push if this SHA was already pushed (immutable tags mean a
