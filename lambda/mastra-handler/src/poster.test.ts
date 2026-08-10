@@ -58,3 +58,63 @@ describe("posterHttpResponse", () => {
     expect(JSON.parse(r.body)).toEqual({ error: "ugly", stage: "svg" });
   });
 });
+
+describe("provenance passthrough", () => {
+  const artist = { mbid: "mb-rock", name: "La Luz", score: 100, disambiguation: "US rock band" };
+  const credit = {
+    file: "File:La Luz.jpg",
+    descriptionUrl: "https://commons.wikimedia.org/wiki/File:La_Luz.jpg",
+    artist: "Shark2000br",
+    licenseShortName: "CC BY-SA 4.0",
+    attributionRequired: true,
+  };
+
+  it("carries artist and credit onto a successful result", async () => {
+    const res = await processPosterRequest(req, {
+      sink: new StubPosterSink(),
+      runWorkflow: async () => ({ ok: true, svg: "<svg/>", pngBase64: "AAAA", artist, credit }),
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.artist).toEqual(artist);
+      expect(res.credit).toEqual(credit);
+    }
+  });
+
+  it("carries the artist onto a failure result", async () => {
+    const res = await processPosterRequest(req, {
+      sink: new StubPosterSink(),
+      runWorkflow: async () => ({ ok: false, failureStage: "image", reason: "no good photo", artist }),
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.artist).toEqual(artist);
+  });
+
+  it("includes artist and credit in the 200 body", () => {
+    const out = posterHttpResponse({
+      ok: true,
+      svg: "<svg/>",
+      svgUrl: "https://x/s.svg",
+      pngUrl: "https://x/p.png",
+      artist,
+      credit,
+    });
+    const body = JSON.parse(out.body);
+    expect(out.statusCode).toBe(200);
+    expect(body.artist.mbid).toBe("mb-rock");
+    expect(body.credit.licenseShortName).toBe("CC BY-SA 4.0");
+  });
+
+  it("includes the artist in the 422 body", () => {
+    const out = posterHttpResponse({ ok: false, stage: "image", reason: "no good photo", artist });
+    const body = JSON.parse(out.body);
+    expect(out.statusCode).toBe(422);
+    expect(body.error).toBe("no good photo");
+    expect(body.artist.name).toBe("La Luz");
+  });
+
+  it("omits the keys entirely when provenance is unknown", () => {
+    const out = posterHttpResponse({ ok: false, stage: "svg", reason: "bad svg" });
+    expect(Object.keys(JSON.parse(out.body))).toEqual(["error", "stage"]);
+  });
+});

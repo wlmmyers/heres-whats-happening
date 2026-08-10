@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ArtistMatch, ImageCredit } from "./mastra/tools/band-image.js";
 
 export const PosterRequestSchema = z
   .object({
@@ -9,7 +10,8 @@ export const PosterRequestSchema = z
   .strict();
 export type PosterRequest = z.infer<typeof PosterRequestSchema>;
 
-/** Result of the poster pipeline, mapped to HTTP by the handler. */
+/** Result of the poster pipeline, mapped to HTTP by the handler. Provenance
+ * fields are additive and absent when unknown. */
 export type PosterResult =
-  | { ok: true; svg: string; svgUrl: string; pngUrl: string }
-  | { ok: false; stage: "image" | "svg"; reason: string };
+  | { ok: true; svg: string; svgUrl: string; pngUrl: string; artist?: ArtistMatch; credit?: ImageCredit }
+  | { ok: false; stage: "image" | "svg"; reason: string; artist?: ArtistMatch };

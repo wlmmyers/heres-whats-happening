@@ -17,8 +17,18 @@ export const composePosterStep = createStep({
   outputSchema: PosterLoopStateSchema,
   execute: async ({ inputData }) => {
     // Cheap short-circuit: if image acquisition failed, do no LLM work.
+    // `attempts` still advances so the loop stays bounded on THIS path too. The
+    // dountil condition is `accepted || !imageOk || attempts >= MAX_SVG_ATTEMPTS`;
+    // returning without advancing attempts would spin forever for any input that
+    // reaches here with imageOk true (today only an imageOk/image mismatch, but
+    // the exit must not depend on a field this branch skips).
     if (!inputData.imageOk || !inputData.image) {
-      return { ...inputData, accepted: false };
+      return {
+        ...inputData,
+        attempts: inputData.attempts + 1,
+        accepted: false,
+        critique: inputData.critique ?? "no usable band image was available to compose",
+      };
     }
     const attempts = inputData.attempts + 1;
     const { image } = inputData;

@@ -34,18 +34,38 @@ export function parsePosterRequest(body: string | undefined, isBase64: boolean):
 export async function processPosterRequest(req: PosterRequest, deps: PosterDeps): Promise<PosterResult> {
   const out = await deps.runWorkflow(req);
   if (!out.ok || !out.svg || !out.pngBase64) {
-    return { ok: false, stage: out.failureStage ?? "svg", reason: out.reason ?? "unknown failure" };
+    return {
+      ok: false,
+      stage: out.failureStage ?? "svg",
+      reason: out.reason ?? "unknown failure",
+      artist: out.artist,
+    };
   }
   const { svgUrl, pngUrl } = await deps.sink.put(req, out.svg, out.pngBase64);
-  return { ok: true, svg: out.svg, svgUrl, pngUrl };
+  return { ok: true, svg: out.svg, svgUrl, pngUrl, artist: out.artist, credit: out.credit };
 }
 
 const JSON_HEADERS = { "content-type": "application/json" };
 
 export function posterHttpResponse(result: PosterResult): { statusCode: number; headers: Record<string, string>; body: string } {
   if (result.ok) {
-    return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ svg: result.svg, svgUrl: result.svgUrl, pngUrl: result.pngUrl }) };
+    // JSON.stringify drops undefined keys, so provenance is simply absent when unknown.
+    return {
+      statusCode: 200,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        svg: result.svg,
+        svgUrl: result.svgUrl,
+        pngUrl: result.pngUrl,
+        artist: result.artist,
+        credit: result.credit,
+      }),
+    };
   }
   // 422 (never 403/404 — see Global Constraints / spec §8).
-  return { statusCode: 422, headers: JSON_HEADERS, body: JSON.stringify({ error: result.reason, stage: result.stage }) };
+  return {
+    statusCode: 422,
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ error: result.reason, stage: result.stage, artist: result.artist }),
+  };
 }
