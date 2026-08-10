@@ -42,14 +42,15 @@ export async function processPosterRequest(req: PosterRequest, deps: PosterDeps)
       artist: out.artist,
     };
   }
-  // The workflow only ever hands back file refs now; read them off disk here,
-  // at the boundary, so PosterSink keeps taking content rather than paths.
-  const [svg, png] = await Promise.all([
-    readFile(out.render.svg.path, "utf8"),
-    readFile(out.render.png.path),
-  ]);
-  const { svgUrl, pngUrl } = await deps.sink.put(req, svg, png.toString("base64"));
-  return { ok: true, svg, svgUrl, pngUrl, artist: out.artist, credit: out.credit };
+  // The response still carries the raw svg text (URL-only response is a later
+  // task's scope), so that's the one read left; the sink now takes the file
+  // refs directly and streams them itself.
+  const svg = await readFile(out.render.svg.path, "utf8");
+  const artifacts = await deps.sink.put(req, out.render.svg, out.render.png, {
+    artist: out.artist,
+    credit: out.credit,
+  });
+  return { ok: true, svg, svgUrl: artifacts.svgUrl, pngUrl: artifacts.pngUrl, artist: artifacts.artist, credit: artifacts.credit };
 }
 
 const JSON_HEADERS = { "content-type": "application/json" };

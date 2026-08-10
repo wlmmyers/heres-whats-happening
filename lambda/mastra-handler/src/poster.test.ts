@@ -31,7 +31,7 @@ describe("processPosterRequest", () => {
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.svg).toBe("<svg/>");
-      expect(res.svgUrl).toContain("posters/khruangbin");
+      expect(res.svgUrl).toContain("posters/v1/khruangbin");
     }
     expect(sink.calls).toHaveLength(1);
   });
