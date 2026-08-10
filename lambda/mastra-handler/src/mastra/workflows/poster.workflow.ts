@@ -1,5 +1,6 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { PosterRequestSchema } from "../../poster-schema.js";
+import { artifactStore } from "../tools/artifact-store.js";
 import { composePosterStep } from "./compose-poster.step.js";
 import { judgeBandImageStep } from "./judge-band-image.step.js";
 import {
@@ -18,23 +19,28 @@ const finalizeStep = createStep({
   id: "finalize-poster",
   inputSchema: PosterLoopStateSchema,
   outputSchema: PosterWorkflowOutputSchema,
-  execute: async ({ inputData }) => {
+  execute: async ({ inputData, runId }) => {
     const provenance = { artist: inputData.artist, credit: inputData.credit };
+    // Emitted on every branch so the caller can always clean up the run dir.
+    const artifactDir = artifactStore(runId).dir;
+
     if (!inputData.imageOk) {
       return {
         ok: false,
         failureStage: "image" as const,
         reason: inputData.imageReason ?? "no acceptable band image found",
+        artifactDir,
         ...provenance,
       };
     }
-    if (inputData.accepted && inputData.svg && inputData.pngBase64) {
-      return { ok: true, svg: inputData.svg, pngBase64: inputData.pngBase64, ...provenance };
+    if (inputData.accepted && inputData.render) {
+      return { ok: true, render: inputData.render, artifactDir, ...provenance };
     }
     return {
       ok: false,
       failureStage: "svg" as const,
       reason: inputData.critique ?? "could not produce an acceptable poster",
+      artifactDir,
       ...provenance,
     };
   },

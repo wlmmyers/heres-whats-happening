@@ -1,15 +1,32 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { StubPosterSink } from "./poster-sink.js";
 import { BadRequestError, parsePosterRequest, posterHttpResponse, processPosterRequest } from "./poster.js";
 
 const req = { performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15" };
 
+/** processPosterRequest now reads render refs off disk, so tests need real files. */
+async function renderFixture(svg: string, pngBase64 = "AAAA") {
+  const dir = await mkdtemp(join(tmpdir(), "poster-test-"));
+  const svgPath = join(dir, "poster.svg");
+  const pngPath = join(dir, "poster.png");
+  const png = Buffer.from(pngBase64, "base64");
+  await writeFile(svgPath, svg, "utf8");
+  await writeFile(pngPath, png);
+  return {
+    svg: { path: svgPath, contentType: "image/svg+xml", bytes: Buffer.byteLength(svg) },
+    png: { path: pngPath, contentType: "image/png", bytes: png.byteLength },
+  };
+}
+
 describe("processPosterRequest", () => {
   it("on success writes to the sink and returns urls + svg", async () => {
     const sink = new StubPosterSink();
     const res = await processPosterRequest(req, {
       sink,
-      runWorkflow: async () => ({ ok: true, svg: "<svg/>", pngBase64: "AAAA" }),
+      runWorkflow: async () => ({ ok: true, render: await renderFixture("<svg/>") }),
     });
     expect(res.ok).toBe(true);
     if (res.ok) {
@@ -72,7 +89,7 @@ describe("provenance passthrough", () => {
   it("carries artist and credit onto a successful result", async () => {
     const res = await processPosterRequest(req, {
       sink: new StubPosterSink(),
-      runWorkflow: async () => ({ ok: true, svg: "<svg/>", pngBase64: "AAAA", artist, credit }),
+      runWorkflow: async () => ({ ok: true, render: await renderFixture("<svg/>"), artist, credit }),
     });
     expect(res.ok).toBe(true);
     if (res.ok) {

@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { PosterRequestSchema, type PosterRequest, type PosterResult } from "./poster-schema.js";
 import type { PosterSink } from "./poster-sink.js";
 import type { PosterWorkflowOutput } from "./mastra/workflows/poster.schemas.js";
@@ -33,7 +34,7 @@ export function parsePosterRequest(body: string | undefined, isBase64: boolean):
 /** Run the workflow; on success persist artifacts via the sink. Never persists on failure. */
 export async function processPosterRequest(req: PosterRequest, deps: PosterDeps): Promise<PosterResult> {
   const out = await deps.runWorkflow(req);
-  if (!out.ok || !out.svg || !out.pngBase64) {
+  if (!out.ok || !out.render) {
     return {
       ok: false,
       stage: out.failureStage ?? "svg",
@@ -41,8 +42,14 @@ export async function processPosterRequest(req: PosterRequest, deps: PosterDeps)
       artist: out.artist,
     };
   }
-  const { svgUrl, pngUrl } = await deps.sink.put(req, out.svg, out.pngBase64);
-  return { ok: true, svg: out.svg, svgUrl, pngUrl, artist: out.artist, credit: out.credit };
+  // The workflow only ever hands back file refs now; read them off disk here,
+  // at the boundary, so PosterSink keeps taking content rather than paths.
+  const [svg, png] = await Promise.all([
+    readFile(out.render.svg.path, "utf8"),
+    readFile(out.render.png.path),
+  ]);
+  const { svgUrl, pngUrl } = await deps.sink.put(req, svg, png.toString("base64"));
+  return { ok: true, svg, svgUrl, pngUrl, artist: out.artist, credit: out.credit };
 }
 
 const JSON_HEADERS = { "content-type": "application/json" };

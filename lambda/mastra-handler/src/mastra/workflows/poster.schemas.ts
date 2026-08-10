@@ -53,8 +53,11 @@ export type PosterLoopState = z.infer<typeof PosterLoopStateSchema>;
 // names the artist that was resolved.
 export const PosterWorkflowOutputSchema = z.object({
   ok: z.boolean(),
-  svg: z.string().optional(),
-  pngBase64: z.string().optional(),
+  render: z.object({ svg: ArtifactRefSchema, png: ArtifactRefSchema }).optional(),
+  // The run's artifact directory, so the caller can delete it. Emitted on BOTH
+  // branches: a failed run still has files worth cleaning up (and, from Studio,
+  // worth inspecting).
+  artifactDir: z.string().optional(),
   failureStage: z.enum(["image", "svg"]).optional(),
   reason: z.string().optional(),
   artist: ArtistMatchSchema.optional(),
