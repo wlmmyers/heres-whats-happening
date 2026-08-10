@@ -21,7 +21,7 @@ function ensureReady(): Promise<void> {
   return ready;
 }
 
-export type RasterizeResult = { ok: boolean; pngBase64?: string; width?: number; height?: number; error?: string };
+export type RasterizeResult = { ok: boolean; png?: Buffer; width?: number; height?: number; error?: string };
 
 /** Render an SVG string to a PNG. Never throws — failures come back as { ok:false, error }. */
 export async function rasterizeSvg(svg: string): Promise<RasterizeResult> {
@@ -29,10 +29,9 @@ export async function rasterizeSvg(svg: string): Promise<RasterizeResult> {
     await ensureReady();
     const resvg = new Resvg(svg);
     const rendered = resvg.render();
-    const png = rendered.asPng();
     return {
       ok: true,
-      pngBase64: Buffer.from(png).toString("base64"),
+      png: Buffer.from(rendered.asPng()),
       width: rendered.width,
       height: rendered.height,
     };
@@ -52,5 +51,9 @@ export const rasterizeTool = createTool({
     height: z.number().optional(),
     error: z.string().optional(),
   }),
-  execute: async ({ svg }) => rasterizeSvg(svg),
+  execute: async ({ svg }) => {
+    const res = await rasterizeSvg(svg);
+    // Studio cannot render a Buffer; base64 only at this boundary.
+    return { ok: res.ok, pngBase64: res.png?.toString("base64"), width: res.width, height: res.height, error: res.error };
+  },
 });

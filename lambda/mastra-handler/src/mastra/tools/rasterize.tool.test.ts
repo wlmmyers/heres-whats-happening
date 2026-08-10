@@ -9,8 +9,9 @@ describe("rasterizeSvg", () => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#0af"/></svg>`;
     const r = await rasterizeSvg(svg);
     expect(r.ok).toBe(true);
-    const bytes = Buffer.from(r.pngBase64!, "base64");
-    expect(bytes.subarray(0, 4).toString("hex")).toBe(PNG_MAGIC);
+    expect(r.png).toBeInstanceOf(Buffer);
+    // PNG signature: 89 50 4E 47
+    expect(r.png!.subarray(0, 4).toString("hex")).toBe(PNG_MAGIC);
     expect(r.width).toBeGreaterThan(0);
   });
 
@@ -19,8 +20,9 @@ describe("rasterizeSvg", () => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><image x="0" y="0" width="48" height="48" href="${dataUri}"/></svg>`;
     const r = await rasterizeSvg(svg);
     expect(r.ok).toBe(true);
-    const bytes = Buffer.from(r.pngBase64!, "base64");
-    expect(bytes.subarray(0, 4).toString("hex")).toBe(PNG_MAGIC);
+    expect(r.png).toBeInstanceOf(Buffer);
+    // PNG signature: 89 50 4E 47
+    expect(r.png!.subarray(0, 4).toString("hex")).toBe(PNG_MAGIC);
   });
 
   it("returns ok:false with an error for unrenderable input", async () => {
