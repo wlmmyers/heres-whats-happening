@@ -2,6 +2,7 @@ import { createStep } from "@mastra/core/workflows";
 import { type z } from "zod";
 import { PosterCritiqueSchema, posterCritiqueAgent } from "../agents/poster-critique.agent.js";
 import { SvgAuthorSchema, svgAuthorAgent } from "../agents/svg-author.agent.js";
+import { artifactStore } from "../tools/artifact-store.js";
 import { rasterizeSvg } from "../tools/rasterize.tool.js";
 import { substituteAndValidateSvg } from "../tools/svg-parse.tool.js";
 import { PosterLoopStateSchema } from "./poster.schemas.js";
@@ -9,19 +10,22 @@ import { PosterLoopStateSchema } from "./poster.schemas.js";
 type SvgAuthor = z.infer<typeof SvgAuthorSchema>;
 type PosterCritique = z.infer<typeof PosterCritiqueSchema>;
 
+function message(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 // One iteration: author SVG -> substitute+parse -> rasterize -> critique. Any failure
 // sets accepted=false and records actionable feedback in `critique` for the next attempt.
 export const composePosterStep = createStep({
   id: "compose-poster",
   inputSchema: PosterLoopStateSchema,
   outputSchema: PosterLoopStateSchema,
-  execute: async ({ inputData }) => {
+  execute: async ({ inputData, runId }) => {
     // Cheap short-circuit: if image acquisition failed, do no LLM work.
     // `attempts` still advances so the loop stays bounded on THIS path too. The
     // dountil condition is `accepted || !imageOk || attempts >= MAX_SVG_ATTEMPTS`;
     // returning without advancing attempts would spin forever for any input that
-    // reaches here with imageOk true (today only an imageOk/image mismatch, but
-    // the exit must not depend on a field this branch skips).
+    // reaches here with imageOk true.
     if (!inputData.imageOk || !inputData.image) {
       return {
         ...inputData,
@@ -30,10 +34,25 @@ export const composePosterStep = createStep({
         critique: inputData.critique ?? "no usable band image was available to compose",
       };
     }
+
     const attempts = inputData.attempts + 1;
     const { image } = inputData;
+    const store = artifactStore(runId);
 
-    // 1) Author the SVG (placeholder href for the image).
+    // Read the photo BEFORE spending an LLM call on authoring.
+    let photo: Buffer;
+    try {
+      photo = await store.read(image);
+    } catch (e) {
+      return {
+        ...inputData,
+        attempts,
+        accepted: false,
+        critique: `could not read the band image at ${image.path}: ${message(e)}`,
+      };
+    }
+
+    // 1) Author the SVG (placeholder href for the image). Small — kept in state.
     const authored = await svgAuthorAgent.generate([
       {
         role: "user",
@@ -53,25 +72,49 @@ export const composePosterStep = createStep({
       return { ...inputData, attempts, accepted: false, critique: "SVG author returned no svg" };
     }
 
-    // 2) Substitute the real image + validate well-formedness.
-    const dataUri = `data:${image.contentType};base64,${image.imageBase64}`;
+    // 2) Substitute the real image + validate well-formedness. The substituted
+    //    string is transient — only the file keeps it.
+    const dataUri = `data:${image.contentType};base64,${photo.toString("base64")}`;
     const parsed = substituteAndValidateSvg(rawSvg, dataUri);
     if (!parsed.ok) {
-      return { ...inputData, attempts, accepted: false, svg: rawSvg, critique: `Fix the SVG so it is well-formed: ${parsed.error}` };
+      return {
+        ...inputData,
+        attempts,
+        accepted: false,
+        authoredSvg: rawSvg,
+        critique: `Fix the SVG so it is well-formed: ${parsed.error}`,
+      };
     }
 
     // 3) Rasterize to PNG.
     const raster = await rasterizeSvg(parsed.svg);
-    if (!raster.ok || !raster.pngBase64) {
-      return { ...inputData, attempts, accepted: false, svg: parsed.svg, critique: `The SVG did not render: ${raster.error}` };
+    if (!raster.ok || !raster.png) {
+      return {
+        ...inputData,
+        attempts,
+        accepted: false,
+        authoredSvg: rawSvg,
+        critique: `The SVG did not render: ${raster.error}`,
+      };
     }
 
-    // 4) Critique the rendered poster.
+    // 4) Persist both artifacts; state carries refs only.
+    let render;
+    try {
+      render = {
+        svg: await store.write(`poster-${attempts}.svg`, Buffer.from(parsed.svg, "utf8"), "image/svg+xml"),
+        png: await store.write(`poster-${attempts}.png`, raster.png, "image/png"),
+      };
+    } catch (e) {
+      return { ...inputData, attempts, accepted: false, authoredSvg: rawSvg, critique: `could not store the render: ${message(e)}` };
+    }
+
+    // 5) Critique the rendered poster.
     const critiqueRes = await posterCritiqueAgent.generate([
       {
         role: "user",
         content: [
-          { type: "image", image: Buffer.from(raster.pngBase64, "base64"), mimeType: "image/png" },
+          { type: "image", image: raster.png, mimeType: "image/png" },
           { type: "text", text: `Intended poster — performer: ${inputData.performer}, venue: ${inputData.venue}, date: ${inputData.date}. Is this a cool, legible poster?` },
         ],
       },
@@ -80,8 +123,8 @@ export const composePosterStep = createStep({
     return {
       ...inputData,
       attempts,
-      svg: parsed.svg,
-      pngBase64: raster.pngBase64,
+      authoredSvg: rawSvg,
+      render,
       accepted: verdict?.acceptable ?? false,
       critique: verdict?.critique ?? "critique returned no result",
     };

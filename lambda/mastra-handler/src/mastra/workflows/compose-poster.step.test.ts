@@ -1,9 +1,15 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RasterizeResult } from "../tools/rasterize.tool.js";
 
 const authorGenerate = vi.fn();
 const critiqueGenerate = vi.fn();
 const rasterizeSvg = vi.fn<(svg: string) => Promise<RasterizeResult>>();
+
+/** Assigned in beforeEach; the mock below reads it at CALL time, not import time. */
+let root: string;
 
 // vi.mock is hoisted, but the factory body runs lazily at import time — by which
 // point the spies above are initialized. So they can be referenced directly.
@@ -18,6 +24,15 @@ vi.mock("../agents/poster-critique.agent.js", () => ({
   PosterCritiqueSchema: {},
 }));
 vi.mock("../tools/rasterize.tool.js", () => ({ rasterizeSvg }));
+// The step calls artifactStore(runId) with the default root. Redirect it at the
+// module seam, the same way this file already mocks the agents and rasterizer,
+// so production needs no test-only parameter.
+vi.mock("../tools/artifact-store.js", async () => {
+  const actual = await vi.importActual<typeof import("../tools/artifact-store.js")>(
+    "../tools/artifact-store.js",
+  );
+  return { ...actual, artifactStore: (runId: string) => actual.artifactStore(runId, { root }) };
+});
 
 const { composePosterStep } = await import("./compose-poster.step.js");
 
@@ -31,15 +46,25 @@ const base = {
   colors: ["#111"],
   attempts: 0,
   accepted: false,
-  image: { imageBase64: "AAAA", contentType: "image/jpeg", width: 1080, height: 810 },
+  image: { path: "", contentType: "image/jpeg", bytes: 4, width: 1080, height: 810 },
 };
 
-const run = (data: Record<string, unknown>) => composePosterStep.execute({ inputData: data } as never) as Promise<any>;
+const PHOTO = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 
-beforeEach(() => {
+const run = (data: Record<string, unknown>) =>
+  composePosterStep.execute({ inputData: data, runId: "run-test" } as never) as Promise<any>;
+
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), "compose-step-test-"));
   authorGenerate.mockReset();
   critiqueGenerate.mockReset();
   rasterizeSvg.mockReset();
+  // Give the step a real band-photo file to read. This import returns the MOCKED
+  // artifactStore, which is already rooted at `root`.
+  const { artifactStore } = await import("../tools/artifact-store.js");
+  const ref = await artifactStore("run-test").write("band-1.jpg", PHOTO, "image/jpeg");
+  base.image = { ...ref, width: 1080, height: 810 };
 });
 
 describe("composePosterStep short-circuit", () => {
@@ -71,24 +96,40 @@ describe("composePosterStep short-circuit", () => {
 });
 
 describe("composePosterStep authoring", () => {
-  it("produces svg + png and accepts when the critique approves", async () => {
+  it("writes svg and png to files and stores refs, not blobs", async () => {
     authorGenerate.mockResolvedValue({ object: { svg: GOOD_SVG } });
-    rasterizeSvg.mockResolvedValue({ ok: true, pngBase64: "PNGDATA", width: 1080, height: 1350 });
+    rasterizeSvg.mockResolvedValue({ ok: true, png: PNG, width: 1080, height: 1350 });
     critiqueGenerate.mockResolvedValue({ object: { acceptable: true, critique: "bold and legible" } });
 
     const out = await run(base);
 
-    expect(out.attempts).toBe(1);
     expect(out.accepted).toBe(true);
-    expect(out.pngBase64).toBe("PNGDATA");
-    // The placeholder was replaced with the real data URI by the REAL svg-parse.
-    expect(out.svg).toContain("data:image/jpeg;base64,AAAA");
-    expect(out.svg).not.toContain("__BAND_IMAGE__");
+    expect(out.render.svg.path).toContain(join("run-test", "poster-1.svg"));
+    expect(out.render.png.path).toContain(join("run-test", "poster-1.png"));
+    expect(out.render.png.bytes).toBe(PNG.byteLength);
+    expect(out.render.svg.contentType).toBe("image/svg+xml");
+    expect(await readFile(out.render.png.path)).toEqual(PNG);
+    expect("pngBase64" in out).toBe(false);
+  });
+
+  it("keeps the SMALL authored svg in state, with the placeholder intact", async () => {
+    authorGenerate.mockResolvedValue({ object: { svg: GOOD_SVG } });
+    rasterizeSvg.mockResolvedValue({ ok: true, png: PNG });
+    critiqueGenerate.mockResolvedValue({ object: { acceptable: true, critique: "ok" } });
+
+    const out = await run(base);
+
+    expect(out.authoredSvg).toBe(GOOD_SVG);
+    expect(out.authoredSvg).toContain("__BAND_IMAGE__");
+    // The substituted version, which inlines the photo, is on disk only.
+    const written = await readFile(out.render.svg.path, "utf8");
+    expect(written).toContain("data:image/jpeg;base64,");
+    expect(written).not.toContain("__BAND_IMAGE__");
   });
 
   it("rejects and records the critique when the poster is judged poor", async () => {
     authorGenerate.mockResolvedValue({ object: { svg: GOOD_SVG } });
-    rasterizeSvg.mockResolvedValue({ ok: true, pngBase64: "PNGDATA" });
+    rasterizeSvg.mockResolvedValue({ ok: true, png: PNG });
     critiqueGenerate.mockResolvedValue({ object: { acceptable: false, critique: "title is unreadable" } });
 
     const out = await run(base);
@@ -99,7 +140,7 @@ describe("composePosterStep authoring", () => {
 
   it("feeds the prior critique back to the author", async () => {
     authorGenerate.mockResolvedValue({ object: { svg: GOOD_SVG } });
-    rasterizeSvg.mockResolvedValue({ ok: true, pngBase64: "PNGDATA" });
+    rasterizeSvg.mockResolvedValue({ ok: true, png: PNG });
     critiqueGenerate.mockResolvedValue({ object: { acceptable: true, critique: "ok" } });
 
     await run({ ...base, attempts: 1, critique: "the date was cropped" });
@@ -113,6 +154,15 @@ describe("composePosterStep authoring", () => {
 });
 
 describe("composePosterStep failure paths", () => {
+  it("produces a critique when the band photo file cannot be read", async () => {
+    const out = await run({ ...base, image: { ...base.image, path: join(root, "gone.jpg") } });
+
+    expect(out.accepted).toBe(false);
+    expect(out.attempts).toBe(1);
+    expect(out.critique).toContain("could not read the band image");
+    expect(authorGenerate).not.toHaveBeenCalled();
+  });
+
   it("handles the author returning no svg", async () => {
     authorGenerate.mockResolvedValue({ object: undefined });
 
@@ -154,7 +204,7 @@ describe("composePosterStep failure paths", () => {
 
   it("handles the critique agent returning no structured object", async () => {
     authorGenerate.mockResolvedValue({ object: { svg: GOOD_SVG } });
-    rasterizeSvg.mockResolvedValue({ ok: true, pngBase64: "PNGDATA" });
+    rasterizeSvg.mockResolvedValue({ ok: true, png: PNG });
     critiqueGenerate.mockResolvedValue({ object: undefined });
 
     const out = await run(base);

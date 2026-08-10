@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { ArtistMatchSchema, ImageCandidateSchema, ImageCreditSchema, ImageRefSchema } from "../tools/band-image.js";
+import {
+  ArtifactRefSchema,
+  ArtistMatchSchema,
+  ImageCandidateSchema,
+  ImageCreditSchema,
+  ImageRefSchema,
+} from "../tools/band-image.js";
 
 // Loop-1 state: input and output of the judge-band-image step are the SAME shape,
 // so the step's output can feed straight back as the next iteration's input.
@@ -33,8 +39,10 @@ export const PosterLoopStateSchema = z.object({
   attempts: z.number(),
   accepted: z.boolean(),
   critique: z.string().optional(),
-  svg: z.string().optional(),
-  pngBase64: z.string().optional(),
+  // The SVG BEFORE substitution: still contains the literal __BAND_IMAGE__, so
+  // it is ~2 KB and is the thing worth reading in Studio when a poster is wrong.
+  authoredSvg: z.string().optional(),
+  render: z.object({ svg: ArtifactRefSchema, png: ArtifactRefSchema }).optional(),
   artist: ArtistMatchSchema.optional(),
   credit: ImageCreditSchema.optional(),
 });
