@@ -17,6 +17,10 @@ Produce ONE complete SVG document (default canvas 1080x1350, portrait) that incl
   given imageWidth/imageHeight aspect ratio.
 - The performer name as the dominant headline, the venue, and the date — all legible.
 - A snazzy background pattern (gradients, shapes, repetition) themed with the provided 'colors'.
+FONTS: the renderer has exactly ONE font family available, "Inter", in weights 400, 700 and 900.
+Every <text> element MUST set font-family="Inter" and, if it sets font-weight, use 400, 700 or 900.
+Any other family name is not installed, so that text would render as NOTHING. Vary size, weight,
+letter-spacing and color for hierarchy instead of reaching for a second typeface.
 If 'critique' is present, it explains what was wrong with your previous attempt — fix it.
 Return only the SVG via the 'svg' field. Use xmlns="http://www.w3.org/2000/svg". Keep it well-formed.`,
   model: process.env.LLM_MODEL || "anthropic/claude-sonnet-4-5",
