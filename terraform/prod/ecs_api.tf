@@ -36,6 +36,8 @@ locals {
     # taskdef step is its own rollout risk and does not belong bundled with a
     # feature.
     { name = "API_BASE_URL", value = "https://api.${var.domain_name}" },
+    { name = "POSTER_FUNCTION_URL", value = aws_lambda_function_url.mastra_handler.function_url },
+    { name = "POSTERS_BUCKET", value = aws_s3_bucket.posters.id },
   ]
 
   # Secret env vars — pulled from Secrets Manager.
