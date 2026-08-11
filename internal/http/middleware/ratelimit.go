@@ -16,9 +16,10 @@ import (
 
 // Rate-limit endpoint identifiers. Each is emitted as the `endpoint` metric
 // dimension VALUE on a 429. A subset — signup, login, refresh, authed,
-// manual_interests, spotify_exchange, ical_feed — is also mirrored as alarm map
-// keys in terraform/prod/observability.tf; keep those in sync. The rest are
-// emitted only, and are queryable in CloudWatch Logs Insights without an alarm.
+// manual_interests, spotify_exchange, ical_feed, poster_create — is also
+// mirrored as alarm map keys in terraform/prod/observability.tf; keep those in
+// sync. The rest are emitted only, and are queryable in CloudWatch Logs
+// Insights without an alarm.
 const (
 	EndpointSignup  = "signup"
 	EndpointLogin   = "login"
@@ -31,6 +32,8 @@ const (
 	EndpointSpotifyExchange = "spotify_exchange"
 	EndpointIcalToken       = "ical_token"
 	EndpointConfirmResend   = "confirm_resend"
+	// Each allowed call can drive nine LLM requests in the poster Lambda.
+	EndpointPosterCreate = "poster_create"
 
 	// Public (IP-keyed)
 	EndpointLogout   = "logout"

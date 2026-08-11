@@ -107,6 +107,17 @@ func TestLoad_IcalBaseURL(t *testing.T) {
 	require.Equal(t, "http://localhost:8080", cfg.IcalBaseURL)
 }
 
+func TestLoad_PosterFields(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("POSTER_FUNCTION_URL", "https://poster.example.com/lambda-url")
+	t.Setenv("POSTERS_BUCKET", "posters-bucket")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "https://poster.example.com/lambda-url", cfg.PosterFunctionURL)
+	require.Equal(t, "posters-bucket", cfg.PostersBucket)
+}
+
 func TestLoad_CORSAllowedOrigins(t *testing.T) {
 	setRequiredDB(t)
 	t.Setenv("JWT_SIGNING_KEY", "k")

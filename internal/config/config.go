@@ -53,6 +53,10 @@ type Config struct {
 	EmailFromAddress string
 	AppBaseURL       string
 	APIBaseURL       string
+
+	// Poster proxy additions
+	PosterFunctionURL string
+	PostersBucket     string
 }
 
 func Load() (*Config, error) {
@@ -182,6 +186,9 @@ func Load() (*Config, error) {
 		EmailFromAddress: emailFrom,
 		AppBaseURL:       appBaseURL,
 		APIBaseURL:       apiBaseURL,
+
+		PosterFunctionURL: os.Getenv("POSTER_FUNCTION_URL"),
+		PostersBucket:     os.Getenv("POSTERS_BUCKET"),
 	}
 	return cfg, nil
 }

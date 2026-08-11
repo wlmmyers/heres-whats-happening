@@ -417,12 +417,18 @@ var guardedRoutes = []string{
 	"/calendar/00000000-0000-0000-0000-000000000000",
 }
 
+// wantConfirmationGateStatus is what RequireConfirmed returns for an
+// unconfirmed user. Both TestServer_UnconfirmedIsGatedOffGuardedRoutes and
+// TestServer_PosterRoutesRequireConfirmed assert this constant rather than
+// each spelling out their own literal, so the two cannot drift apart.
+const wantConfirmationGateStatus = http.StatusForbidden
+
 func TestServer_UnconfirmedIsGatedOffGuardedRoutes(t *testing.T) {
 	srv, _ := newConfirmationTestServer(t)
 	tok := signupOn(t, srv, "gated@example.com")
 
 	for _, route := range guardedRoutes {
-		require.Equal(t, http.StatusForbidden, authedGet(t, srv, route, tok), route)
+		require.Equal(t, wantConfirmationGateStatus, authedGet(t, srv, route, tok), route)
 	}
 }
 
@@ -477,5 +483,51 @@ func TestServer_ConfirmLinkEndToEnd(t *testing.T) {
 	fresh := loginFor(t, srv, "e2e-confirm@example.com")
 	for _, route := range guardedRoutes {
 		require.Equal(t, http.StatusOK, authedGet(t, srv, route, fresh), route)
+	}
+}
+
+// posterRouteRequests are the two poster-proxy endpoints wired in Task 5.
+// Both must sit inside the authenticated + confirmed group like every other
+// route added there — an easy thing to get wrong, since chi copies its
+// middleware stack by value at Group()/With() time, so a route registered
+// above the group's r.Use(...) lines would silently land unauthenticated.
+var posterRouteRequests = []struct {
+	method string
+	path   string
+}{
+	{http.MethodPost, "/posters"},
+	{http.MethodGet, "/posters"},
+}
+
+// TestServer_PosterRoutesRequireAuth proves the routes are actually guarded,
+// not just reachable. A route left outside RequireAuth still "works" — it
+// just fails open, silently, with no test failure to announce it — so this
+// checks the real Router(), not a stubbed-down one.
+func TestServer_PosterRoutesRequireAuth(t *testing.T) {
+	srv := newTestServer(t)
+
+	for _, rt := range posterRouteRequests {
+		req, err := http.NewRequest(rt.method, srv.URL+rt.path, nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode,
+			"%s %s with no Authorization header", rt.method, rt.path)
+	}
+}
+
+// TestServer_PosterRoutesRequireConfirmed checks the other half of the guard:
+// an authenticated-but-unconfirmed caller must see exactly what every other
+// guarded route returns (wantConfirmationGateStatus), not something route
+// specific that could mask a missing RequireConfirmed.
+func TestServer_PosterRoutesRequireConfirmed(t *testing.T) {
+	srv, _ := newConfirmationTestServer(t)
+	tok := signupOn(t, srv, "poster-gated@example.com")
+
+	for _, rt := range posterRouteRequests {
+		require.Equal(t, wantConfirmationGateStatus, doAuthed(t, srv, rt.method, rt.path, tok),
+			"%s %s", rt.method, rt.path)
 	}
 }
