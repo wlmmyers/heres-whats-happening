@@ -99,12 +99,23 @@ func startGeneration(d PosterDeps, id string, req poster.Request) {
 			})
 			return
 		}
-		if _, err := poster.ValidateKey(res.SvgKey); err != nil {
-			slog.Error("poster returned an unexpected key", "job", id, "error", err)
-			_ = d.Queries.MarkPosterJobFailed(ctx, store.MarkPosterJobFailedParams{
-				ID: id, FailureStage: ptr("svg"), FailureReason: ptr("poster service returned an unexpected artifact"),
-			})
-			return
+		// BOTH keys are checked before the row goes ready. GetPoster presigns
+		// both, and ValidateKey is what PresignGet itself enforces — so a ready
+		// row holding a bad png_key makes every later GET fail the presign and
+		// return 500, permanently: a ready row is neither failed nor
+		// stale-pending, so nothing ever re-claims it and there is no self-heal.
+		// Failing the job here instead leaves a state the client can act on and
+		// a POST can legitimately retry. The stage is "svg" for both, matching
+		// the Lambda's own stage vocabulary ("image" | "svg") — the png is a
+		// render of the svg, not a stage of its own.
+		for _, key := range []string{res.SvgKey, res.PngKey} {
+			if _, err := poster.ValidateKey(key); err != nil {
+				slog.Error("poster returned an unexpected key", "job", id, "error", err)
+				_ = d.Queries.MarkPosterJobFailed(ctx, store.MarkPosterJobFailedParams{
+					ID: id, FailureStage: ptr("svg"), FailureReason: ptr("poster service returned an unexpected artifact"),
+				})
+				return
+			}
 		}
 		_ = d.Queries.MarkPosterJobReady(ctx, store.MarkPosterJobReadyParams{
 			ID: id, SvgKey: &res.SvgKey, PngKey: &res.PngKey,

@@ -376,6 +376,57 @@ func TestCreatePoster_ControlledFailureMarksJobFailed(t *testing.T) {
 	require.Equal(t, "no match found", *job.FailureReason)
 }
 
+// Either key failing poster.ValidateKey must fail the JOB — neither may reach
+// "ready". GetPoster presigns both keys and PresignGet re-runs the very same
+// check, so a ready row holding a bad key returns 500 on every GET, forever: a
+// ready row is neither failed nor stale-pending, so nothing re-claims it and
+// there is no self-heal. png_key used to be unvalidated, which made exactly
+// that state reachable; the failed row this produces instead is one a client
+// can see and a POST can retry.
+func TestCreatePoster_BadArtifactKeyMarksJobFailed(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result poster.Result
+	}{
+		{"bad-svg-key", poster.Result{SvgKey: "../../etc/passwd", PngKey: "posters/v1/ok/ok.png"}},
+		{"bad-png-key", poster.Result{SvgKey: "posters/v1/ok/ok.svg", PngKey: "../../etc/passwd"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := testdb.MustOpen(t)
+			q := store.New(pool)
+			gen := &stubGenerator{result: tc.result}
+			deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+			performer, venue, date := posterFixture(t)
+			body, _ := json.Marshal(map[string]string{"performer": performer, "venue": venue, "date": date})
+			rec := httptest.NewRecorder()
+			handlers.CreatePoster(deps)(rec, httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body))))
+			require.Equal(t, http.StatusAccepted, rec.Code)
+
+			id := poster.JobID(performer, venue, date)
+			require.Eventually(t, func() bool {
+				job, err := q.GetPosterJob(context.Background(), id)
+				return err == nil && job.Status == "failed"
+			}, 2*time.Second, 20*time.Millisecond, "an unusable %s must fail the job, not mark it ready", tc.name)
+
+			job, err := q.GetPosterJob(context.Background(), id)
+			require.NoError(t, err)
+			require.Equal(t, "failed", job.Status)
+			require.Nil(t, job.SvgKey, "a failed job must not carry artifact keys")
+			require.Nil(t, job.PngKey)
+			require.NotNil(t, job.FailureReason)
+			require.Equal(t, "poster service returned an unexpected artifact", *job.FailureReason)
+
+			// And the GET that follows reports the failure instead of 500ing.
+			getRec := httptest.NewRecorder()
+			handlers.GetPoster(deps)(getRec, httptest.NewRequest(http.MethodGet,
+				"/posters?performer="+performer+"&venue="+venue+"&date="+date, nil))
+			require.Equal(t, http.StatusOK, getRec.Code)
+			require.Equal(t, "failed", decodeBody(t, getRec)["status"])
+		})
+	}
+}
+
 // force is the escape hatch for regenerating a poster the user dislikes —
 // i.e. one that is already "ready". See
 // docs/superpowers/specs/2026-08-09-file-backed-poster-artifacts-design.md.
