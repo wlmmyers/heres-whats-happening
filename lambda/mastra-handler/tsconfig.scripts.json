@@ -1,0 +1,12 @@
+// Typecheck-only config covering scripts/, which the build config cannot include
+// (its rootDir is src/, so adding scripts/ there would break the dist layout).
+// scripts/invoke-poster-local.ts silently rotted through five type errors because
+// nothing compiled it; `pnpm typecheck` now runs this too.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts"]
+}

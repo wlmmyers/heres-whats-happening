@@ -1,17 +1,44 @@
 /* Run the poster workflow locally and write the SVG + PNG to disk.
  * Usage: ANTHROPIC_API_KEY=... pnpm tsx scripts/invoke-poster-local.ts "Khruangbin" "The Fillmore" "2026-08-15"
  */
-import { writeFileSync } from "node:fs";
-import { runPosterWorkflow } from "../src/handler.js";
+import { copyFile } from "node:fs/promises";
+import { stubAwsLambdaGlobal } from "../src/awslambda-stub.js";
 
 const [performer, venue, date] = process.argv.slice(2);
 if (!performer || !venue || !date) throw new Error('usage: invoke-poster-local "<performer>" "<venue>" "<date>"');
 
-const out = await runPosterWorkflow({ performer, venue, date });
-if (!out.ok || !out.svg || !out.pngBase64) {
-  console.error(JSON.stringify({ ok: false, failureStage: out.failureStage, reason: out.reason }, null, 2));
+// handler.ts calls awslambda.streamifyResponse() at module load, so the global has
+// to exist first. Static imports are hoisted, hence the dynamic import below.
+stubAwsLambdaGlobal();
+const { runPosterWorkflow } = await import("../src/handler.js");
+
+// `force` skips the S3 lookup, which this script never reaches anyway — it calls
+// the workflow directly rather than going through processPosterRequest.
+const out = await runPosterWorkflow({ performer, venue, date, force: false });
+
+if (!out.ok || !out.render) {
+  console.error(JSON.stringify({ ok: false, failureStage: out.failureStage, reason: out.reason, artist: out.artist }, null, 2));
+  if (out.artifactDir) console.error(`\nartifacts kept for inspection: ${out.artifactDir}`);
   process.exit(1);
 }
-writeFileSync("poster.svg", out.svg);
-writeFileSync("poster.png", Buffer.from(out.pngBase64, "base64"));
+
+// The workflow writes into a run-scoped temp dir and returns references, so copy
+// the two finished artifacts somewhere durable. The run dir is deliberately left
+// in place — its intermediates (band-N.jpg, poster-N.svg) are the point of running
+// this locally — and artifactStore's one-hour sweep reclaims it.
+await copyFile(out.render.svg.path, "poster.svg");
+await copyFile(out.render.png.path, "poster.png");
+
 console.log("wrote poster.svg + poster.png");
+console.log(`run artifacts: ${out.artifactDir}`);
+
+if (out.artist) {
+  const a = out.artist;
+  console.log(`artist:  ${a.name}${a.disambiguation ? ` (${a.disambiguation})` : ""} [${a.mbid}]`);
+}
+if (out.credit) {
+  const c = out.credit;
+  console.log(`photo:   ${c.file}`);
+  console.log(`credit:  ${c.artist ?? "unknown"} — ${c.licenseShortName ?? "unknown licence"}${c.attributionRequired ? " (ATTRIBUTION REQUIRED)" : ""}`);
+  console.log(`source:  ${c.descriptionUrl}`);
+}
