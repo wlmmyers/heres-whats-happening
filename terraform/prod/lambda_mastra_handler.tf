@@ -53,8 +53,11 @@ data "aws_iam_policy_document" "mastra_handler" {
     resources = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"]
   }
   statement {
-    sid       = "WritePosters"
-    actions   = ["s3:PutObject"]
+    sid = "ReadWritePosters"
+    # GetObject is not optional: a presigned URL cannot grant more than the
+    # signing principal holds, so without it every svgUrl/pngUrl 403s. The cache
+    # lookup also GETs the sidecar, and AccessDenied is not NoSuchKey.
+    actions   = ["s3:PutObject", "s3:GetObject"]
     resources = ["${aws_s3_bucket.posters.arn}/*"]
   }
 }
