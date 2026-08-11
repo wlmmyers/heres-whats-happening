@@ -36,6 +36,24 @@ locals {
     # taskdef step is its own rollout risk and does not belong bundled with a
     # feature.
     { name = "API_BASE_URL", value = "https://api.${var.domain_name}" },
+    # DEPLOYMENT — these two are NEW env vars, and merging is not enough to get
+    # them onto a running task. aws_ecs_task_definition.api below ignores
+    # container_definitions, and ci/buildspec-app.yml registers each revision
+    # from the CURRENT LIVE definition with only the image swapped. So neither
+    # Terraform nor the app pipeline can introduce a name that is not already
+    # live; these entries only matter for a from-scratch bootstrap.
+    #
+    # After merging, run against every family that runs this binary — hwh-api
+    # plus the three scheduled families, which share local.api_env_vars and
+    # call the same config.Load():
+    #
+    #   scripts/taskdef-edit.sh --set-env POSTER_FUNCTION_URL=... \
+    #                           --set-env POSTERS_BUCKET=... --deploy
+    #
+    # config.Load() now refuses to start without both, so a task that missed
+    # this step crash-loops loudly instead of returning 202 for every poster
+    # and failing each one invisibly in the background. See the DEPLOYMENT
+    # section of docs/superpowers/specs/2026-08-10-poster-proxy-design.md.
     { name = "POSTER_FUNCTION_URL", value = aws_lambda_function_url.mastra_handler.function_url },
     { name = "POSTERS_BUCKET", value = aws_s3_bucket.posters.id },
   ]

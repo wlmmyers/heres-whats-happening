@@ -93,6 +93,22 @@ output "email_inbound_bucket" {
   value       = aws_s3_bucket.inbound_email.bucket
 }
 
+# The two poster env vars cannot reach a live task via Terraform (the task
+# definitions ignore container_definitions) or via the app pipeline (it copies
+# the live definition and swaps only the image). These outputs exist so the
+# operator can feed scripts/taskdef-edit.sh without hand-copying values — see
+# the DEPLOYMENT section of
+# docs/superpowers/specs/2026-08-10-poster-proxy-design.md.
+output "poster_function_url" {
+  description = "POSTER_FUNCTION_URL for scripts/taskdef-edit.sh --set-env."
+  value       = aws_lambda_function_url.mastra_handler.function_url
+}
+
+output "posters_bucket" {
+  description = "POSTERS_BUCKET for scripts/taskdef-edit.sh --set-env."
+  value       = aws_s3_bucket.posters.id
+}
+
 output "email_post_apply_steps" {
   description = "Operator steps to finish wiring email ingestion after apply."
   value       = <<-EOT

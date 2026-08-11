@@ -177,7 +177,8 @@ Two safeguards, because Go now signs on the Lambda's say-so:
 
 New config: `POSTER_FUNCTION_URL` and `POSTERS_BUCKET`, both supplied from
 terraform in `ecs_api.tf` alongside the existing `API_BASE_URL` /
-`ICAL_BASE_URL` entries.
+`ICAL_BASE_URL` entries. `config.Load()` **requires both** — see
+[DEPLOYMENT](#deployment), which is not optional reading for this change.
 
 ### e) Go: routes
 
@@ -294,6 +295,49 @@ the Lambda.
 
 **Routing** — a request without a token gets 401, and an unconfirmed user gets
 the confirmation gate, proving the routes really are inside the guarded group.
+
+## DEPLOYMENT
+
+**Merging this branch is not sufficient. The feature is dead in production
+until a human runs `scripts/taskdef-edit.sh` against the live service.**
+
+`POSTER_FUNCTION_URL` and `POSTERS_BUCKET` are new env vars, and this stack has
+no path by which a new env var reaches a running task on its own:
+
+- `aws_ecs_task_definition.api` (and `aws_ecs_task_definition.scheduled`) carry
+  `lifecycle { ignore_changes = [container_definitions] }`, and the env vars
+  live inside that jsonencoded block — so `terraform apply` will not touch
+  them. The entries in `ecs_api.tf` are correct, but they only take effect on a
+  from-scratch bootstrap.
+- `ci/buildspec-app.yml` registers each new revision from the **current live**
+  task definition, swapping only `.containerDefinitions[0].image`. It can
+  never introduce a name that is not already live.
+
+So after merging, run — for `hwh-api` **and each scheduled family**, because
+`ecs_schedules.tf` sets `scheduled_env_vars = local.api_env_vars` and the
+scheduled commands call the same `config.Load()`:
+
+```sh
+scripts/taskdef-edit.sh --set-env POSTER_FUNCTION_URL="$(terraform -chdir=terraform/prod output -raw poster_function_url)" \
+                        --set-env POSTERS_BUCKET="$(terraform -chdir=terraform/prod output -raw posters_bucket)" \
+                        --deploy
+
+for f in hwh-scrape-events-ticketmaster hwh-scrape-spotify hwh-match; do
+  scripts/taskdef-edit.sh --family "$f" \
+    --set-env POSTER_FUNCTION_URL=... --set-env POSTERS_BUCKET=...
+done
+```
+
+(The scheduled families take no `--deploy`; they pick up `:LATEST` on their
+next firing.)
+
+`config.Load()` returns `poster generation requires POSTER_FUNCTION_URL,
+POSTERS_BUCKET` when either is empty, so a task that missed this step
+crash-loops and fails the ECS rolling deploy with the previous revision still
+serving. That is deliberate: an empty `POSTER_FUNCTION_URL` is otherwise
+**silent** — `POST /posters` still returns `202`, and the background goroutine
+fails with `unsupported protocol scheme ""`, so every `GET` reports
+`{"status":"failed"}` with no 5xx and no alarm anywhere.
 
 ## Out of scope
 
