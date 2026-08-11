@@ -127,9 +127,17 @@ func TestCreatePosterDoesNotStartASecondGenerationForAPendingJob(t *testing.T) {
 	}
 	close(gen.release)
 
-	if n := gen.callCount(); n != 1 {
-		t.Errorf("generation ran %d times, want 1 — the second POST must join the pending job", n)
-	}
+	// close() only unblocks goroutines already parked on <-s.release; a bogus
+	// second goroutine spawned by the second POST may not have been scheduled
+	// yet at this instant, so reading callCount() once here is a race — it
+	// can read 1 even when a second call is about to land. Wait for the
+	// (legitimate) first call to show up, then hold the assertion open for a
+	// settle window so a bogus second call has a fair chance to appear before
+	// declaring success.
+	require.Eventually(t, func() bool { return gen.callCount() >= 1 }, 2*time.Second, 5*time.Millisecond,
+		"generation never ran")
+	require.Never(t, func() bool { return gen.callCount() > 1 }, 300*time.Millisecond, 10*time.Millisecond,
+		"generation ran more than once — the second POST must join the pending job, not start its own")
 }
 
 // seedReadyPosterJob claims and immediately completes a job for
