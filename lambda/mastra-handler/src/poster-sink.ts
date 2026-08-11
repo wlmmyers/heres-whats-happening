@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -30,13 +31,33 @@ export interface PosterSink {
   put(req: PosterRequest, svg: ArtifactRef, png: ArtifactRef, provenance: PosterProvenance): Promise<PosterArtifacts>;
 }
 
+/** Short, stable digest of an already-normalized string. Long enough that two
+ * real-world names will not collide, short enough to keep keys readable. */
+function shortDigest(normalized: string): string {
+  return createHash("sha256").update(normalized).digest("hex").slice(0, 10);
+}
+
+/**
+ * Slug ONE key component.
+ *
+ * A name with no ASCII alphanumerics — 椎名林檎, Мумий Тролль, !!! — slugs to the
+ * empty string, so every such act at the same venue on the same night produced the
+ * SAME key. That was harmless while the key was write-only, but `find` now READS
+ * it: colliding acts would be served each other's poster, photo, and the wrong
+ * photographer's CC BY-SA attribution. So when a component slugs to nothing, fall
+ * back to a digest of the normalized original. Applied per component (performer,
+ * venue and date each go through here), and inert for ASCII input — existing keys
+ * are byte-identical.
+ */
 function slug(s: string): string {
-  return s
+  const normalized = s
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "") // strip diacritics
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .toLowerCase();
+  const slugged = normalized.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  // Digest the NORMALIZED form, so the same name typed in a different Unicode
+  // composition still lands on one key (and so still hits the cache).
+  return slugged || shortDigest(normalized);
 }
 
 /** Deterministic, versioned S3 key prefix for a request (no extension). */
