@@ -22,7 +22,7 @@ async function renderFixture(svg: string, pngBase64 = "AAAA") {
 }
 
 describe("processPosterRequest", () => {
-  it("on a cache miss runs the workflow, writes to the sink, and returns urls", async () => {
+  it("on a cache miss runs the workflow, writes to the sink, and returns keys", async () => {
     const sink = new StubPosterSink();
     const res = await processPosterRequest(req, {
       sink,
@@ -31,7 +31,7 @@ describe("processPosterRequest", () => {
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.cached).toBe(false);
-      expect(res.svgUrl).toContain("posters/v1/khruangbin");
+      expect(res.svgKey).toContain("posters/v1/khruangbin");
     }
     expect(sink.calls).toHaveLength(1);
   });
@@ -65,9 +65,9 @@ describe("parsePosterRequest", () => {
 
 describe("posterHttpResponse", () => {
   it("maps ok -> 200 json", () => {
-    const r = posterHttpResponse({ ok: true, svgUrl: "u1", pngUrl: "u2", cached: false });
+    const r = posterHttpResponse({ ok: true, svgKey: "k1", pngKey: "k2", cached: false });
     expect(r.statusCode).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ svgUrl: "u1", pngUrl: "u2", cached: false });
+    expect(JSON.parse(r.body)).toEqual({ svgKey: "k1", pngKey: "k2", cached: false });
   });
   it("maps failure -> 422 with stage", () => {
     const r = posterHttpResponse({ ok: false, stage: "svg", reason: "ugly" });
@@ -110,8 +110,8 @@ describe("provenance passthrough", () => {
   it("includes artist and credit in the 200 body", () => {
     const out = posterHttpResponse({
       ok: true,
-      svgUrl: "https://x/s.svg",
-      pngUrl: "https://x/p.png",
+      svgKey: "posters/v1/x/s.svg",
+      pngKey: "posters/v1/x/s.png",
       cached: false,
       artist,
       credit,
@@ -243,18 +243,18 @@ describe("artifact cleanup", () => {
   });
 });
 
-describe("URL-only response", () => {
+describe("Key-only response", () => {
   it("omits the svg body and includes cached", () => {
     const out = posterHttpResponse({
       ok: true,
-      svgUrl: "https://x/s.svg",
-      pngUrl: "https://x/p.png",
+      svgKey: "posters/v1/x/s.svg",
+      pngKey: "posters/v1/x/s.png",
       cached: true,
     });
     const body = JSON.parse(out.body);
     expect(out.statusCode).toBe(200);
     expect("svg" in body).toBe(false);
-    expect(body.svgUrl).toBe("https://x/s.svg");
+    expect(body.svgKey).toBe("posters/v1/x/s.svg");
     expect(body.cached).toBe(true);
   });
 });

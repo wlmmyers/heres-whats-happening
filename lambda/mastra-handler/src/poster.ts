@@ -75,14 +75,15 @@ const JSON_HEADERS = { "content-type": "application/json" };
 
 export function posterHttpResponse(result: PosterResult): { statusCode: number; headers: Record<string, string>; body: string } {
   if (result.ok) {
-    // URLs, not bytes. JSON.stringify drops undefined keys, so provenance is
-    // simply absent when unknown.
+    // S3 object keys, not signed URLs — the API service presigns at read time.
+    // JSON.stringify drops undefined keys, so provenance is simply absent when
+    // unknown.
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
       body: JSON.stringify({
-        svgUrl: result.svgUrl,
-        pngUrl: result.pngUrl,
+        svgKey: result.svgKey,
+        pngKey: result.pngKey,
         cached: result.cached,
         artist: result.artist,
         credit: result.credit,

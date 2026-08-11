@@ -19,7 +19,6 @@
     "@aws-sdk/client-s3": "^3.1077.0",
     "@aws-sdk/client-secrets-manager": "^3.1057.0",
     "@aws-sdk/client-sqs": "^3.600.0",
-    "@aws-sdk/s3-request-presigner": "^3.1076.0",
     "@expo-google-fonts/inter": "0.4.2",
     "@mastra/core": "^1.51.0",
     "@resvg/resvg-wasm": "^2.6.2",

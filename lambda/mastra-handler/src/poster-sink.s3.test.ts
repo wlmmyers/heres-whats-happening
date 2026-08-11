@@ -1,12 +1,8 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { S3PosterSink } from "./poster-sink.js";
-
-vi.mock("@aws-sdk/s3-request-presigner", () => ({
-  getSignedUrl: vi.fn(async (_c: unknown, cmd: any) => `https://signed.test/${cmd.input.Key}`),
-}));
 
 const req = { performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15", force: false };
 const provenance = {
@@ -110,12 +106,15 @@ describe("S3PosterSink.put", () => {
     expect(s3.maxInFlight).toBe(1);
   });
 
-  it("returns signed urls plus the provenance it stored", async () => {
+  it("returns the object KEYS it wrote, not signed urls", async () => {
     const s3 = fakeS3();
     const { svg, png } = await refs();
     const out = await new S3PosterSink(s3, "bkt").put(req, svg, png, provenance);
-    expect(out.svgUrl).toContain(".svg");
-    expect(out.pngUrl).toContain(".png");
+
+    expect(out.svgKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.svg");
+    expect(out.pngKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.png");
+    expect("svgUrl" in out).toBe(false);
+    expect("pngUrl" in out).toBe(false);
     expect(out.credit).toEqual(provenance.credit);
   });
 });
@@ -123,14 +122,14 @@ describe("S3PosterSink.put", () => {
 describe("S3PosterSink.find", () => {
   const key = "posters/v1/khruangbin/the-fillmore-2026-08-15.json";
 
-  it("returns urls and provenance when the sidecar exists", async () => {
+  it("returns keys and provenance when the sidecar exists", async () => {
     const s3 = fakeS3({ [key]: JSON.stringify(provenance) });
     const hit = await new S3PosterSink(s3, "bkt").find(req);
 
     expect(hit).not.toBeNull();
+    expect(hit!.svgKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.svg");
+    expect(hit!.pngKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.png");
     expect(hit!.artist).toEqual(provenance.artist);
-    expect(hit!.credit!.attributionRequired).toBe(true);
-    expect(hit!.pngUrl).toContain(".png");
   });
 
   it("returns null when the sidecar is absent — a half-written poster is not a hit", async () => {

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { ArtifactRef, ArtistMatch, ImageCredit } from "./mastra/tools/band-image.js";
 import type { PosterRequest } from "./poster-schema.js";
 
@@ -13,20 +12,20 @@ import type { PosterRequest } from "./poster-schema.js";
  */
 export const POSTER_SCHEMA_VERSION = 1;
 
-const SIGNED_URL_TTL_SECONDS = 3600;
-
 export interface PosterProvenance {
   artist?: ArtistMatch;
   credit?: ImageCredit;
 }
 
 export interface PosterArtifacts extends PosterProvenance {
-  svgUrl: string;
-  pngUrl: string;
+  /** S3 object keys. The API service presigns these at read time — storing a
+   *  presigned URL anywhere would serve a dead link after its 3600s expiry. */
+  svgKey: string;
+  pngKey: string;
 }
 
 export interface PosterSink {
-  /** Signed urls + provenance when a COMPLETE poster already exists, else null. */
+  /** Object keys + provenance when a COMPLETE poster already exists, else null. */
   find(req: PosterRequest): Promise<PosterArtifacts | null>;
   put(req: PosterRequest, svg: ArtifactRef, png: ArtifactRef, provenance: PosterProvenance): Promise<PosterArtifacts>;
 }
@@ -71,17 +70,6 @@ export class S3PosterSink implements PosterSink {
     private readonly bucket: string,
   ) {}
 
-  private sign(base: string): Promise<[string, string]> {
-    return Promise.all([
-      getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: `${base}.svg` }), {
-        expiresIn: SIGNED_URL_TTL_SECONDS,
-      }),
-      getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: `${base}.png` }), {
-        expiresIn: SIGNED_URL_TTL_SECONDS,
-      }),
-    ]) as Promise<[string, string]>;
-  }
-
   /** Stream from disk. ContentLength is what lets a stream body avoid buffering. */
   private async putFile(key: string, ref: ArtifactRef): Promise<void> {
     await this.s3.send(
@@ -110,8 +98,7 @@ export class S3PosterSink implements PosterSink {
       if (name === "NoSuchKey" || name === "NotFound") return null;
       throw e;
     }
-    const [svgUrl, pngUrl] = await this.sign(base);
-    return { svgUrl, pngUrl, ...provenance };
+    return { svgKey: `${base}.svg`, pngKey: `${base}.png`, ...provenance };
   }
 
   async put(
@@ -133,12 +120,11 @@ export class S3PosterSink implements PosterSink {
         ContentType: "application/json",
       }),
     );
-    const [svgUrl, pngUrl] = await this.sign(base);
-    return { svgUrl, pngUrl, ...provenance };
+    return { svgKey: `${base}.svg`, pngKey: `${base}.png`, ...provenance };
   }
 }
 
-/** Test double: records puts, serves them back from find, fake urls. */
+/** Test double: records puts, serves them back from find, fake keys. */
 export class StubPosterSink implements PosterSink {
   public calls: Array<{ req: PosterRequest; svg: ArtifactRef; png: ArtifactRef; provenance: PosterProvenance }> = [];
   private stored = new Map<string, PosterProvenance>();
@@ -147,7 +133,7 @@ export class StubPosterSink implements PosterSink {
     const base = posterKeyBase(req);
     const provenance = this.stored.get(base);
     if (!provenance) return null;
-    return { svgUrl: `https://stub.local/${base}.svg`, pngUrl: `https://stub.local/${base}.png`, ...provenance };
+    return { svgKey: `${base}.svg`, pngKey: `${base}.png`, ...provenance };
   }
 
   async put(
@@ -159,6 +145,6 @@ export class StubPosterSink implements PosterSink {
     this.calls.push({ req, svg, png, provenance });
     const base = posterKeyBase(req);
     this.stored.set(base, provenance);
-    return { svgUrl: `https://stub.local/${base}.svg`, pngUrl: `https://stub.local/${base}.png`, ...provenance };
+    return { svgKey: `${base}.svg`, pngKey: `${base}.png`, ...provenance };
   }
 }

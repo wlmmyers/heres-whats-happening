@@ -43,7 +43,7 @@ describe("handlePosterHttp", () => {
   it("returns 200 for a valid request", async () => {
     const res = await handlePosterHttp(fnUrlEvent({ performer: "K", venue: "F", date: "2026-08-15" }), deps);
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).svgUrl).toBeTruthy();
+    expect(JSON.parse(res.body).svgKey).toBeTruthy();
     expect("svg" in JSON.parse(res.body)).toBe(false);
   });
 

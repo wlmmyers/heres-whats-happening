@@ -16,5 +16,5 @@ export type PosterRequest = z.infer<typeof PosterRequestSchema>;
 
 /** Result of the poster pipeline, mapped to HTTP by the handler. */
 export type PosterResult =
-  | { ok: true; svgUrl: string; pngUrl: string; cached: boolean; artist?: ArtistMatch; credit?: ImageCredit }
+  | { ok: true; svgKey: string; pngKey: string; cached: boolean; artist?: ArtistMatch; credit?: ImageCredit }
   | { ok: false; stage: "image" | "svg"; reason: string; artist?: ArtistMatch };

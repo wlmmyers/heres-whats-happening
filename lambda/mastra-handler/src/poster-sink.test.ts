@@ -61,10 +61,10 @@ describe("StubPosterSink", () => {
   const pngRef = { path: "/tmp/p.png", contentType: "image/png", bytes: 20 };
   const provenance = { artist: { mbid: "m", name: "K", score: 100 } };
 
-  it("records the put and returns canned urls plus provenance", async () => {
+  it("records the put and returns canned keys plus provenance", async () => {
     const sink = new StubPosterSink();
     const out = await sink.put(req, svgRef, pngRef, provenance);
-    expect(out.svgUrl).toContain("posters/v1/khruangbin");
+    expect(out.svgKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.svg");
     expect(out.artist).toEqual(provenance.artist);
     expect(sink.calls).toHaveLength(1);
     expect(sink.calls[0].svg).toEqual(svgRef);
@@ -74,6 +74,8 @@ describe("StubPosterSink", () => {
     const sink = new StubPosterSink();
     expect(await sink.find(req)).toBeNull();
     await sink.put(req, svgRef, pngRef, provenance);
-    expect((await sink.find(req))?.artist).toEqual(provenance.artist);
+    const hit = await sink.find(req);
+    expect(hit?.svgKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.svg");
+    expect(hit?.artist).toEqual(provenance.artist);
   });
 });
