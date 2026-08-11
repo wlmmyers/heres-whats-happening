@@ -7,6 +7,7 @@ import { toMessage } from "./map.js";
 import { BadRequestError, parsePosterRequest, posterHttpResponse, processPosterRequest, type PosterDeps } from "./poster.js";
 import type { PosterRequest } from "./poster-schema.js";
 import { S3PosterSink } from "./poster-sink.js";
+import { artifactStore } from "./mastra/tools/artifact-store.js";
 import type { PosterWorkflowOutput } from "./mastra/workflows/poster.schemas.js";
 import { posterWorkflow } from "./mastra/workflows/poster.workflow.js";
 import type { EventMessage } from "./schema.js";
@@ -140,15 +141,30 @@ export const handler = awslambda.streamifyResponse(
   },
 );
 
-/** Run the registered workflow to completion and return its controlled output. */
+/**
+ * Run the registered workflow to completion and return its controlled output.
+ *
+ * NEVER throws. A workflow that dies mid-run has usually already written files
+ * into its run directory, and the caller's cleanup keys off `artifactDir` in this
+ * return value — so a throw here both 500s the request and leaks scratch on
+ * Lambda's persistent /tmp. This function creates the run, so it knows the runId
+ * and can name that directory even when nothing else survives.
+ */
 export async function runPosterWorkflow(req: PosterRequest): Promise<PosterWorkflowOutput> {
   const run = await posterWorkflow.createRun();
-  const result = await run.start({ inputData: req });
-  if (result.status !== "success") {
+  // Same derivation finalizeStep uses (artifactStore(runId).dir); computing a path
+  // creates nothing, so this is safe for runs that never wrote a byte.
+  const artifactDir = artifactStore(run.runId).dir;
+  try {
+    const result = await run.start({ inputData: req });
+    if (result.status === "success") return result.result as PosterWorkflowOutput;
     const detail = result.status === "failed" ? result.error?.message : result.status;
-    throw new Error(`poster workflow did not complete: ${detail}`);
+    return { ok: false, reason: `poster workflow did not complete: ${detail}`, artifactDir };
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    console.error(JSON.stringify({ msg: "poster-workflow-threw", runId: run.runId, error: reason }));
+    return { ok: false, reason: `poster workflow failed: ${reason}`, artifactDir };
   }
-  return result.result as PosterWorkflowOutput;
 }
 
 function prodPosterDeps(): PosterDeps {

@@ -80,15 +80,31 @@ export const judgeBandImageStep = createStep({
     }
 
     const who = describeArtist(inputData.artist, inputData.performer);
-    const res = await imageAnalysisAgent.generate([
-      {
-        role: "user",
-        content: [
-          { type: "image", image: bytes, mimeType: candidate.contentType },
-          { type: "text", text: `Performer: ${who}. Is this a usable photo of this performer for a concert poster?` },
-        ],
-      },
-    ]);
+    // A provider outage (429/5xx/529) must NOT escape the step: throwing here
+    // would 500 the request AND strand the artifacts this step just wrote, since
+    // the caller's cleanup keys off the workflow's returned output. Same shape as
+    // every other failure path — spend the attempt, advance, say why.
+    let res;
+    try {
+      res = await imageAnalysisAgent.generate([
+        {
+          role: "user",
+          content: [
+            { type: "image", image: bytes, mimeType: candidate.contentType },
+            { type: "text", text: `Performer: ${who}. Is this a usable photo of this performer for a concert poster?` },
+          ],
+        },
+      ]);
+    } catch (e) {
+      return {
+        ...inputData,
+        attempts,
+        candidateIndex,
+        accepted: false,
+        reason: `image analysis failed: ${message(e)}`,
+        image,
+      };
+    }
 
     const analysis = res.object as ImageAnalysis | undefined;
     if (!analysis) {

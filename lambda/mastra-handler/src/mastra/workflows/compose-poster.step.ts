@@ -53,20 +53,28 @@ export const composePosterStep = createStep({
     }
 
     // 1) Author the SVG (placeholder href for the image). Small — kept in state.
-    const authored = await svgAuthorAgent.generate([
-      {
-        role: "user",
-        content: JSON.stringify({
-          performer: inputData.performer,
-          venue: inputData.venue,
-          date: inputData.date,
-          colors: inputData.colors,
-          imageWidth: image.width,
-          imageHeight: image.height,
-          critique: inputData.critique,
-        }),
-      },
-    ]);
+    // A provider outage (429/5xx/529) must NOT escape the step: throwing would
+    // 500 the request AND strand this run's artifacts, because the caller's
+    // cleanup keys off the workflow's returned output.
+    let authored;
+    try {
+      authored = await svgAuthorAgent.generate([
+        {
+          role: "user",
+          content: JSON.stringify({
+            performer: inputData.performer,
+            venue: inputData.venue,
+            date: inputData.date,
+            colors: inputData.colors,
+            imageWidth: image.width,
+            imageHeight: image.height,
+            critique: inputData.critique,
+          }),
+        },
+      ]);
+    } catch (e) {
+      return { ...inputData, attempts, accepted: false, critique: `the SVG author failed: ${message(e)}` };
+    }
     const rawSvg = (authored.object as SvgAuthor | undefined)?.svg;
     if (!rawSvg) {
       return { ...inputData, attempts, accepted: false, critique: "SVG author returned no svg" };
@@ -109,16 +117,30 @@ export const composePosterStep = createStep({
       return { ...inputData, attempts, accepted: false, authoredSvg: rawSvg, critique: `could not store the render: ${message(e)}` };
     }
 
-    // 5) Critique the rendered poster.
-    const critiqueRes = await posterCritiqueAgent.generate([
-      {
-        role: "user",
-        content: [
-          { type: "image", image: raster.png, mimeType: "image/png" },
-          { type: "text", text: `Intended poster — performer: ${inputData.performer}, venue: ${inputData.venue}, date: ${inputData.date}. Is this a cool, legible poster?` },
-        ],
-      },
-    ]);
+    // 5) Critique the rendered poster. Same rule as the author call: a provider
+    //    failure becomes returned state, never a throw. `render` is carried so the
+    //    files just written stay accounted for.
+    let critiqueRes;
+    try {
+      critiqueRes = await posterCritiqueAgent.generate([
+        {
+          role: "user",
+          content: [
+            { type: "image", image: raster.png, mimeType: "image/png" },
+            { type: "text", text: `Intended poster — performer: ${inputData.performer}, venue: ${inputData.venue}, date: ${inputData.date}. Is this a cool, legible poster?` },
+          ],
+        },
+      ]);
+    } catch (e) {
+      return {
+        ...inputData,
+        attempts,
+        authoredSvg: rawSvg,
+        render,
+        accepted: false,
+        critique: `the poster critique failed: ${message(e)}`,
+      };
+    }
     const verdict = critiqueRes.object as PosterCritique | undefined;
     return {
       ...inputData,

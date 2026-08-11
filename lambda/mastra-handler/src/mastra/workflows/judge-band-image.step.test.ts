@@ -159,6 +159,23 @@ describe("judgeBandImageStep", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it("converts a THROWN vision call into returned state (never throws out of the step)", async () => {
+    // An Anthropic 529/5xx used to escape the step: 500 to the caller, and the
+    // band-N.jpg this step already wrote leaked, because cleanup keys off the
+    // workflow's returned output.
+    generate.mockRejectedValue(new Error("Overloaded: 529"));
+
+    const out = await run(base);
+
+    expect(out.accepted).toBe(false);
+    expect(out.attempts).toBe(1);
+    expect(out.candidateIndex).toBe(1);
+    expect(out.reason).toContain("image analysis failed");
+    expect(out.reason).toContain("529");
+    // The artifact it wrote before the failure is still accounted for.
+    expect(out.image.path).toContain("band-1.jpg");
+  });
+
   it("handles the agent returning no structured object", async () => {
     generate.mockResolvedValue({ object: undefined });
 

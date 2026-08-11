@@ -202,6 +202,35 @@ describe("composePosterStep failure paths", () => {
     expect(critiqueGenerate).not.toHaveBeenCalled();
   });
 
+  it("converts a THROWN author call into returned state (never throws out of the step)", async () => {
+    // An Anthropic 529/5xx used to escape the step: 500 to the caller instead of a
+    // controlled 422, and the run's scratch files leaked because cleanup keys off
+    // the workflow's returned output.
+    authorGenerate.mockRejectedValue(new Error("Overloaded: 529"));
+
+    const out = await run(base);
+
+    expect(out.accepted).toBe(false);
+    expect(out.attempts).toBe(1);
+    expect(out.critique).toContain("SVG author failed");
+    expect(out.critique).toContain("529");
+    expect(rasterizeSvg).not.toHaveBeenCalled();
+  });
+
+  it("converts a THROWN critique call into returned state, keeping the render it made", async () => {
+    authorGenerate.mockResolvedValue({ object: { svg: GOOD_SVG } });
+    rasterizeSvg.mockResolvedValue({ ok: true, png: PNG });
+    critiqueGenerate.mockRejectedValue(new Error("anthropic timeout"));
+
+    const out = await run(base);
+
+    expect(out.accepted).toBe(false);
+    expect(out.attempts).toBe(1);
+    expect(out.critique).toContain("poster critique failed");
+    expect(out.critique).toContain("anthropic timeout");
+    expect(out.render.png.path).toContain("poster-1.png");
+  });
+
   it("handles the critique agent returning no structured object", async () => {
     authorGenerate.mockResolvedValue({ object: { svg: GOOD_SVG } });
     rasterizeSvg.mockResolvedValue({ ok: true, png: PNG });
