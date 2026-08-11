@@ -1,24 +1,31 @@
-# Dropping the SVG poster artifact
+# Dropping the SVG artifact, and bounding poster inputs
 
 **Date:** 2026-08-11
 **Status:** Approved (design)
 
 ## Problem
 
-The poster pipeline persists two artifacts per poster: a PNG and the
-LLM-authored SVG. Only the PNG is wanted. The SVG costs an S3 object, a column,
-a presigned URL, and a field in every layer of the contract — and it carries the
-one unresolved security finding on this work.
+This closes BOTH remaining open findings from the band-image branch's final
+review. They are handled together because they share a code path — the same
+three user-controlled fields feed the SVG the first one is about.
 
-**Finding I5** (from the band-image branch's final review): the SVG is authored
-by an LLM from user-controlled `performer`/`venue`/`date`, validated only for
-XML well-formedness (`svg-parse.tool.ts` checks `XMLValidator.validate` and the
+**Finding I5 — unsanitized SVG.** The poster pipeline persists two artifacts: a
+PNG and the LLM-authored SVG. Only the PNG is wanted. The SVG is authored from
+user-controlled `performer`/`venue`/`date`, validated only for XML
+well-formedness (`svg-parse.tool.ts` checks `XMLValidator.validate` and the
 presence of an `<svg>` root), then stored and served as `image/svg+xml`.
-`<script>`, event handlers, `<foreignObject>`, and external `href`s all pass.
+`<script>`, event handlers, `<foreignObject>`, and external `href`s all pass. It
+also costs an S3 object, a column, a presigned URL, and a field in every layer
+of the contract.
+
+**Unbounded inputs.** `performer`, `venue`, and `date` have no length bound
+anywhere. They reach an LLM prompt, a MusicBrainz query URL, an S3 key, and
+unbounded `TEXT` columns, through a request body with no `MaxBytesReader`.
 
 ## Goal
 
-Remove the SVG as a persisted artifact and from every contract. Keep the PNG.
+Remove the SVG as a persisted artifact and from every contract, keeping the PNG;
+and bound the three request fields at every layer that stores or spends on them.
 
 ## Why removal rather than sanitization
 
@@ -70,15 +77,14 @@ pins sequential writes still applies unchanged.
 | --- | --- |
 | `internal/poster/client.go` | `Result` drops `SvgKey`; the 200 decode drops `svgKey` |
 | `internal/http/handlers/posters.go` | ready response drops `svgUrl`; only the PNG key is `ValidateKey`d |
-| `sql/migrations/0023_drop_poster_svg_key.{up,down}.sql` | drop the column |
+| `sql/migrations/0023_poster_jobs_svg_and_bounds.{up,down}.sql` | drop `svg_key`; add the CHECK constraints (see Bounding the request inputs) |
 | `sql/queries/poster_jobs.sql` | `MarkPosterJobReady` drops `svg_key`; claim's reset list drops it |
 
 **A NEW migration, not an amendment to `0022`.** `0022` has already been applied
 to the local dev database (verified: `appdb` is at version 22 with `svg_key`
 present). `golang-migrate` tracks only an integer version with no content
 checksum, so editing an applied migration leaves that database silently holding
-the old schema while reporting itself up to date. `0023` drops the column; its
-down migration re-adds it as nullable TEXT so the pair is reversible.
+the old schema while reporting itself up to date. `0023` drops the column AND adds the CHECK constraints described below; its down migration re-adds `svg_key` as nullable TEXT and drops the checks, so the pair is reversible.
 
 Then `sqlc generate`, committing `internal/store/models.go` alongside the
 regenerated `poster_jobs.sql.go`.
@@ -92,16 +98,66 @@ ceases to exist. Update the README to the live contract; add a short superseding
 note to each prior spec rather than rewriting them — they are the record of what
 was decided at the time, and silently editing them would erase the reasoning.
 
-## What this closes and what it does not
+## Bounding the request inputs
+
+A multi-KB performer name is accepted today and fails LATE — after the LLM
+spend — when S3 rejects a key over its own 1024-byte limit. Bounding it turns a
+wasted generation into a clean 400.
+
+### Limits
+
+| Field | Max | Rationale |
+| --- | --- | --- |
+| `performer` | 200 | "The Presidents of the United States of America" is 44; 200 is far past any real act |
+| `venue` | 200 | same shape of value |
+| `date` | 100 | free text like "Thursday, August 20" |
+| whole request body | 8 KB | those three fields plus `force`, with generous headroom |
+
+Bounds apply to the **trimmed** value, so trailing whitespace cannot consume the
+budget. This matters because `poster.JobID` normalizes by trimming and
+lowercasing — bounding the raw string would let `"a" + 199 spaces` and `"a"`
+differ on acceptance while producing the same job.
+
+### Where they are enforced
+
+**Three places, and the duplication is deliberate:**
+
+1. **`internal/http/handlers/posters.go`** — the real boundary, since the Go API
+   is now the only publicly reachable entry point. Rejects with `400`
+   `invalid_body` naming the field and the limit, matching the existing
+   `httperr.Write` pattern. Applied to **both** `POST` (JSON body) and `GET`
+   (query string) — otherwise a 1 MB query string still reaches `JobID`.
+   `http.MaxBytesReader` wraps the POST body before decoding.
+2. **`lambda/mastra-handler/src/poster-schema.ts`** — `.max()` on the existing
+   `.trim().min(1)` chain. The Lambda is IAM-only and unreachable from the
+   internet, so this is defense in depth rather than the boundary — but it is
+   the component that spends the LLM tokens, so it should refuse work it can see
+   is malformed.
+3. **`sql/migrations/0023`** — `CHECK` constraints on the three columns, added
+   alongside the `svg_key` drop that migration already performs.
+
+**The limits MUST be identical across all three.** If Go accepts something the
+Lambda rejects, the request gets a `202` and then fails at generation time
+instead of a clean `400` — the failure mode is a silently failed job rather than
+a rejected request. A shared constant is not possible across three languages, so
+this is enforced by a test in each layer asserting the same numbers, and the
+numbers are stated once here as the source of truth.
+
+The `CHECK` constraints mean raising a limit later requires a migration. That is
+the intended trade: a storage-level guarantee should not be silently loosened by
+an edit to a handler, and nothing can reach those columns except through a
+validated handler today — the constraint exists for the second writer that does
+not exist yet.
+
+## What this closes
 
 **Closes I5 entirely.** No SVG is stored, so nothing is served as
 `image/svg+xml`, so there is no stored-XSS vector and no `Content-Disposition`
 question. The PNG is inherently safe: resvg ignores scripts, and the output is
 raster.
 
-**Does not change** the remaining open item from that review: `performer`,
-`venue`, and `date` still have no length bound, and now persist into unbounded
-`TEXT` columns via a body with no `MaxBytesReader`.
+**Closes the input-bounds item.** All three fields are bounded at the public
+edge, again at the component that spends tokens, and structurally in storage.
 
 ## Error handling
 
@@ -129,8 +185,20 @@ verified at all.** A test that simply stops mentioning `svgKey` proves nothing.
 - A repo-wide grep for `svgKey|svg_key|SvgKey|svgUrl` returns hits only in the
   historical plan/spec documents, never in code.
 
+**Input bounds** — each layer asserts the SAME numbers, so a drift between them
+fails a test rather than producing silently-failed jobs:
+
+- `posters_test.go` — a 201-char `performer` gets `400` on POST **and** on GET;
+  200 chars is accepted; a 9 KB body is rejected by `MaxBytesReader` before
+  decoding; the trimmed value is what is measured (200 chars plus surrounding
+  whitespace is accepted, 201 is not).
+- `poster-schema.test.ts` — the same boundary values against the zod schema.
+- Store — inserting a 201-char `performer` violates the `CHECK`, proving the
+  constraint is real rather than declared.
+
 ## Out of scope
 
-- Input length bounds on `performer`/`venue`/`date`.
 - Rendering a CC BY-SA credit line onto the poster.
 - Any change to how the PNG is produced, stored, or presigned.
+- Bounding any OTHER user input in the codebase. The three poster fields are
+  bounded here because they were the finding; a general audit is separate work.
