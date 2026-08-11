@@ -39,10 +39,7 @@ export const PosterLoopStateSchema = z.object({
   attempts: z.number(),
   accepted: z.boolean(),
   critique: z.string().optional(),
-  // The SVG BEFORE substitution: still contains the literal __BAND_IMAGE__, so
-  // it is ~2 KB and is the thing worth reading in Studio when a poster is wrong.
-  authoredSvg: z.string().optional(),
-  render: z.object({ svg: ArtifactRefSchema, png: ArtifactRefSchema }).optional(),
+  render: z.object({ png: ArtifactRefSchema }).optional(),
   artist: ArtistMatchSchema.optional(),
   credit: ImageCreditSchema.optional(),
 });
@@ -53,7 +50,7 @@ export type PosterLoopState = z.infer<typeof PosterLoopStateSchema>;
 // names the artist that was resolved.
 export const PosterWorkflowOutputSchema = z.object({
   ok: z.boolean(),
-  render: z.object({ svg: ArtifactRefSchema, png: ArtifactRefSchema }).optional(),
+  render: z.object({ png: ArtifactRefSchema }).optional(),
   // The run's artifact directory, so the caller can delete it. Emitted on BOTH
   // branches: a failed run still has files worth cleaning up (and, from Studio,
   // worth inspecting).

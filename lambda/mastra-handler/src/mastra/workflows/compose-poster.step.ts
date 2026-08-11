@@ -89,7 +89,6 @@ export const composePosterStep = createStep({
         ...inputData,
         attempts,
         accepted: false,
-        authoredSvg: rawSvg,
         critique: `Fix the SVG so it is well-formed: ${parsed.error}`,
       };
     }
@@ -101,20 +100,17 @@ export const composePosterStep = createStep({
         ...inputData,
         attempts,
         accepted: false,
-        authoredSvg: rawSvg,
         critique: `The SVG did not render: ${raster.error}`,
       };
     }
 
-    // 4) Persist both artifacts; state carries refs only.
+    // 4) Persist the PNG; state carries a ref only. The substituted SVG was a
+    //    transient on the way here — resvg needed it, nothing else does.
     let render;
     try {
-      render = {
-        svg: await store.write(`poster-${attempts}.svg`, Buffer.from(parsed.svg, "utf8"), "image/svg+xml"),
-        png: await store.write(`poster-${attempts}.png`, raster.png, "image/png"),
-      };
+      render = { png: await store.write(`poster-${attempts}.png`, raster.png, "image/png") };
     } catch (e) {
-      return { ...inputData, attempts, accepted: false, authoredSvg: rawSvg, critique: `could not store the render: ${message(e)}` };
+      return { ...inputData, attempts, accepted: false, critique: `could not store the render: ${message(e)}` };
     }
 
     // 5) Critique the rendered poster. Same rule as the author call: a provider
@@ -135,7 +131,6 @@ export const composePosterStep = createStep({
       return {
         ...inputData,
         attempts,
-        authoredSvg: rawSvg,
         render,
         accepted: false,
         critique: `the poster critique failed: ${message(e)}`,
@@ -145,7 +140,6 @@ export const composePosterStep = createStep({
     return {
       ...inputData,
       attempts,
-      authoredSvg: rawSvg,
       render,
       accepted: verdict?.acceptable ?? false,
       critique: verdict?.critique ?? "critique returned no result",

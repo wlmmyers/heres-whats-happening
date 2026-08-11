@@ -40,6 +40,16 @@ describe("PosterLoopStateSchema", () => {
     expect(s.artist?.mbid).toBe("abc");
     expect(s.credit?.attributionRequired).toBe(false);
   });
+
+  it("has no place to put an svg", () => {
+    const s = PosterLoopStateSchema.parse({
+      ...base, imageOk: true, attempts: 0, accepted: false,
+      render: { png: { path: "/tmp/p.png", contentType: "image/png", bytes: 20 } },
+    });
+    expect(s.render?.png.path).toBe("/tmp/p.png");
+    expect("authoredSvg" in s).toBe(false);
+    expect("svg" in (s.render ?? {})).toBe(false);
+  });
 });
 
 describe("PosterWorkflowOutputSchema", () => {

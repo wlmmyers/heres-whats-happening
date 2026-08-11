@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -96,7 +96,7 @@ describe("composePosterStep short-circuit", () => {
 });
 
 describe("composePosterStep authoring", () => {
-  it("writes svg and png to files and stores refs, not blobs", async () => {
+  it("writes ONLY a png, and keeps no svg in state", async () => {
     authorGenerate.mockResolvedValue({ object: { svg: GOOD_SVG } });
     rasterizeSvg.mockResolvedValue({ ok: true, png: PNG, width: 1080, height: 1350 });
     critiqueGenerate.mockResolvedValue({ object: { acceptable: true, critique: "bold and legible" } });
@@ -104,27 +104,15 @@ describe("composePosterStep authoring", () => {
     const out = await run(base);
 
     expect(out.accepted).toBe(true);
-    expect(out.render.svg.path).toContain(join("run-test", "poster-1.svg"));
     expect(out.render.png.path).toContain(join("run-test", "poster-1.png"));
     expect(out.render.png.bytes).toBe(PNG.byteLength);
-    expect(out.render.svg.contentType).toBe("image/svg+xml");
     expect(await readFile(out.render.png.path)).toEqual(PNG);
-    expect("pngBase64" in out).toBe(false);
-  });
 
-  it("keeps the SMALL authored svg in state, with the placeholder intact", async () => {
-    authorGenerate.mockResolvedValue({ object: { svg: GOOD_SVG } });
-    rasterizeSvg.mockResolvedValue({ ok: true, png: PNG });
-    critiqueGenerate.mockResolvedValue({ object: { acceptable: true, critique: "ok" } });
-
-    const out = await run(base);
-
-    expect(out.authoredSvg).toBe(GOOD_SVG);
-    expect(out.authoredSvg).toContain("__BAND_IMAGE__");
-    // The substituted version, which inlines the photo, is on disk only.
-    const written = await readFile(out.render.svg.path, "utf8");
-    expect(written).toContain("data:image/jpeg;base64,");
-    expect(written).not.toContain("__BAND_IMAGE__");
+    // The SVG is a transient on the way to the PNG — nothing persists it.
+    expect("svg" in out.render).toBe(false);
+    expect("authoredSvg" in out).toBe(false);
+    const files = await readdir(join(root, "run-test"));
+    expect(files.filter((f) => f.endsWith(".svg"))).toEqual([]);
   });
 
   it("rejects and records the critique when the poster is judged poor", async () => {

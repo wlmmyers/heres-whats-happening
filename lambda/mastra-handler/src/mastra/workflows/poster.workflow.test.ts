@@ -197,7 +197,7 @@ describe("posterWorkflow provenance", () => {
     expect((result as any).result.artist).toEqual(house);
   });
 
-  it("returns svg + png + provenance on full success", async () => {
+  it("returns png + provenance on full success", async () => {
     searchArtists.mockResolvedValue([rock]);
     resolveImageCandidates.mockResolvedValue([candidate("File:A.jpg")]);
     fetchImageBytes.mockResolvedValue(imageBytes);
@@ -207,7 +207,6 @@ describe("posterWorkflow provenance", () => {
       attempts: ((s.attempts as number) ?? 0) + 1,
       accepted: true,
       render: {
-        svg: { path: "/tmp/run/poster-1.svg", contentType: "image/svg+xml", bytes: 10 },
         png: { path: "/tmp/run/poster-1.png", contentType: "image/png", bytes: 20 },
       },
     }));
@@ -215,7 +214,7 @@ describe("posterWorkflow provenance", () => {
     const result = await runWorkflow();
     const out = (result as any).result;
     expect(out.ok).toBe(true);
-    expect(out.render.svg.path).toBeTruthy();
+    expect(out.render.png.path).toBeTruthy();
     expect(out.artist).toEqual(rock);
     expect(out.credit.artist).toBe("Shark2000br");
   });
@@ -264,9 +263,7 @@ describe("posterWorkflow keeps blobs OUT of state", () => {
       ...s,
       attempts: ((s.attempts as number) ?? 0) + 1,
       accepted: true,
-      authoredSvg: "<svg>__BAND_IMAGE__</svg>",
       render: {
-        svg: { path: "/tmp/run/poster-1.svg", contentType: "image/svg+xml", bytes: 340_000 },
         png: { path: "/tmp/run/poster-1.png", contentType: "image/png", bytes: 900_000 },
       },
     }));
@@ -299,7 +296,6 @@ describe("posterWorkflow keeps blobs OUT of state", () => {
       attempts: ((s.attempts as number) ?? 0) + 1,
       accepted: true,
       render: {
-        svg: { path: "/tmp/run/poster-1.svg", contentType: "image/svg+xml", bytes: 10 },
         png: { path: "/tmp/run/poster-1.png", contentType: "image/png", bytes: 20 },
       },
     }));
