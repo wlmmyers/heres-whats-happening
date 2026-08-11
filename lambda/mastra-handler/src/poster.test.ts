@@ -7,16 +7,13 @@ import { BadRequestError, parsePosterRequest, posterHttpResponse, processPosterR
 
 const req = { performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15", force: false };
 
-/** processPosterRequest now reads render refs off disk, so tests need real files. */
-async function renderFixture(svg: string, pngBase64 = "AAAA") {
+/** processPosterRequest now reads the render ref off disk, so tests need a real file. */
+async function renderFixture(pngBase64 = "AAAA") {
   const dir = await mkdtemp(join(tmpdir(), "poster-test-"));
-  const svgPath = join(dir, "poster.svg");
   const pngPath = join(dir, "poster.png");
   const png = Buffer.from(pngBase64, "base64");
-  await writeFile(svgPath, svg, "utf8");
   await writeFile(pngPath, png);
   return {
-    svg: { path: svgPath, contentType: "image/svg+xml", bytes: Buffer.byteLength(svg) },
     png: { path: pngPath, contentType: "image/png", bytes: png.byteLength },
   };
 }
@@ -26,12 +23,12 @@ describe("processPosterRequest", () => {
     const sink = new StubPosterSink();
     const res = await processPosterRequest(req, {
       sink,
-      runWorkflow: async () => ({ ok: true, render: await renderFixture("<svg/>") }),
+      runWorkflow: async () => ({ ok: true, render: await renderFixture() }),
     });
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.cached).toBe(false);
-      expect(res.svgKey).toContain("posters/v1/khruangbin");
+      expect(res.pngKey).toContain("posters/v1/khruangbin");
     }
     expect(sink.calls).toHaveLength(1);
   });
@@ -65,9 +62,10 @@ describe("parsePosterRequest", () => {
 
 describe("posterHttpResponse", () => {
   it("maps ok -> 200 json", () => {
-    const r = posterHttpResponse({ ok: true, svgKey: "k1", pngKey: "k2", cached: false });
+    const r = posterHttpResponse({ ok: true, pngKey: "k2", cached: false });
     expect(r.statusCode).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ svgKey: "k1", pngKey: "k2", cached: false });
+    expect(JSON.parse(r.body)).toEqual({ pngKey: "k2", cached: false });
+    expect("svgKey" in JSON.parse(r.body)).toBe(false);
   });
   it("maps failure -> 422 with stage", () => {
     const r = posterHttpResponse({ ok: false, stage: "svg", reason: "ugly" });
@@ -89,7 +87,7 @@ describe("provenance passthrough", () => {
   it("carries artist and credit onto a successful result", async () => {
     const res = await processPosterRequest(req, {
       sink: new StubPosterSink(),
-      runWorkflow: async () => ({ ok: true, render: await renderFixture("<svg/>"), artist, credit }),
+      runWorkflow: async () => ({ ok: true, render: await renderFixture(), artist, credit }),
     });
     expect(res.ok).toBe(true);
     if (res.ok) {
@@ -110,7 +108,6 @@ describe("provenance passthrough", () => {
   it("includes artist and credit in the 200 body", () => {
     const out = posterHttpResponse({
       ok: true,
-      svgKey: "posters/v1/x/s.svg",
       pngKey: "posters/v1/x/s.png",
       cached: false,
       artist,
@@ -120,6 +117,7 @@ describe("provenance passthrough", () => {
     expect(out.statusCode).toBe(200);
     expect(body.artist.mbid).toBe("mb-rock");
     expect(body.credit.licenseShortName).toBe("CC BY-SA 4.0");
+    expect("svgKey" in body).toBe(false);
   });
 
   it("includes the artist in the 422 body", () => {
@@ -138,7 +136,6 @@ describe("provenance passthrough", () => {
 
 const artifactRefs = {
   render: {
-    svg: { path: "/tmp/run/p.svg", contentType: "image/svg+xml", bytes: 10 },
     png: { path: "/tmp/run/p.png", contentType: "image/png", bytes: 20 },
   },
   artifactDir: "/tmp/run",
@@ -150,7 +147,7 @@ describe("repeat requests", () => {
 
   it("serves an existing poster WITHOUT running the workflow", async () => {
     const sink = new StubPosterSink();
-    await sink.put(req, artifactRefs.render.svg, artifactRefs.render.png, { artist, credit });
+    await sink.put(req, artifactRefs.render.png, { artist, credit });
     const runWorkflow = vi.fn();
 
     const res = await processPosterRequest(req, { sink, runWorkflow });
@@ -176,7 +173,7 @@ describe("repeat requests", () => {
 
   it("force: true bypasses the cache and reruns the workflow", async () => {
     const sink = new StubPosterSink();
-    await sink.put(req, artifactRefs.render.svg, artifactRefs.render.png, { artist, credit });
+    await sink.put(req, artifactRefs.render.png, { artist, credit });
     const runWorkflow = vi.fn(async () => ({ ok: true, ...artifactRefs, artist, credit }));
 
     const res = await processPosterRequest({ ...req, force: true }, { sink, runWorkflow });
@@ -244,17 +241,17 @@ describe("artifact cleanup", () => {
 });
 
 describe("Key-only response", () => {
-  it("omits the svg body and includes cached", () => {
+  it("omits the svg key entirely and includes cached", () => {
     const out = posterHttpResponse({
       ok: true,
-      svgKey: "posters/v1/x/s.svg",
       pngKey: "posters/v1/x/s.png",
       cached: true,
     });
     const body = JSON.parse(out.body);
     expect(out.statusCode).toBe(200);
     expect("svg" in body).toBe(false);
-    expect(body.svgKey).toBe("posters/v1/x/s.svg");
+    expect("svgKey" in body).toBe(false);
+    expect(body.pngKey).toBe("posters/v1/x/s.png");
     expect(body.cached).toBe(true);
   });
 });

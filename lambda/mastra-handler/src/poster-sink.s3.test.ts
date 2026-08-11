@@ -62,58 +62,48 @@ beforeEach(async () => {
 });
 
 async function refs() {
-  const svgPath = join(root, "p.svg");
   const pngPath = join(root, "p.png");
-  await writeFile(svgPath, "<svg/>");
   await writeFile(pngPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   return {
-    svg: { path: svgPath, contentType: "image/svg+xml", bytes: 6 },
     png: { path: pngPath, contentType: "image/png", bytes: 4 },
   };
 }
 
 describe("S3PosterSink.put", () => {
-  it("streams both artifacts with ContentLength rather than buffering them", async () => {
+  it("streams the artifact with ContentLength rather than buffering it", async () => {
     const s3 = fakeS3();
-    const { svg, png } = await refs();
-    await new S3PosterSink(s3, "bkt").put(req, svg, png, provenance);
+    const { png } = await refs();
+    await new S3PosterSink(s3, "bkt").put(req, png, provenance);
 
     const puts = s3.sent.filter((c: any) => c.constructor.name === "PutObjectCommand");
-    const svgPut = puts.find((c: any) => c.input.Key.endsWith(".svg"))!;
-    expect(svgPut.input.ContentLength).toBe(6);
-    expect(svgPut.input.ContentType).toBe("image/svg+xml");
-    expect(typeof svgPut.input.Body.pipe).toBe("function"); // a stream, not a Buffer/string
+    const pngPut = puts.find((c: any) => c.input.Key.endsWith(".png"))!;
+    expect(pngPut.input.ContentLength).toBe(4);
+    expect(pngPut.input.ContentType).toBe("image/png");
+    expect(typeof pngPut.input.Body.pipe).toBe("function"); // a stream, not a Buffer/string
   });
 
-  it("writes the provenance sidecar LAST, so it is a commit marker", async () => {
+  it("writes exactly TWO objects: the png, then the sidecar last", async () => {
     const s3 = fakeS3();
-    const { svg, png } = await refs();
-    await new S3PosterSink(s3, "bkt").put(req, svg, png, provenance);
+    const { png } = await refs();
+    await new S3PosterSink(s3, "bkt").put(req, png, provenance);
 
     const keys = s3.sent
       .filter((c: any) => c.constructor.name === "PutObjectCommand")
       .map((c: any) => c.input.Key as string);
     expect(keys).toEqual([
-      "posters/v1/khruangbin/the-fillmore-2026-08-15.svg",
       "posters/v1/khruangbin/the-fillmore-2026-08-15.png",
       "posters/v1/khruangbin/the-fillmore-2026-08-15.json",
     ]);
-    // Key order alone doesn't prove sequencing: Promise.all([a(),b(),c()])
-    // invokes a, b, c synchronously in that same order even though all three
-    // run concurrently. maxInFlight pins that each write only started after
-    // the previous one's send() had fully resolved — i.e. the sidecar really
-    // can't land before svg+png are both durable.
+    // The sidecar is still the commit marker, so the writes stay sequential.
     expect(s3.maxInFlight).toBe(1);
   });
 
-  it("returns the object KEYS it wrote, not signed urls", async () => {
+  it("returns only a png key", async () => {
     const s3 = fakeS3();
-    const { svg, png } = await refs();
-    const out = await new S3PosterSink(s3, "bkt").put(req, svg, png, provenance);
-
-    expect(out.svgKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.svg");
+    const { png } = await refs();
+    const out = await new S3PosterSink(s3, "bkt").put(req, png, provenance);
     expect(out.pngKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.png");
-    expect("svgUrl" in out).toBe(false);
+    expect("svgKey" in out).toBe(false);
     expect("pngUrl" in out).toBe(false);
     expect(out.credit).toEqual(provenance.credit);
   });
@@ -127,13 +117,13 @@ describe("S3PosterSink.find", () => {
     const hit = await new S3PosterSink(s3, "bkt").find(req);
 
     expect(hit).not.toBeNull();
-    expect(hit!.svgKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.svg");
     expect(hit!.pngKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.png");
+    expect("svgKey" in hit!).toBe(false);
     expect(hit!.artist).toEqual(provenance.artist);
   });
 
   it("returns null when the sidecar is absent — a half-written poster is not a hit", async () => {
-    // svg and png notionally exist; only the commit marker is missing.
+    // png notionally exists; only the commit marker is missing.
     const s3 = fakeS3({});
     expect(await new S3PosterSink(s3, "bkt").find(req)).toBeNull();
   });

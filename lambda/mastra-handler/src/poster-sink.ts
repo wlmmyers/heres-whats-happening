@@ -18,16 +18,15 @@ export interface PosterProvenance {
 }
 
 export interface PosterArtifacts extends PosterProvenance {
-  /** S3 object keys. The API service presigns these at read time — storing a
+  /** S3 object key. The API service presigns this at read time — storing a
    *  presigned URL anywhere would serve a dead link after its 3600s expiry. */
-  svgKey: string;
   pngKey: string;
 }
 
 export interface PosterSink {
   /** Object keys + provenance when a COMPLETE poster already exists, else null. */
   find(req: PosterRequest): Promise<PosterArtifacts | null>;
-  put(req: PosterRequest, svg: ArtifactRef, png: ArtifactRef, provenance: PosterProvenance): Promise<PosterArtifacts>;
+  put(req: PosterRequest, png: ArtifactRef, provenance: PosterProvenance): Promise<PosterArtifacts>;
 }
 
 /** Short, stable digest of an already-normalized string. Long enough that two
@@ -98,20 +97,14 @@ export class S3PosterSink implements PosterSink {
       if (name === "NoSuchKey" || name === "NotFound") return null;
       throw e;
     }
-    return { svgKey: `${base}.svg`, pngKey: `${base}.png`, ...provenance };
+    return { pngKey: `${base}.png`, ...provenance };
   }
 
-  async put(
-    req: PosterRequest,
-    svg: ArtifactRef,
-    png: ArtifactRef,
-    provenance: PosterProvenance,
-  ): Promise<PosterArtifacts> {
+  async put(req: PosterRequest, png: ArtifactRef, provenance: PosterProvenance): Promise<PosterArtifacts> {
     const base = posterKeyBase(req);
-    await this.putFile(`${base}.svg`, svg);
     await this.putFile(`${base}.png`, png);
-    // The sidecar goes LAST. `find` keys off it, so its presence proves the
-    // other two objects are complete and a half-written poster is never served.
+    // The sidecar goes LAST. `find` keys off it, so its presence proves the png
+    // is complete and a half-written poster is never served.
     await this.s3.send(
       new PutObjectCommand({
         Bucket: this.bucket,
@@ -120,31 +113,26 @@ export class S3PosterSink implements PosterSink {
         ContentType: "application/json",
       }),
     );
-    return { svgKey: `${base}.svg`, pngKey: `${base}.png`, ...provenance };
+    return { pngKey: `${base}.png`, ...provenance };
   }
 }
 
 /** Test double: records puts, serves them back from find, fake keys. */
 export class StubPosterSink implements PosterSink {
-  public calls: Array<{ req: PosterRequest; svg: ArtifactRef; png: ArtifactRef; provenance: PosterProvenance }> = [];
+  public calls: Array<{ req: PosterRequest; png: ArtifactRef; provenance: PosterProvenance }> = [];
   private stored = new Map<string, PosterProvenance>();
 
   async find(req: PosterRequest): Promise<PosterArtifacts | null> {
     const base = posterKeyBase(req);
     const provenance = this.stored.get(base);
     if (!provenance) return null;
-    return { svgKey: `${base}.svg`, pngKey: `${base}.png`, ...provenance };
+    return { pngKey: `${base}.png`, ...provenance };
   }
 
-  async put(
-    req: PosterRequest,
-    svg: ArtifactRef,
-    png: ArtifactRef,
-    provenance: PosterProvenance,
-  ): Promise<PosterArtifacts> {
-    this.calls.push({ req, svg, png, provenance });
+  async put(req: PosterRequest, png: ArtifactRef, provenance: PosterProvenance): Promise<PosterArtifacts> {
+    this.calls.push({ req, png, provenance });
     const base = posterKeyBase(req);
     this.stored.set(base, provenance);
-    return { svgKey: `${base}.svg`, pngKey: `${base}.png`, ...provenance };
+    return { pngKey: `${base}.png`, ...provenance };
   }
 }

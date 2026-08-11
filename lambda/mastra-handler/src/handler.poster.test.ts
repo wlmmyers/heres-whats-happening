@@ -33,7 +33,6 @@ describe("handlePosterHttp", () => {
     runWorkflow: async () => ({
       ok: true,
       render: {
-        svg: { path: "/tmp/x/p.svg", contentType: "image/svg+xml", bytes: 10 },
         png: { path: "/tmp/x/p.png", contentType: "image/png", bytes: 20 },
       },
       artifactDir: "/tmp/x",
@@ -43,8 +42,9 @@ describe("handlePosterHttp", () => {
   it("returns 200 for a valid request", async () => {
     const res = await handlePosterHttp(fnUrlEvent({ performer: "K", venue: "F", date: "2026-08-15" }), deps);
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).svgKey).toBeTruthy();
+    expect(JSON.parse(res.body).pngKey).toBeTruthy();
     expect("svg" in JSON.parse(res.body)).toBe(false);
+    expect("svgKey" in JSON.parse(res.body)).toBe(false);
   });
 
   it("returns 400 for an invalid body", async () => {

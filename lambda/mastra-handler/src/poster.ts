@@ -56,7 +56,7 @@ export async function processPosterRequest(req: PosterRequest, deps: PosterDeps)
         artist: out.artist,
       };
     }
-    const artifacts = await deps.sink.put(req, out.render.svg, out.render.png, {
+    const artifacts = await deps.sink.put(req, out.render.png, {
       artist: out.artist,
       credit: out.credit,
     });
@@ -82,7 +82,6 @@ export function posterHttpResponse(result: PosterResult): { statusCode: number; 
       statusCode: 200,
       headers: JSON_HEADERS,
       body: JSON.stringify({
-        svgKey: result.svgKey,
         pngKey: result.pngKey,
         cached: result.cached,
         artist: result.artist,

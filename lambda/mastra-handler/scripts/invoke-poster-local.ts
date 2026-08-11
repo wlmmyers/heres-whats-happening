@@ -1,4 +1,4 @@
-/* Run the poster workflow locally and write the SVG + PNG to disk.
+/* Run the poster workflow locally and write the PNG to disk.
  * Usage: ANTHROPIC_API_KEY=... pnpm tsx scripts/invoke-poster-local.ts "Khruangbin" "The Fillmore" "2026-08-15"
  */
 import { copyFile } from "node:fs/promises";
@@ -22,14 +22,13 @@ if (!out.ok || !out.render) {
   process.exit(1);
 }
 
-// The workflow writes into a run-scoped temp dir and returns references, so copy
-// the two finished artifacts somewhere durable. The run dir is deliberately left
-// in place — its intermediates (band-N.jpg, poster-N.svg) are the point of running
+// The workflow writes into a run-scoped temp dir and returns a reference, so copy
+// the finished artifact somewhere durable. The run dir is deliberately left in
+// place — its intermediates (band-N.jpg, poster-N.svg) are the point of running
 // this locally — and artifactStore's one-hour sweep reclaims it.
-await copyFile(out.render.svg.path, "poster.svg");
 await copyFile(out.render.png.path, "poster.png");
 
-console.log("wrote poster.svg + poster.png");
+console.log("wrote poster.png");
 console.log(`run artifacts: ${out.artifactDir}`);
 
 if (out.artist) {

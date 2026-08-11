@@ -57,25 +57,26 @@ describe("posterKeyBase collision safety", () => {
 });
 
 describe("StubPosterSink", () => {
-  const svgRef = { path: "/tmp/p.svg", contentType: "image/svg+xml", bytes: 10 };
   const pngRef = { path: "/tmp/p.png", contentType: "image/png", bytes: 20 };
   const provenance = { artist: { mbid: "m", name: "K", score: 100 } };
 
   it("records the put and returns canned keys plus provenance", async () => {
     const sink = new StubPosterSink();
-    const out = await sink.put(req, svgRef, pngRef, provenance);
-    expect(out.svgKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.svg");
+    const out = await sink.put(req, pngRef, provenance);
+    expect(out.pngKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.png");
+    expect("svgKey" in out).toBe(false);
     expect(out.artist).toEqual(provenance.artist);
     expect(sink.calls).toHaveLength(1);
-    expect(sink.calls[0].svg).toEqual(svgRef);
+    expect(sink.calls[0].png).toEqual(pngRef);
   });
 
   it("find misses until something has been put", async () => {
     const sink = new StubPosterSink();
     expect(await sink.find(req)).toBeNull();
-    await sink.put(req, svgRef, pngRef, provenance);
+    await sink.put(req, pngRef, provenance);
     const hit = await sink.find(req);
-    expect(hit?.svgKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.svg");
+    expect(hit?.pngKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.png");
+    expect("svgKey" in hit!).toBe(false);
     expect(hit?.artist).toEqual(provenance.artist);
   });
 });
