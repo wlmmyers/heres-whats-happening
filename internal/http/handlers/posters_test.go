@@ -565,6 +565,93 @@ func TestCreatePoster_ForceCannotReclaimAnotherUsersJob(t *testing.T) {
 	require.Equal(t, "ready", decodeBody(t, getRec)["status"])
 }
 
+// POST reads the natural key from a JSON body, GET from a query string. Those
+// are different encodings of the same string, and the canonical form — the one
+// poster.JobID hashes on both paths — is the DECODED value: what JSON carries
+// verbatim, and what r.URL.Query() produces after percent-decoding and turning
+// "+" into a space.
+//
+// No existing fixture could catch a disagreement, because they are all
+// deliberately boring ("LaLuz", "ReadyBand"): a space is exactly where a raw
+// space, "+" and "%20" diverge. These values are picked to break a client that
+// pastes them into a URL unencoded — a literal "+", an "&", a "%", and spaces
+// throughout. A mismatch here means the job completes invisibly under one id
+// while the caller polls another and gets 404 forever.
+func TestPoster_PostThenGetRoundTripsValuesNeedingEncoding(t *testing.T) {
+	for _, tc := range []struct{ name, performer, venue, date string }{
+		{"literal-plus", "AC+DC", "The Showbox SoDo", "Thursday, August 20"},
+		{"spaces-and-ampersand", "La Luz", "Neumos & Barboza", "Thu 20 Aug"},
+		{"percent-sign", "100% Silk", "El Rey", "2026-08-20"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gen := &stubGenerator{release: make(chan struct{})} // hold the job in pending
+			t.Cleanup(func() { close(gen.release) })
+			pool := testdb.MustOpen(t)
+			q := store.New(pool)
+			uid := posterUser(t, q, "a")
+			deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+			rec := httptest.NewRecorder()
+			handlers.CreatePoster(deps)(rec, posterPostRequest(uid, tc.performer, tc.venue, tc.date, false))
+			require.Equal(t, http.StatusAccepted, rec.Code)
+
+			// The row stores the decoded values verbatim.
+			job, err := getPosterJob(t, q, uid, tc.performer, tc.venue, tc.date)
+			require.NoError(t, err)
+			require.Equal(t, tc.performer, job.Performer)
+			require.Equal(t, tc.venue, job.Venue)
+			require.Equal(t, tc.date, job.Date)
+
+			// And the GET finds it: same id, not a 404 while the job completes
+			// invisibly under another one.
+			getRec := httptest.NewRecorder()
+			handlers.GetPoster(deps)(getRec, posterGetRequest(uid, tc.performer, tc.venue, tc.date))
+			require.Equal(t, http.StatusAccepted, getRec.Code,
+				"GET computed a different job id than POST for %q", tc.performer)
+			require.Equal(t, "pending", decodeBody(t, getRec)["status"])
+		})
+	}
+}
+
+// The decoding rule itself, pinned. In a query string "+" means a space —
+// that is what url.Values.Encode() emits for a space and what r.URL.Query()
+// reverses — so a client that POSTs "AC DC" finds its job at
+// "?performer=AC+DC", and one that POSTs "AC+DC" must ask for "%2B".
+//
+// Worth pinning because the opposite reading (treat a raw "+" as a literal
+// plus) is one line away, looks harmless, and would strand every job whose
+// performer contains a space.
+func TestGetPoster_PlusInTheQueryStringIsASpace(t *testing.T) {
+	gen := &stubGenerator{release: make(chan struct{})}
+	t.Cleanup(func() { close(gen.release) })
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	const spaced = "AC DC" // a space, POSTed as JSON
+	_, venue, date := posterFixture(t)
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, spaced, venue, date, false))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	// A hand-built query string, not url.Values.Encode(), so the raw "+" and
+	// the escaped "%2B" reach the handler exactly as written.
+	get := func(rawPerformer string) *httptest.ResponseRecorder {
+		target := fmt.Sprintf("/posters?performer=%s&venue=%s&date=%s",
+			rawPerformer, url.QueryEscape(venue), url.QueryEscape(date))
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		handlers.GetPoster(deps)(rec, req.WithContext(middleware.ContextWithUserID(req.Context(), uid)))
+		return rec
+	}
+
+	require.Equal(t, http.StatusAccepted, get("AC+DC").Code,
+		`"+" in a query string must decode to a space and find the job POSTed as "AC DC"`)
+	require.Equal(t, http.StatusNotFound, get("AC%2BDC").Code,
+		`"%2B" is a literal "+", a different performer than "AC DC"`)
+}
+
 // One user's job must not answer another user's GET, even for the same show:
 // a 404 ("you never asked for this") is the correct answer, not a peek at
 // someone else's presigned artifact URLs.

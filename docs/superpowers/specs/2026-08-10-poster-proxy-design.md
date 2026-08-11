@@ -196,6 +196,20 @@ to `poster.JobID`; jobs are per user (see below). The group guarantees an id is
 present, but both check the boolean and answer `401` rather than falling
 through to a row keyed on the zero uuid.
 
+**Canonical form of the natural key: the decoded value.** `POST` takes the
+three fields from a JSON body, which carries them verbatim; `GET` takes them
+from the query string through `r.URL.Query()`, which percent-decodes and
+decodes `+` to a space. Those decoded strings are what `poster.JobID` hashes on
+both paths, so the two agree for any input **provided the client encodes its
+query properly** — a literal `+` must be sent as `%2B`, and anything built with
+`URLSearchParams` or Go's `url.Values.Encode()` gets that right for free. A
+client that pastes `AC+DC` in raw is asking about `AC DC`, and gets `404` for
+as long as it keeps asking; there is no server-side repair for that which does
+not break some other name, so it is pinned by tests
+(`TestGetPoster_PlusInTheQueryStringIsASpace`,
+`TestPoster_PostThenGetRoundTripsValuesNeedingEncoding`) and documented here
+rather than papered over.
+
 A ready response presigns both keys at that moment and returns
 `{ status:"ready", svgUrl, pngUrl, artist?, credit? }`.
 
@@ -304,6 +318,12 @@ does not start a second generation; `GET` returns 202/200-ready/200-failed/404
 across the four states; a ready `GET` presigns fresh URLs on every call
 (two calls yield two distinct signatures); `POST` re-fires a `pending` row older
 than 6 minutes but not a fresh one.
+
+**Encoding** — a full POST-then-GET round trip for values that need encoding
+(a literal `+`, spaces, `&`, `%`), plus the decoding rule itself: `?x=AC+DC`
+finds the job POSTed as `"AC DC"`, and `?x=AC%2BDC` does not. The other
+fixtures in that file are deliberately space-free, so nothing else in the suite
+would notice the two paths drifting apart.
 
 **The context test that matters** — assert generation still completes after the
 request context is cancelled. This is the one that catches the goroutine
