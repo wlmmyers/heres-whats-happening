@@ -90,6 +90,22 @@ type MatchConfig struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type PosterJob struct {
+	ID            string             `json:"id"`
+	Performer     string             `json:"performer"`
+	Venue         string             `json:"venue"`
+	Date          string             `json:"date"`
+	Status        string             `json:"status"`
+	SvgKey        *string            `json:"svg_key"`
+	PngKey        *string            `json:"png_key"`
+	Artist        []byte             `json:"artist"`
+	Credit        []byte             `json:"credit"`
+	FailureStage  *string            `json:"failure_stage"`
+	FailureReason *string            `json:"failure_reason"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type RefreshToken struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`

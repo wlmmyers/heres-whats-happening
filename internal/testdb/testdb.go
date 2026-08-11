@@ -172,6 +172,7 @@ var truncateTables = []string{
 	"refresh_tokens",
 	"users",
 	"artist_genre_cache",
+	"poster_jobs",
 }
 
 // referenceTables lists public-schema tables deliberately absent from
