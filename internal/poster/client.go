@@ -1,0 +1,145 @@
+// Package poster talks to the poster-generation Lambda over its AWS_IAM
+// Function URL, and mints short-lived read URLs for the artifacts it produces.
+package poster
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+)
+
+// The Lambda's own timeout is 300s; allow a little past it so a slow-but-alive
+// generation is not cut off by the client first.
+const generateTimeout = 310 * time.Second
+
+// maxUpstreamError bounds how much of an upstream body reaches our logs.
+const maxUpstreamError = 200
+
+type Request struct {
+	Performer string `json:"performer"`
+	Venue     string `json:"venue"`
+	Date      string `json:"date"`
+	Force     bool   `json:"force"`
+}
+
+// Result is a completed generation. A non-empty FailureStage means the Lambda
+// returned a controlled 422 — the job failed, but the call did not.
+type Result struct {
+	SvgKey        string
+	PngKey        string
+	Cached        bool
+	Artist        json.RawMessage
+	Credit        json.RawMessage
+	FailureStage  string
+	FailureReason string
+}
+
+type Generator interface {
+	Generate(ctx context.Context, req Request) (Result, error)
+}
+
+type Client struct {
+	url    string
+	region string
+	creds  aws.CredentialsProvider
+	signer *v4.Signer
+	http   *http.Client
+}
+
+func NewClient(functionURL, region string, creds aws.CredentialsProvider) *Client {
+	return &Client{
+		url:    functionURL,
+		region: region,
+		creds:  creds,
+		signer: v4.NewSigner(),
+		http:   &http.Client{Timeout: generateTimeout},
+	}
+}
+
+func (c *Client) Generate(ctx context.Context, req Request) (Result, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return Result{}, fmt.Errorf("marshal poster request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	if err != nil {
+		return Result{}, fmt.Errorf("build poster request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// SigV4 requires the payload hash; the Function URL's auth type is AWS_IAM
+	// and its service name is "lambda".
+	sum := sha256.Sum256(body)
+	creds, err := c.creds.Retrieve(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("retrieve aws credentials: %w", err)
+	}
+	if err := c.signer.SignHTTP(ctx, creds, httpReq, hex.EncodeToString(sum[:]), "lambda", c.region, time.Now()); err != nil {
+		return Result{}, fmt.Errorf("sign poster request: %w", err)
+	}
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return Result{}, fmt.Errorf("call poster function: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Result{}, fmt.Errorf("read poster response: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var ok struct {
+			SvgKey string          `json:"svgKey"`
+			PngKey string          `json:"pngKey"`
+			Cached bool            `json:"cached"`
+			Artist json.RawMessage `json:"artist"`
+			Credit json.RawMessage `json:"credit"`
+		}
+		if err := json.Unmarshal(raw, &ok); err != nil {
+			return Result{}, fmt.Errorf("decode poster response: %w", err)
+		}
+		return Result{SvgKey: ok.SvgKey, PngKey: ok.PngKey, Cached: ok.Cached, Artist: ok.Artist, Credit: ok.Credit}, nil
+
+	case http.StatusUnprocessableEntity:
+		// A controlled failure: no MusicBrainz match, no usable image, and so
+		// on. Ordinary outcomes here, not transport errors.
+		var bad struct {
+			Error string `json:"error"`
+			Stage string `json:"stage"`
+		}
+		if err := json.Unmarshal(raw, &bad); err != nil {
+			return Result{}, fmt.Errorf("decode poster failure: %w", err)
+		}
+		return Result{FailureStage: bad.Stage, FailureReason: bad.Error}, nil
+
+	default:
+		return Result{}, fmt.Errorf("poster function returned %d: %s", resp.StatusCode, truncate(string(raw)))
+	}
+}
+
+func truncate(s string) string {
+	if len(s) <= maxUpstreamError {
+		return s
+	}
+	return s[:maxUpstreamError] + "…"
+}
+
+// JobID is the primary key of a poster job: a digest of the natural key, so a
+// POST and a later GET agree without the client carrying an id.
+func JobID(performer, venue, date string) string {
+	sum := sha256.Sum256([]byte(normalize(performer) + "\x00" + normalize(venue) + "\x00" + normalize(date)))
+	return hex.EncodeToString(sum[:])
+}
