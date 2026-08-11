@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/wmyers/heres-whats-happening/internal/http/httperr"
+	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/poster"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 )
@@ -35,11 +36,25 @@ type posterRequest struct {
 }
 
 // CreatePoster claims (or joins) an async poster-generation job and returns
-// 202 immediately. The natural key (performer, venue, date) is hashed into a
-// job id via poster.JobID, so a later GET without any id supplied by the
-// client can look the same job back up.
+// 202 immediately. The natural key (user, performer, venue, date) is hashed
+// into a job id via poster.JobID, so a later GET without any id supplied by
+// the client can look the same job back up.
+//
+// Jobs are scoped to the authenticated user: force:true re-claims a ready row,
+// so a shared row would let any confirmed user blank any other user's poster.
+// The accepted cost is that two users wanting the same show each generate
+// their own copy.
 func CreatePoster(d PosterDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// The route lives inside the authenticated + confirmed group, so this
+		// is always present — checked rather than assumed, because the failure
+		// mode of a wrong answer here is one user's row keyed to the zero uuid.
+		uid, ok := middleware.UserIDFromContext(r.Context())
+		if !ok {
+			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
+			return
+		}
+
 		var in posterRequest
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			httperr.Write(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON")
@@ -50,9 +65,10 @@ func CreatePoster(d PosterDeps) http.HandlerFunc {
 			return
 		}
 
-		id := poster.JobID(in.Performer, in.Venue, in.Date)
+		id := poster.JobID(uid.String(), in.Performer, in.Venue, in.Date)
 		_, err := d.Queries.ClaimPosterJob(r.Context(), store.ClaimPosterJobParams{
-			ID: id, Performer: in.Performer, Venue: in.Venue, Date: in.Date,
+			ID: id, UserID: pgtype.UUID{Bytes: uid, Valid: true},
+			Performer: in.Performer, Venue: in.Venue, Date: in.Date,
 			StaleBefore: pgtype.Timestamptz{Time: time.Now().Add(-stalePendingAfter), Valid: true},
 			Force:       in.Force,
 		})
@@ -124,12 +140,24 @@ func startGeneration(d PosterDeps, id string, req poster.Request) {
 	}()
 }
 
-// GetPoster looks up the job for (performer, venue, date) — read from the
-// query string, since the client never learns the id — and reports its
-// status. A ready job's artifacts are presigned fresh on every call: the
+// GetPoster looks up the caller's own job for (performer, venue, date) — read
+// from the query string, since the client never learns the id — and reports
+// its status. A ready job's artifacts are presigned fresh on every call: the
 // stored value is an S3 object key, not a URL, and presigned URLs expire.
+//
+// The three values are read through r.URL.Query(), i.e. percent-decoded and
+// with "+" decoded to a space. Those decoded strings are the canonical form —
+// the same strings POST reads out of its JSON body — so a client wanting a
+// literal "+" in a name must percent-encode it as "%2B". Anything built with
+// url.Values.Encode() gets this right for free.
 func GetPoster(d PosterDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		uid, ok := middleware.UserIDFromContext(r.Context())
+		if !ok {
+			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
+			return
+		}
+
 		performer := r.URL.Query().Get("performer")
 		venue := r.URL.Query().Get("venue")
 		date := r.URL.Query().Get("date")
@@ -138,8 +166,10 @@ func GetPoster(d PosterDeps) http.HandlerFunc {
 			return
 		}
 
-		id := poster.JobID(performer, venue, date)
-		job, err := d.Queries.GetPosterJob(r.Context(), id)
+		id := poster.JobID(uid.String(), performer, venue, date)
+		job, err := d.Queries.GetPosterJob(r.Context(), store.GetPosterJobParams{
+			ID: id, UserID: pgtype.UUID{Bytes: uid, Valid: true},
+		})
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			writeJSON(w, http.StatusNotFound, map[string]any{"status": "unknown"})

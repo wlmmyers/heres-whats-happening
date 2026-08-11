@@ -191,6 +191,11 @@ and the 120/min `authedLimiter` net without further wiring.
 | `POST /posters` | Claim the job, start generation in the background, `202 {status:"pending"}` |
 | `GET /posters?performer=&venue=&date=` | `200` ready · `202` pending · `200` failed + stage/reason · `404` never requested |
 
+Both handlers read the caller from `middleware.UserIDFromContext` and feed it
+to `poster.JobID`; jobs are per user (see below). The group guarantees an id is
+present, but both check the boolean and answer `401` rather than falling
+through to a row keyed on the zero uuid.
+
 A ready response presigns both keys at that moment and returns
 `{ status:"ready", svgUrl, pngUrl, artist?, credit? }`.
 
@@ -216,6 +221,7 @@ Migration `sql/migrations/0022_poster_jobs.{up,down}.sql`, queries in
 
 ```
 id              text primary key   -- sha256 hex of the normalized natural key
+user_id         uuid not null references users(id) on delete cascade
 performer, venue, date  text not null   -- `date` is free text, matching the
                                         -- Lambda's contract ("Thursday, August 20")
 status          text not null      -- pending | ready | failed
@@ -226,11 +232,27 @@ failure_stage, failure_reason  text
 created_at, updated_at  timestamptz not null
 ```
 
-`id` is the sha256 hex digest of the three natural-key fields lower-cased,
-trimmed, and joined with a separator that cannot occur in the inputs. Keying on
-the natural `(performer, venue, date)` means POST and GET agree with no job id
-for the client to track, and a repeat request joins the existing job rather than
+`id` is the sha256 hex digest of the four natural-key fields lower-cased and
+trimmed. Each field is hashed to a fixed 32-byte block before the blocks are
+concatenated and hashed again, so no byte of one field can be mistaken for a
+neighbour's — a separator byte cannot do that job, since any separator can be
+smuggled in through the request body. Keying on the natural
+`(user, performer, venue, date)` means POST and GET agree with no job id for
+the client to track, and a repeat request joins the existing job rather than
 starting a second one.
+
+**Jobs are scoped per user**, and `user_id` is part of the key, not just an
+owner column. `POST` with `force:true` re-claims a `ready` row and blanks its
+artifacts; on a row shared by every user, that lets any confirmed user destroy
+any other user's poster and then read the regenerated one as their own. The
+accepted trade — deliberate, do not "optimise" it away — is that two users
+wanting the same show each generate their own copy.
+
+`ClaimPosterJob` and `GetPosterJob` additionally carry `AND user_id = $n`. That
+is redundant while `poster.JobID` is correct, and it is there precisely because
+that is a property of one function: a digest regression (one has already
+happened — fields used to be joined with a NUL that a JSON body can contain)
+must not be sufficient on its own to hand one user another's poster.
 
 `artist` and `credit` **are** persisted, as jsonb. A ready `GET` presigns
 locally and never calls the Lambda, so the provenance has to be readable from

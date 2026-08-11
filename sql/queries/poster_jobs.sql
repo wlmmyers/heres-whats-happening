@@ -11,14 +11,23 @@
 -- would run concurrently for the same job and the second would stomp the
 -- first's result.
 --
--- The cutoff and the force flag use sqlc.arg(stale_before)/sqlc.arg(force)
--- rather than positional $5/$6: this statement both SETS columns and COMPARES
+-- The cutoff, the force flag and the user id use sqlc.arg(...) rather than
+-- bare positional placeholders: this statement both SETS columns and COMPARES
 -- against new values, and sqlc names positional params after the column they
--- touch, so a bare $5/$6 would collide with an assignment and produce a
--- confusing generated field name.
+-- touch, so a bare placeholder would collide with an assignment and produce a
+-- confusing generated field name. sqlc.arg(user_id) additionally lets one
+-- parameter serve both the INSERT value and the conflict guard.
+--
+-- The trailing "poster_jobs.user_id = sqlc.arg(user_id)" is belt and braces.
+-- id is already a digest that includes the user, so a row with this id can
+-- only be this user's — but that is a property of poster.JobID, and a
+-- regression there (one has already happened: fields used to be joined with a
+-- NUL that could be smuggled in through the request body) must not be enough
+-- on its own to let one user re-claim and blank another user's poster. Here
+-- the scoping is enforced by the statement.
 -- name: ClaimPosterJob :one
-INSERT INTO poster_jobs (id, performer, venue, date, status, updated_at)
-VALUES ($1, $2, $3, $4, 'pending', NOW())
+INSERT INTO poster_jobs (id, user_id, performer, venue, date, status, updated_at)
+VALUES ($1, sqlc.arg(user_id), $2, $3, $4, 'pending', NOW())
 ON CONFLICT (id) DO UPDATE SET
     status         = 'pending',
     svg_key        = NULL,
@@ -28,13 +37,17 @@ ON CONFLICT (id) DO UPDATE SET
     failure_stage  = NULL,
     failure_reason = NULL,
     updated_at     = NOW()
-WHERE poster_jobs.status = 'failed'
+WHERE poster_jobs.user_id = sqlc.arg(user_id)
+  AND (poster_jobs.status = 'failed'
    OR (poster_jobs.status = 'pending' AND poster_jobs.updated_at < sqlc.arg(stale_before))
-   OR (poster_jobs.status = 'ready'   AND sqlc.arg(force)::boolean)
+   OR (poster_jobs.status = 'ready'   AND sqlc.arg(force)::boolean))
 RETURNING *;
 
+-- Scoped by user for the same belt-and-braces reason as the claim: a job id
+-- collision across two users must not be able to hand one of them the other's
+-- presigned artifact URLs.
 -- name: GetPosterJob :one
-SELECT * FROM poster_jobs WHERE id = $1;
+SELECT * FROM poster_jobs WHERE id = $1 AND user_id = $2;
 
 -- name: MarkPosterJobReady :exec
 UPDATE poster_jobs

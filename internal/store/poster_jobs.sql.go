@@ -12,8 +12,8 @@ import (
 )
 
 const claimPosterJob = `-- name: ClaimPosterJob :one
-INSERT INTO poster_jobs (id, performer, venue, date, status, updated_at)
-VALUES ($1, $2, $3, $4, 'pending', NOW())
+INSERT INTO poster_jobs (id, user_id, performer, venue, date, status, updated_at)
+VALUES ($1, $5, $2, $3, $4, 'pending', NOW())
 ON CONFLICT (id) DO UPDATE SET
     status         = 'pending',
     svg_key        = NULL,
@@ -23,10 +23,11 @@ ON CONFLICT (id) DO UPDATE SET
     failure_stage  = NULL,
     failure_reason = NULL,
     updated_at     = NOW()
-WHERE poster_jobs.status = 'failed'
-   OR (poster_jobs.status = 'pending' AND poster_jobs.updated_at < $5)
-   OR (poster_jobs.status = 'ready'   AND $6::boolean)
-RETURNING id, performer, venue, date, status, svg_key, png_key, artist, credit, failure_stage, failure_reason, created_at, updated_at
+WHERE poster_jobs.user_id = $5
+  AND (poster_jobs.status = 'failed'
+   OR (poster_jobs.status = 'pending' AND poster_jobs.updated_at < $6)
+   OR (poster_jobs.status = 'ready'   AND $7::boolean))
+RETURNING id, user_id, performer, venue, date, status, svg_key, png_key, artist, credit, failure_stage, failure_reason, created_at, updated_at
 `
 
 type ClaimPosterJobParams struct {
@@ -34,6 +35,7 @@ type ClaimPosterJobParams struct {
 	Performer   string             `json:"performer"`
 	Venue       string             `json:"venue"`
 	Date        string             `json:"date"`
+	UserID      pgtype.UUID        `json:"user_id"`
 	StaleBefore pgtype.Timestamptz `json:"stale_before"`
 	Force       bool               `json:"force"`
 }
@@ -56,18 +58,28 @@ type ClaimPosterJobParams struct {
 // against new values, and sqlc names positional params after the column they
 // touch, so a bare $5/$6 would collide with an assignment and produce a
 // confusing generated field name.
+//
+// The trailing "poster_jobs.user_id = sqlc.arg(user_id)" is belt and braces.
+// id is already a digest that includes the user, so a row with this id can
+// only be this user's — but that is a property of poster.JobID, and a
+// regression there (one has already happened: fields used to be joined with a
+// NUL that could be smuggled in through the request body) must not be enough
+// on its own to let one user re-claim and blank another user's poster. Here
+// the scoping is enforced by the statement.
 func (q *Queries) ClaimPosterJob(ctx context.Context, arg ClaimPosterJobParams) (PosterJob, error) {
 	row := q.db.QueryRow(ctx, claimPosterJob,
 		arg.ID,
 		arg.Performer,
 		arg.Venue,
 		arg.Date,
+		arg.UserID,
 		arg.StaleBefore,
 		arg.Force,
 	)
 	var i PosterJob
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Performer,
 		&i.Venue,
 		&i.Date,
@@ -85,14 +97,23 @@ func (q *Queries) ClaimPosterJob(ctx context.Context, arg ClaimPosterJobParams) 
 }
 
 const getPosterJob = `-- name: GetPosterJob :one
-SELECT id, performer, venue, date, status, svg_key, png_key, artist, credit, failure_stage, failure_reason, created_at, updated_at FROM poster_jobs WHERE id = $1
+SELECT id, user_id, performer, venue, date, status, svg_key, png_key, artist, credit, failure_stage, failure_reason, created_at, updated_at FROM poster_jobs WHERE id = $1 AND user_id = $2
 `
 
-func (q *Queries) GetPosterJob(ctx context.Context, id string) (PosterJob, error) {
-	row := q.db.QueryRow(ctx, getPosterJob, id)
+type GetPosterJobParams struct {
+	ID     string      `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Scoped by user for the same belt-and-braces reason as the claim: a job id
+// collision across two users must not be able to hand one of them the other's
+// presigned artifact URLs.
+func (q *Queries) GetPosterJob(ctx context.Context, arg GetPosterJobParams) (PosterJob, error) {
+	row := q.db.QueryRow(ctx, getPosterJob, arg.ID, arg.UserID)
 	var i PosterJob
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Performer,
 		&i.Venue,
 		&i.Date,

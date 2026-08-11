@@ -7,16 +7,19 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
+	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/poster"
 	"github.com/wmyers/heres-whats-happening/internal/store"
 	"github.com/wmyers/heres-whats-happening/internal/testdb"
@@ -77,19 +80,57 @@ func (stubPresigner) PresignGet(_ context.Context, key string) (string, error) {
 // re-claimable, so that test's second POST starts a real second generation and
 // trips its require.Never — a false failure in a test that is doing nothing
 // wrong.
-//
-// The values are deliberately free of spaces and of anything else needing
-// percent-encoding: the GET tests paste them straight into a query string.
 func posterFixture(t *testing.T) (performer, venue, date string) {
 	t.Helper()
 	name := strings.ReplaceAll(t.Name(), "/", "-")
 	return name + "-performer", name + "-venue", "2026-08-20"
 }
 
+// posterUser creates a confirmed user and returns its id. poster_jobs.user_id
+// is a real foreign key, so every poster test needs a real users row; label
+// keeps the email unique when one test needs two users.
+func posterUser(t *testing.T, q *store.Queries, label string) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	row, err := q.CreateUser(ctx, store.CreateUserParams{
+		Email:        label + "+" + strings.ReplaceAll(t.Name(), "/", "-") + "@example.com",
+		PasswordHash: "stub",
+		CityID:       city.ID,
+		Confirmed:    true,
+	})
+	require.NoError(t, err)
+	return uuid.UUID(row.ID.Bytes)
+}
+
+// posterPostRequest builds a POST /posters carrying uid in its context, the
+// way middleware.RequireAuth would on the real route.
+func posterPostRequest(uid uuid.UUID, performer, venue, date string, force bool) *http.Request {
+	body, _ := json.Marshal(map[string]any{
+		"performer": performer, "venue": venue, "date": date, "force": force,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
+	return req.WithContext(middleware.ContextWithUserID(req.Context(), uid))
+}
+
+// posterGetRequest builds a GET /posters for the same natural key.
+//
+// The query string is assembled with url.Values.Encode(), never by pasting the
+// values in raw. Encode() percent-encodes what has to be percent-encoded — a
+// literal "+" becomes "%2B", a space becomes "+" — and r.URL.Query() on the
+// handler side reverses exactly that. The decoded value is the canonical form,
+// so this is what makes a GET agree with the POST that created the job.
+func posterGetRequest(uid uuid.UUID, performer, venue, date string) *http.Request {
+	qs := url.Values{"performer": {performer}, "venue": {venue}, "date": {date}}.Encode()
+	req := httptest.NewRequest(http.MethodGet, "/posters?"+qs, nil)
+	return req.WithContext(middleware.ContextWithUserID(req.Context(), uid))
+}
+
 // newPosterHandlerForTest wires CreatePoster against a real, truncated test
 // database (via internal/testdb, matching how the rest of this package's
 // handler tests obtain a *store.Queries) and the given stub generator.
-func newPosterHandlerForTest(t *testing.T, gen poster.Generator) http.HandlerFunc {
+func newPosterHandlerForTest(t *testing.T, gen poster.Generator) (http.HandlerFunc, *store.Queries) {
 	t.Helper()
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
@@ -97,7 +138,7 @@ func newPosterHandlerForTest(t *testing.T, gen poster.Generator) http.HandlerFun
 		Queries:   q,
 		Generator: gen,
 		Presigner: stubPresigner{},
-	})
+	}), q
 }
 
 // THE test that matters: the background goroutine must NOT inherit the request
@@ -105,13 +146,13 @@ func newPosterHandlerForTest(t *testing.T, gen poster.Generator) http.HandlerFun
 // generation dies instantly and every job fails for no visible reason.
 func TestCreatePosterGenerationSurvivesRequestCancellation(t *testing.T) {
 	gen := &stubGenerator{release: make(chan struct{}), sawCtxOK: make(chan bool, 1)}
-	h := newPosterHandlerForTest(t, gen)
+	h, q := newPosterHandlerForTest(t, gen)
+	uid := posterUser(t, q, "a")
 	performer, venue, date := posterFixture(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	body, _ := json.Marshal(map[string]string{"performer": performer, "venue": venue, "date": date})
-	req := httptest.NewRequest(http.MethodPost, "/posters",
-		strings.NewReader(string(body))).WithContext(ctx)
+	req := posterPostRequest(uid, performer, venue, date, false)
+	req = req.WithContext(middleware.ContextWithUserID(ctx, uid))
 	rec := httptest.NewRecorder()
 
 	h.ServeHTTP(rec, req)
@@ -134,14 +175,13 @@ func TestCreatePosterGenerationSurvivesRequestCancellation(t *testing.T) {
 
 func TestCreatePosterDoesNotStartASecondGenerationForAPendingJob(t *testing.T) {
 	gen := &stubGenerator{release: make(chan struct{})}
-	h := newPosterHandlerForTest(t, gen)
+	h, q := newPosterHandlerForTest(t, gen)
+	uid := posterUser(t, q, "a")
 	performer, venue, date := posterFixture(t)
-	body, _ := json.Marshal(map[string]string{"performer": performer, "venue": venue, "date": date})
 
 	post := func() int {
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/posters",
-			strings.NewReader(string(body))))
+		h.ServeHTTP(rec, posterPostRequest(uid, performer, venue, date, false))
 		return rec.Code
 	}
 
@@ -166,18 +206,56 @@ func TestCreatePosterDoesNotStartASecondGenerationForAPendingJob(t *testing.T) {
 		"generation ran more than once — the second POST must join the pending job, not start its own")
 }
 
+// The authenticated user is part of the natural key, so no request may be
+// served without one. The routes sit inside the authenticated + confirmed
+// group and so always have it — but an absent id must be an explicit 401
+// rather than a silent fall-through that keys the row to the zero uuid (and,
+// with a NOT NULL foreign key, 500s on the insert).
+func TestPosterHandlers_RejectARequestWithNoUserInContext(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	deps := handlers.PosterDeps{Queries: q, Generator: &stubGenerator{}, Presigner: stubPresigner{}}
+	performer, venue, date := posterFixture(t)
+
+	for _, tc := range []struct {
+		name string
+		req  *http.Request
+		h    http.HandlerFunc
+	}{
+		{
+			name: "POST",
+			req: httptest.NewRequest(http.MethodPost, "/posters",
+				strings.NewReader(`{"performer":"x","venue":"y","date":"z"}`)),
+			h: handlers.CreatePoster(deps),
+		},
+		{
+			name: "GET",
+			req: httptest.NewRequest(http.MethodGet,
+				"/posters?"+url.Values{"performer": {performer}, "venue": {venue}, "date": {date}}.Encode(), nil),
+			h: handlers.GetPoster(deps),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			tc.h(rec, tc.req)
+			require.Equal(t, http.StatusUnauthorized, rec.Code)
+		})
+	}
+}
+
 // seedReadyPosterJob claims and immediately completes a job for
-// (performer, venue, date). Called twice for the same key it is idempotent:
-// MarkPosterJobReady is an unconditional UPDATE by id, so re-running it just
-// re-marks the same row ready — the second ClaimPosterJob's ErrNoRows (a
-// ready row is neither failed nor stale-pending, so it isn't reclaimable) is
-// expected and ignored.
-func seedReadyPosterJob(t *testing.T, q *store.Queries, performer, venue, date string) string {
+// (uid, performer, venue, date). Called twice for the same key it is
+// idempotent: MarkPosterJobReady is an unconditional UPDATE by id, so
+// re-running it just re-marks the same row ready — the second
+// ClaimPosterJob's ErrNoRows (a ready row is neither failed nor stale-pending,
+// so it isn't reclaimable) is expected and ignored.
+func seedReadyPosterJob(t *testing.T, q *store.Queries, uid uuid.UUID, performer, venue, date string) string {
 	t.Helper()
 	ctx := context.Background()
-	id := poster.JobID(performer, venue, date)
+	id := poster.JobID(uid.String(), performer, venue, date)
 	_, _ = q.ClaimPosterJob(ctx, store.ClaimPosterJobParams{
-		ID: id, Performer: performer, Venue: venue, Date: date,
+		ID: id, UserID: pgtype.UUID{Bytes: uid, Valid: true},
+		Performer: performer, Venue: venue, Date: date,
 		StaleBefore: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	svgKey := "posters/v1/la-luz/neumos-2026-08-20.svg"
@@ -190,38 +268,38 @@ func seedReadyPosterJob(t *testing.T, q *store.Queries, performer, venue, date s
 	return id
 }
 
-// getPosterURLs seeds a ready job and returns its presigned svgUrl and pngUrl
-// joined into one comparable string.
-func getPosterURLs(t *testing.T, status string) string {
+// getPosterJob reads a row the way the tests want it: by natural key, for one
+// user.
+func getPosterJob(t *testing.T, q *store.Queries, uid uuid.UUID, performer, venue, date string) (store.PosterJob, error) {
 	t.Helper()
-	if status != "ready" {
-		t.Fatalf("getPosterURLs only supports status=ready, got %q", status)
-	}
-
-	pool := testdb.MustOpen(t)
-	q := store.New(pool)
-	performer, venue, date := posterFixture(t)
-	seedReadyPosterJob(t, q, performer, venue, date)
-
-	deps := handlers.PosterDeps{Queries: q, Presigner: stubPresigner{}}
-	req := httptest.NewRequest(http.MethodGet,
-		"/posters?performer="+performer+"&venue="+venue+"&date="+date, nil)
-	rec := httptest.NewRecorder()
-	handlers.GetPoster(deps)(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	body := decodeBody(t, rec)
-	svgURL, _ := body["svgUrl"].(string)
-	pngURL, _ := body["pngUrl"].(string)
-	return svgURL + "|" + pngURL
+	return q.GetPosterJob(context.Background(), store.GetPosterJobParams{
+		ID:     poster.JobID(uid.String(), performer, venue, date),
+		UserID: pgtype.UUID{Bytes: uid, Valid: true},
+	})
 }
 
+// A ready job must presign at read time. Returning a stored URL would serve a
+// dead link once the 3600s expiry passed, so two GETs of one unchanged row
+// must still produce two different signatures.
 func TestGetPosterPresignsFreshOnEveryCall(t *testing.T) {
-	// A ready job must presign at read time. Returning a stored URL would serve
-	// a dead link once the 3600s expiry passed.
-	first := getPosterURLs(t, "ready")
-	second := getPosterURLs(t, "ready")
-	if first == second {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	performer, venue, date := posterFixture(t)
+	seedReadyPosterJob(t, q, uid, performer, venue, date)
+
+	deps := handlers.PosterDeps{Queries: q, Presigner: stubPresigner{}}
+	urls := func() string {
+		rec := httptest.NewRecorder()
+		handlers.GetPoster(deps)(rec, posterGetRequest(uid, performer, venue, date))
+		require.Equal(t, http.StatusOK, rec.Code)
+		body := decodeBody(t, rec)
+		svgURL, _ := body["svgUrl"].(string)
+		pngURL, _ := body["pngUrl"].(string)
+		return svgURL + "|" + pngURL
+	}
+
+	if first, second := urls(), urls(); first == second {
 		t.Error("two GETs returned identical urls; they must be signed per request")
 	}
 }
@@ -238,13 +316,12 @@ func decodeBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 func TestGetPoster_UnknownJobReturns404(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
+	uid := posterUser(t, q, "a")
 	deps := handlers.PosterDeps{Queries: q, Presigner: stubPresigner{}}
-
 	performer, venue, date := posterFixture(t)
-	req := httptest.NewRequest(http.MethodGet,
-		"/posters?performer="+performer+"&venue="+venue+"&date="+date, nil)
+
 	rec := httptest.NewRecorder()
-	handlers.GetPoster(deps)(rec, req)
+	handlers.GetPoster(deps)(rec, posterGetRequest(uid, performer, venue, date))
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	body := decodeBody(t, rec)
@@ -254,21 +331,18 @@ func TestGetPoster_UnknownJobReturns404(t *testing.T) {
 func TestGetPoster_PendingReturns202(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
-	ctx := context.Background()
-
+	uid := posterUser(t, q, "a")
 	performer, venue, date := posterFixture(t)
-	id := poster.JobID(performer, venue, date)
-	_, err := q.ClaimPosterJob(ctx, store.ClaimPosterJobParams{
-		ID: id, Performer: performer, Venue: venue, Date: date,
+	_, err := q.ClaimPosterJob(context.Background(), store.ClaimPosterJobParams{
+		ID: poster.JobID(uid.String(), performer, venue, date), UserID: pgtype.UUID{Bytes: uid, Valid: true},
+		Performer: performer, Venue: venue, Date: date,
 		StaleBefore: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	require.NoError(t, err)
 
 	deps := handlers.PosterDeps{Queries: q, Presigner: stubPresigner{}}
-	req := httptest.NewRequest(http.MethodGet,
-		"/posters?performer="+performer+"&venue="+venue+"&date="+date, nil)
 	rec := httptest.NewRecorder()
-	handlers.GetPoster(deps)(rec, req)
+	handlers.GetPoster(deps)(rec, posterGetRequest(uid, performer, venue, date))
 
 	require.Equal(t, http.StatusAccepted, rec.Code)
 	body := decodeBody(t, rec)
@@ -279,11 +353,13 @@ func TestGetPoster_FailedReturns200WithStageAndReason(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	ctx := context.Background()
-
+	uid := posterUser(t, q, "a")
 	performer, venue, date := posterFixture(t)
-	id := poster.JobID(performer, venue, date)
+
+	id := poster.JobID(uid.String(), performer, venue, date)
 	_, err := q.ClaimPosterJob(ctx, store.ClaimPosterJobParams{
-		ID: id, Performer: performer, Venue: venue, Date: date,
+		ID: id, UserID: pgtype.UUID{Bytes: uid, Valid: true},
+		Performer: performer, Venue: venue, Date: date,
 		StaleBefore: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	require.NoError(t, err)
@@ -293,10 +369,8 @@ func TestGetPoster_FailedReturns200WithStageAndReason(t *testing.T) {
 	}))
 
 	deps := handlers.PosterDeps{Queries: q, Presigner: stubPresigner{}}
-	req := httptest.NewRequest(http.MethodGet,
-		"/posters?performer="+performer+"&venue="+venue+"&date="+date, nil)
 	rec := httptest.NewRecorder()
-	handlers.GetPoster(deps)(rec, req)
+	handlers.GetPoster(deps)(rec, posterGetRequest(uid, performer, venue, date))
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := decodeBody(t, rec)
@@ -309,11 +383,13 @@ func TestGetPoster_ReadyReturnsUrlsArtistAndCredit(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	ctx := context.Background()
-
+	uid := posterUser(t, q, "a")
 	performer, venue, date := posterFixture(t)
-	id := poster.JobID(performer, venue, date)
+
+	id := poster.JobID(uid.String(), performer, venue, date)
 	_, err := q.ClaimPosterJob(ctx, store.ClaimPosterJobParams{
-		ID: id, Performer: performer, Venue: venue, Date: date,
+		ID: id, UserID: pgtype.UUID{Bytes: uid, Valid: true},
+		Performer: performer, Venue: venue, Date: date,
 		StaleBefore: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	require.NoError(t, err)
@@ -326,10 +402,8 @@ func TestGetPoster_ReadyReturnsUrlsArtistAndCredit(t *testing.T) {
 	}))
 
 	deps := handlers.PosterDeps{Queries: q, Presigner: stubPresigner{}}
-	req := httptest.NewRequest(http.MethodGet,
-		"/posters?performer="+performer+"&venue="+venue+"&date="+date, nil)
 	rec := httptest.NewRecorder()
-	handlers.GetPoster(deps)(rec, req)
+	handlers.GetPoster(deps)(rec, posterGetRequest(uid, performer, venue, date))
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := decodeBody(t, rec)
@@ -352,23 +426,21 @@ func TestGetPoster_ReadyReturnsUrlsArtistAndCredit(t *testing.T) {
 func TestCreatePoster_ControlledFailureMarksJobFailed(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
+	uid := posterUser(t, q, "a")
 	gen := &stubGenerator{result: poster.Result{FailureStage: "musicbrainz", FailureReason: "no match found"}}
 	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
 
 	performer, venue, date := posterFixture(t)
-	body, _ := json.Marshal(map[string]string{"performer": performer, "venue": venue, "date": date})
-	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
 	rec := httptest.NewRecorder()
-	handlers.CreatePoster(deps)(rec, req)
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, false))
 	require.Equal(t, http.StatusAccepted, rec.Code)
 
-	id := poster.JobID(performer, venue, date)
 	require.Eventually(t, func() bool {
-		job, err := q.GetPosterJob(context.Background(), id)
+		job, err := getPosterJob(t, q, uid, performer, venue, date)
 		return err == nil && job.Status == "failed"
 	}, 2*time.Second, 20*time.Millisecond, "job never reached failed status")
 
-	job, err := q.GetPosterJob(context.Background(), id)
+	job, err := getPosterJob(t, q, uid, performer, venue, date)
 	require.NoError(t, err)
 	require.NotNil(t, job.FailureStage)
 	require.Equal(t, "musicbrainz", *job.FailureStage)
@@ -394,22 +466,21 @@ func TestCreatePoster_BadArtifactKeyMarksJobFailed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := testdb.MustOpen(t)
 			q := store.New(pool)
+			uid := posterUser(t, q, "a")
 			gen := &stubGenerator{result: tc.result}
 			deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
 
 			performer, venue, date := posterFixture(t)
-			body, _ := json.Marshal(map[string]string{"performer": performer, "venue": venue, "date": date})
 			rec := httptest.NewRecorder()
-			handlers.CreatePoster(deps)(rec, httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body))))
+			handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, false))
 			require.Equal(t, http.StatusAccepted, rec.Code)
 
-			id := poster.JobID(performer, venue, date)
 			require.Eventually(t, func() bool {
-				job, err := q.GetPosterJob(context.Background(), id)
+				job, err := getPosterJob(t, q, uid, performer, venue, date)
 				return err == nil && job.Status == "failed"
 			}, 2*time.Second, 20*time.Millisecond, "an unusable %s must fail the job, not mark it ready", tc.name)
 
-			job, err := q.GetPosterJob(context.Background(), id)
+			job, err := getPosterJob(t, q, uid, performer, venue, date)
 			require.NoError(t, err)
 			require.Equal(t, "failed", job.Status)
 			require.Nil(t, job.SvgKey, "a failed job must not carry artifact keys")
@@ -419,8 +490,7 @@ func TestCreatePoster_BadArtifactKeyMarksJobFailed(t *testing.T) {
 
 			// And the GET that follows reports the failure instead of 500ing.
 			getRec := httptest.NewRecorder()
-			handlers.GetPoster(deps)(getRec, httptest.NewRequest(http.MethodGet,
-				"/posters?performer="+performer+"&venue="+venue+"&date="+date, nil))
+			handlers.GetPoster(deps)(getRec, posterGetRequest(uid, performer, venue, date))
 			require.Equal(t, http.StatusOK, getRec.Code)
 			require.Equal(t, "failed", decodeBody(t, getRec)["status"])
 		})
@@ -433,20 +503,86 @@ func TestCreatePoster_BadArtifactKeyMarksJobFailed(t *testing.T) {
 func TestCreatePoster_ForceReclaimsReadyJobAndCallsGenerator(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
+	uid := posterUser(t, q, "a")
 	performer, venue, date := posterFixture(t)
-	seedReadyPosterJob(t, q, performer, venue, date)
+	seedReadyPosterJob(t, q, uid, performer, venue, date)
 
 	gen := &stubGenerator{}
 	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
 
-	body, _ := json.Marshal(map[string]any{"performer": performer, "venue": venue, "date": date, "force": true})
-	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
 	rec := httptest.NewRecorder()
-	handlers.CreatePoster(deps)(rec, req)
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, true))
 	require.Equal(t, http.StatusAccepted, rec.Code)
 
 	require.Eventually(t, func() bool { return gen.callCount() >= 1 }, 2*time.Second, 10*time.Millisecond,
 		"force:true on a ready job must reclaim it and call the generator")
+}
+
+// THE reason poster jobs are keyed per user. force:true re-claims a ready row,
+// blanking its artifacts (see
+// TestCreatePoster_ForceReclaimClearsPreviousArtifacts). While the natural key
+// was only (performer, venue, date), every user shared one row for a show — so
+// any confirmed user could destroy any other user's poster by asking for the
+// same gig with force:true, and would then also see the regenerated result as
+// their own.
+func TestCreatePoster_ForceCannotReclaimAnotherUsersJob(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	victim := posterUser(t, q, "victim")
+	attacker := posterUser(t, q, "attacker")
+
+	// One show, requested by both users.
+	performer, venue, date := posterFixture(t)
+	seedReadyPosterJob(t, q, victim, performer, venue, date)
+
+	gen := &stubGenerator{release: make(chan struct{})}
+	t.Cleanup(func() { close(gen.release) })
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, posterPostRequest(attacker, performer, venue, date, true))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	// The victim's row is untouched: still ready, still holding its artifacts.
+	victimJob, err := getPosterJob(t, q, victim, performer, venue, date)
+	require.NoError(t, err)
+	require.Equal(t, "ready", victimJob.Status,
+		"another user's force:true re-claimed this row — one user can blank another's poster")
+	require.NotNil(t, victimJob.SvgKey)
+	require.NotNil(t, victimJob.PngKey)
+	require.NotEmpty(t, victimJob.Artist)
+
+	// The attacker got their own separate, pending row.
+	attackerJob, err := getPosterJob(t, q, attacker, performer, venue, date)
+	require.NoError(t, err)
+	require.Equal(t, "pending", attackerJob.Status)
+	require.NotEqual(t, victimJob.ID, attackerJob.ID, "two users must not share one job id")
+
+	// And the victim's GET still reports ready — the read path is scoped too.
+	getRec := httptest.NewRecorder()
+	handlers.GetPoster(deps)(getRec, posterGetRequest(victim, performer, venue, date))
+	require.Equal(t, http.StatusOK, getRec.Code)
+	require.Equal(t, "ready", decodeBody(t, getRec)["status"])
+}
+
+// One user's job must not answer another user's GET, even for the same show:
+// a 404 ("you never asked for this") is the correct answer, not a peek at
+// someone else's presigned artifact URLs.
+func TestGetPoster_DoesNotSeeAnotherUsersJob(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	owner := posterUser(t, q, "owner")
+	stranger := posterUser(t, q, "stranger")
+
+	performer, venue, date := posterFixture(t)
+	seedReadyPosterJob(t, q, owner, performer, venue, date)
+
+	deps := handlers.PosterDeps{Queries: q, Presigner: stubPresigner{}}
+	rec := httptest.NewRecorder()
+	handlers.GetPoster(deps)(rec, posterGetRequest(stranger, performer, venue, date))
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Equal(t, "unknown", decodeBody(t, rec)["status"])
 }
 
 // The current (pinned) behavior: without force, a ready job is never
@@ -454,23 +590,21 @@ func TestCreatePoster_ForceReclaimsReadyJobAndCallsGenerator(t *testing.T) {
 func TestCreatePoster_WithoutForceDoesNotReclaimReadyJob(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
+	uid := posterUser(t, q, "a")
 	performer, venue, date := posterFixture(t)
-	seedReadyPosterJob(t, q, performer, venue, date)
+	seedReadyPosterJob(t, q, uid, performer, venue, date)
 
 	gen := &stubGenerator{}
 	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
 
-	body, _ := json.Marshal(map[string]any{"performer": performer, "venue": venue, "date": date, "force": false})
-	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
 	rec := httptest.NewRecorder()
-	handlers.CreatePoster(deps)(rec, req)
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, false))
 	require.Equal(t, http.StatusAccepted, rec.Code)
 
 	require.Never(t, func() bool { return gen.callCount() >= 1 }, 300*time.Millisecond, 10*time.Millisecond,
 		"force:false must not reclaim a ready job")
 
-	id := poster.JobID(performer, venue, date)
-	job, err := q.GetPosterJob(context.Background(), id)
+	job, err := getPosterJob(t, q, uid, performer, venue, date)
 	require.NoError(t, err)
 	require.Equal(t, "ready", job.Status)
 }
@@ -483,14 +617,13 @@ func TestCreatePoster_ForceDoesNotReclaimFreshPendingJob(t *testing.T) {
 	gen := &stubGenerator{release: make(chan struct{})}
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	performer, venue, date := posterFixture(t)
 	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
 
 	post := func(force bool) int {
-		body, _ := json.Marshal(map[string]any{
-			"performer": "FreshPendingBand", "venue": "SomeVenue", "date": "2026-09-08", "force": force,
-		})
 		rec := httptest.NewRecorder()
-		handlers.CreatePoster(deps)(rec, httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body))))
+		handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, force))
 		return rec.Code
 	}
 
@@ -518,10 +651,11 @@ func TestCreatePoster_ForceDoesNotReclaimFreshPendingJob(t *testing.T) {
 func TestCreatePoster_ForceReclaimClearsPreviousArtifacts(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
+	uid := posterUser(t, q, "a")
 	performer, venue, date := posterFixture(t)
-	id := seedReadyPosterJob(t, q, performer, venue, date)
+	seedReadyPosterJob(t, q, uid, performer, venue, date)
 
-	before, err := q.GetPosterJob(context.Background(), id)
+	before, err := getPosterJob(t, q, uid, performer, venue, date)
 	require.NoError(t, err)
 	require.Equal(t, "ready", before.Status)
 	require.NotNil(t, before.SvgKey)
@@ -533,13 +667,11 @@ func TestCreatePoster_ForceReclaimClearsPreviousArtifacts(t *testing.T) {
 	t.Cleanup(func() { close(gen.release) })
 	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
 
-	body, _ := json.Marshal(map[string]any{"performer": performer, "venue": venue, "date": date, "force": true})
-	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
 	rec := httptest.NewRecorder()
-	handlers.CreatePoster(deps)(rec, req)
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, true))
 	require.Equal(t, http.StatusAccepted, rec.Code)
 
-	after, err := q.GetPosterJob(context.Background(), id)
+	after, err := getPosterJob(t, q, uid, performer, venue, date)
 	require.NoError(t, err)
 	require.Equal(t, "pending", after.Status)
 	require.Nil(t, after.SvgKey)
@@ -553,23 +685,21 @@ func TestCreatePoster_ForceReclaimClearsPreviousArtifacts(t *testing.T) {
 func TestCreatePoster_GeneratorErrorMarksJobFailedWithGenericReason(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
+	uid := posterUser(t, q, "a")
 	gen := &stubGenerator{err: errors.New("upstream 500: something very specific and internal that must not leak")}
 	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
 
 	performer, venue, date := posterFixture(t)
-	body, _ := json.Marshal(map[string]string{"performer": performer, "venue": venue, "date": date})
-	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
 	rec := httptest.NewRecorder()
-	handlers.CreatePoster(deps)(rec, req)
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, false))
 	require.Equal(t, http.StatusAccepted, rec.Code)
 
-	id := poster.JobID(performer, venue, date)
 	require.Eventually(t, func() bool {
-		job, err := q.GetPosterJob(context.Background(), id)
+		job, err := getPosterJob(t, q, uid, performer, venue, date)
 		return err == nil && job.Status == "failed"
 	}, 2*time.Second, 20*time.Millisecond, "job never reached failed status")
 
-	job, err := q.GetPosterJob(context.Background(), id)
+	job, err := getPosterJob(t, q, uid, performer, venue, date)
 	require.NoError(t, err)
 	require.NotNil(t, job.FailureReason)
 	require.Equal(t, "poster service unavailable", *job.FailureReason)

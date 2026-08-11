@@ -92,6 +92,7 @@ type MatchConfig struct {
 
 type PosterJob struct {
 	ID            string             `json:"id"`
+	UserID        pgtype.UUID        `json:"user_id"`
 	Performer     string             `json:"performer"`
 	Venue         string             `json:"venue"`
 	Date          string             `json:"date"`
