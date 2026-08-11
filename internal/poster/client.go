@@ -139,7 +139,26 @@ func truncate(s string) string {
 
 // JobID is the primary key of a poster job: a digest of the natural key, so a
 // POST and a later GET agree without the client carrying an id.
+//
+// Each field is hashed on its own before the three digests are concatenated
+// and hashed again. That makes the encoding unambiguous by construction: a
+// fixed-length (32-byte) block can't let bytes from one field bleed into a
+// neighboring field the way a separator byte can if that byte turns up
+// inside the input. The previous version joined fields with "\x00", but a
+// NUL is a legal byte inside a JSON string, so it could be smuggled in
+// through the request body and shift where one field ends and the next
+// begins — collapsing two distinct (performer, venue, date) triples onto one
+// job id.
 func JobID(performer, venue, date string) string {
-	sum := sha256.Sum256([]byte(normalize(performer) + "\x00" + normalize(venue) + "\x00" + normalize(date)))
+	p := sha256.Sum256([]byte(normalize(performer)))
+	v := sha256.Sum256([]byte(normalize(venue)))
+	d := sha256.Sum256([]byte(normalize(date)))
+
+	joined := make([]byte, 0, len(p)+len(v)+len(d))
+	joined = append(joined, p[:]...)
+	joined = append(joined, v[:]...)
+	joined = append(joined, d[:]...)
+
+	sum := sha256.Sum256(joined)
 	return hex.EncodeToString(sum[:])
 }
