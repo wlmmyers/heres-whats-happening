@@ -14,7 +14,16 @@
 
 - **Commit each task.** End every commit message with `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`. A pre-commit hook runs Go and web checks (~60s) — let it finish, never `--no-verify`.
 - Go commands run from the repo root; Lambda commands from `lambda/mastra-handler`.
-- Every task must end green: `go build ./... && go vet ./... && go test ./...` and, for Lambda tasks, `pnpm test && pnpm typecheck`.
+- **Tests must be green at the end of every task, without exception.**
+- Typecheck/build is green at the end of every task EXCEPT two, where a
+  deliberate, single, named breakage is carried to the next task rather than
+  papered over with a temporary shim:
+  - **Task 1** leaves one `pnpm typecheck` error in `poster.ts` (`PosterSink.put`
+    still requires an `svg` arg); Task 2 clears it.
+  - **Task 3** leaves `go build` errors in `posters.go` and `client.go` (they
+    still reference the dropped `SvgKey`); Task 4 clears them.
+  Each task states its expected error exactly. An error anywhere else is a real
+  problem — investigate rather than commit.
 - Lambda relative imports use the `.js` extension even though files are `.ts`.
 - **These exact limits, identical in all three layers:** `performer` **200**, `venue` **200**, `date` **100**, request body **8 KB**. A mismatch turns a clean 400 into a silently failed job.
 - Bounds are measured on the **trimmed** value.
@@ -127,8 +136,13 @@ Then delete `authoredSvg: rawSvg,` from **every** return path in this file — t
 
 - [ ] **Step 6: Run tests**
 
-Run: `pnpm test && pnpm typecheck`
-Expected: all pass, typecheck exit 0. Commit.
+Run: `pnpm test`
+Expected: fully green.
+
+Run: `pnpm typecheck`
+Expected: FAILS with EXACTLY ONE error — `src/poster.ts: Property 'svg' does not exist`. This is deliberate: `PosterSink.put` still takes a mandatory `svg: ArtifactRef`, and Task 2 is what removes that parameter. Adding a temporary optional-`svg` shim here would be code written only to delete one task later. An error in ANY OTHER file is a real problem — investigate rather than commit.
+
+Say so in the commit message, naming the expected error, so a reviewer reading this commit alone does not think it was left broken by accident. Commit.
 
 ---
 
