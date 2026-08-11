@@ -64,6 +64,28 @@ func (stubPresigner) PresignGet(_ context.Context, key string) (string, error) {
 	return fmt.Sprintf("https://example-bucket.s3.amazonaws.com/%s?sig=%d", key, n), nil
 }
 
+// posterFixture returns a (performer, venue, date) triple unique to the
+// calling test.
+//
+// Every test in this file must use it rather than a hand-picked triple.
+// poster.JobID is a digest of the natural key, so two tests sharing a triple
+// share a poster_jobs row — and the tests here deliberately leave background
+// work in flight: TestCreatePosterGenerationSurvivesRequestCancellation
+// returns the instant it has read sawCtxOK, with its startGeneration goroutine
+// still running. That goroutine then writes MarkPosterJobFailed onto whatever
+// row now holds that id, i.e. the NEXT test's. A failed row is legitimately
+// re-claimable, so that test's second POST starts a real second generation and
+// trips its require.Never — a false failure in a test that is doing nothing
+// wrong.
+//
+// The values are deliberately free of spaces and of anything else needing
+// percent-encoding: the GET tests paste them straight into a query string.
+func posterFixture(t *testing.T) (performer, venue, date string) {
+	t.Helper()
+	name := strings.ReplaceAll(t.Name(), "/", "-")
+	return name + "-performer", name + "-venue", "2026-08-20"
+}
+
 // newPosterHandlerForTest wires CreatePoster against a real, truncated test
 // database (via internal/testdb, matching how the rest of this package's
 // handler tests obtain a *store.Queries) and the given stub generator.
@@ -84,10 +106,12 @@ func newPosterHandlerForTest(t *testing.T, gen poster.Generator) http.HandlerFun
 func TestCreatePosterGenerationSurvivesRequestCancellation(t *testing.T) {
 	gen := &stubGenerator{release: make(chan struct{}), sawCtxOK: make(chan bool, 1)}
 	h := newPosterHandlerForTest(t, gen)
+	performer, venue, date := posterFixture(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	body, _ := json.Marshal(map[string]string{"performer": performer, "venue": venue, "date": date})
 	req := httptest.NewRequest(http.MethodPost, "/posters",
-		strings.NewReader(`{"performer":"La Luz","venue":"Neumos","date":"2026-08-20"}`)).WithContext(ctx)
+		strings.NewReader(string(body))).WithContext(ctx)
 	rec := httptest.NewRecorder()
 
 	h.ServeHTTP(rec, req)
@@ -111,11 +135,13 @@ func TestCreatePosterGenerationSurvivesRequestCancellation(t *testing.T) {
 func TestCreatePosterDoesNotStartASecondGenerationForAPendingJob(t *testing.T) {
 	gen := &stubGenerator{release: make(chan struct{})}
 	h := newPosterHandlerForTest(t, gen)
+	performer, venue, date := posterFixture(t)
+	body, _ := json.Marshal(map[string]string{"performer": performer, "venue": venue, "date": date})
 
 	post := func() int {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/posters",
-			strings.NewReader(`{"performer":"La Luz","venue":"Neumos","date":"2026-08-20"}`)))
+			strings.NewReader(string(body))))
 		return rec.Code
 	}
 
@@ -174,7 +200,7 @@ func getPosterURLs(t *testing.T, status string) string {
 
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
-	performer, venue, date := "LaLuz", "Neumos", "2026-08-20"
+	performer, venue, date := posterFixture(t)
 	seedReadyPosterJob(t, q, performer, venue, date)
 
 	deps := handlers.PosterDeps{Queries: q, Presigner: stubPresigner{}}
@@ -214,7 +240,9 @@ func TestGetPoster_UnknownJobReturns404(t *testing.T) {
 	q := store.New(pool)
 	deps := handlers.PosterDeps{Queries: q, Presigner: stubPresigner{}}
 
-	req := httptest.NewRequest(http.MethodGet, "/posters?performer=Nobody&venue=Nowhere&date=2026-01-01", nil)
+	performer, venue, date := posterFixture(t)
+	req := httptest.NewRequest(http.MethodGet,
+		"/posters?performer="+performer+"&venue="+venue+"&date="+date, nil)
 	rec := httptest.NewRecorder()
 	handlers.GetPoster(deps)(rec, req)
 
@@ -228,7 +256,7 @@ func TestGetPoster_PendingReturns202(t *testing.T) {
 	q := store.New(pool)
 	ctx := context.Background()
 
-	performer, venue, date := "PendingBand", "SomeVenue", "2026-09-01"
+	performer, venue, date := posterFixture(t)
 	id := poster.JobID(performer, venue, date)
 	_, err := q.ClaimPosterJob(ctx, store.ClaimPosterJobParams{
 		ID: id, Performer: performer, Venue: venue, Date: date,
@@ -252,7 +280,7 @@ func TestGetPoster_FailedReturns200WithStageAndReason(t *testing.T) {
 	q := store.New(pool)
 	ctx := context.Background()
 
-	performer, venue, date := "FailedBand", "SomeVenue", "2026-09-02"
+	performer, venue, date := posterFixture(t)
 	id := poster.JobID(performer, venue, date)
 	_, err := q.ClaimPosterJob(ctx, store.ClaimPosterJobParams{
 		ID: id, Performer: performer, Venue: venue, Date: date,
@@ -282,7 +310,7 @@ func TestGetPoster_ReadyReturnsUrlsArtistAndCredit(t *testing.T) {
 	q := store.New(pool)
 	ctx := context.Background()
 
-	performer, venue, date := "ReadyBand", "SomeVenue", "2026-09-03"
+	performer, venue, date := posterFixture(t)
 	id := poster.JobID(performer, venue, date)
 	_, err := q.ClaimPosterJob(ctx, store.ClaimPosterJobParams{
 		ID: id, Performer: performer, Venue: venue, Date: date,
@@ -327,7 +355,7 @@ func TestCreatePoster_ControlledFailureMarksJobFailed(t *testing.T) {
 	gen := &stubGenerator{result: poster.Result{FailureStage: "musicbrainz", FailureReason: "no match found"}}
 	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
 
-	performer, venue, date := "NoMatchBand", "SomeVenue", "2026-09-04"
+	performer, venue, date := posterFixture(t)
 	body, _ := json.Marshal(map[string]string{"performer": performer, "venue": venue, "date": date})
 	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
 	rec := httptest.NewRecorder()
@@ -354,7 +382,7 @@ func TestCreatePoster_ControlledFailureMarksJobFailed(t *testing.T) {
 func TestCreatePoster_ForceReclaimsReadyJobAndCallsGenerator(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
-	performer, venue, date := "ForceBand", "SomeVenue", "2026-09-06"
+	performer, venue, date := posterFixture(t)
 	seedReadyPosterJob(t, q, performer, venue, date)
 
 	gen := &stubGenerator{}
@@ -375,7 +403,7 @@ func TestCreatePoster_ForceReclaimsReadyJobAndCallsGenerator(t *testing.T) {
 func TestCreatePoster_WithoutForceDoesNotReclaimReadyJob(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
-	performer, venue, date := "NoForceBand", "SomeVenue", "2026-09-07"
+	performer, venue, date := posterFixture(t)
 	seedReadyPosterJob(t, q, performer, venue, date)
 
 	gen := &stubGenerator{}
@@ -439,7 +467,7 @@ func TestCreatePoster_ForceDoesNotReclaimFreshPendingJob(t *testing.T) {
 func TestCreatePoster_ForceReclaimClearsPreviousArtifacts(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
-	performer, venue, date := "ClearBand", "SomeVenue", "2026-09-09"
+	performer, venue, date := posterFixture(t)
 	id := seedReadyPosterJob(t, q, performer, venue, date)
 
 	before, err := q.GetPosterJob(context.Background(), id)
@@ -477,7 +505,7 @@ func TestCreatePoster_GeneratorErrorMarksJobFailedWithGenericReason(t *testing.T
 	gen := &stubGenerator{err: errors.New("upstream 500: something very specific and internal that must not leak")}
 	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
 
-	performer, venue, date := "ErrsBand", "SomeVenue", "2026-09-05"
+	performer, venue, date := posterFixture(t)
 	body, _ := json.Marshal(map[string]string{"performer": performer, "venue": venue, "date": date})
 	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
 	rec := httptest.NewRecorder()
