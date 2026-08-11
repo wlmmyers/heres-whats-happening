@@ -54,6 +54,7 @@ func CreatePoster(d PosterDeps) http.HandlerFunc {
 		_, err := d.Queries.ClaimPosterJob(r.Context(), store.ClaimPosterJobParams{
 			ID: id, Performer: in.Performer, Venue: in.Venue, Date: in.Date,
 			StaleBefore: pgtype.Timestamptz{Time: time.Now().Add(-stalePendingAfter), Valid: true},
+			Force:       in.Force,
 		})
 		switch {
 		case err == nil:

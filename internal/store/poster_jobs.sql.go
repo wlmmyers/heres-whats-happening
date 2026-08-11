@@ -25,6 +25,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at     = NOW()
 WHERE poster_jobs.status = 'failed'
    OR (poster_jobs.status = 'pending' AND poster_jobs.updated_at < $5)
+   OR (poster_jobs.status = 'ready'   AND $6::boolean)
 RETURNING id, performer, venue, date, status, svg_key, png_key, artist, credit, failure_stage, failure_reason, created_at, updated_at
 `
 
@@ -34,18 +35,27 @@ type ClaimPosterJobParams struct {
 	Venue       string             `json:"venue"`
 	Date        string             `json:"date"`
 	StaleBefore pgtype.Timestamptz `json:"stale_before"`
+	Force       bool               `json:"force"`
 }
 
 // Claim a job for generation. Returns a row ONLY when this caller won the
 // claim; sqlc surfaces "not claimed" as pgx.ErrNoRows. A job is claimable when
-// it does not exist, previously failed, or is a pending row stranded by a task
+// it does not exist, previously failed, is a pending row stranded by a task
 // restart (nothing else would ever clear it, since the goroutine died with the
-// task).
+// task), or is a ready row and the caller passed force=true (the "regenerate
+// a poster I dislike" escape hatch — see
+// docs/superpowers/specs/2026-08-09-file-backed-poster-artifacts-design.md).
 //
-// The cutoff uses sqlc.arg(stale_before) rather than a positional $5: this
-// statement both SETS updated_at and COMPARES it, and sqlc names positional
-// params after the column they touch, so a bare $5 would collide with the
-// assignment and produce a confusing generated field name.
+// The force clause is deliberately scoped to status = 'ready' only: a fresh
+// pending row must stay un-reclaimable even under force, or two generations
+// would run concurrently for the same job and the second would stomp the
+// first's result.
+//
+// The cutoff and the force flag use sqlc.arg(stale_before)/sqlc.arg(force)
+// rather than positional $5/$6: this statement both SETS columns and COMPARES
+// against new values, and sqlc names positional params after the column they
+// touch, so a bare $5/$6 would collide with an assignment and produce a
+// confusing generated field name.
 func (q *Queries) ClaimPosterJob(ctx context.Context, arg ClaimPosterJobParams) (PosterJob, error) {
 	row := q.db.QueryRow(ctx, claimPosterJob,
 		arg.ID,
@@ -53,6 +63,7 @@ func (q *Queries) ClaimPosterJob(ctx context.Context, arg ClaimPosterJobParams) 
 		arg.Venue,
 		arg.Date,
 		arg.StaleBefore,
+		arg.Force,
 	)
 	var i PosterJob
 	err := row.Scan(

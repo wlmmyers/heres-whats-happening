@@ -348,6 +348,129 @@ func TestCreatePoster_ControlledFailureMarksJobFailed(t *testing.T) {
 	require.Equal(t, "no match found", *job.FailureReason)
 }
 
+// force is the escape hatch for regenerating a poster the user dislikes —
+// i.e. one that is already "ready". See
+// docs/superpowers/specs/2026-08-09-file-backed-poster-artifacts-design.md.
+func TestCreatePoster_ForceReclaimsReadyJobAndCallsGenerator(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	performer, venue, date := "ForceBand", "SomeVenue", "2026-09-06"
+	seedReadyPosterJob(t, q, performer, venue, date)
+
+	gen := &stubGenerator{}
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	body, _ := json.Marshal(map[string]any{"performer": performer, "venue": venue, "date": date, "force": true})
+	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	require.Eventually(t, func() bool { return gen.callCount() >= 1 }, 2*time.Second, 10*time.Millisecond,
+		"force:true on a ready job must reclaim it and call the generator")
+}
+
+// The current (pinned) behavior: without force, a ready job is never
+// reclaimed, no matter how many POSTs arrive for it.
+func TestCreatePoster_WithoutForceDoesNotReclaimReadyJob(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	performer, venue, date := "NoForceBand", "SomeVenue", "2026-09-07"
+	seedReadyPosterJob(t, q, performer, venue, date)
+
+	gen := &stubGenerator{}
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	body, _ := json.Marshal(map[string]any{"performer": performer, "venue": venue, "date": date, "force": false})
+	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	require.Never(t, func() bool { return gen.callCount() >= 1 }, 300*time.Millisecond, 10*time.Millisecond,
+		"force:false must not reclaim a ready job")
+
+	id := poster.JobID(performer, venue, date)
+	job, err := q.GetPosterJob(context.Background(), id)
+	require.NoError(t, err)
+	require.Equal(t, "ready", job.Status)
+}
+
+// force must not let a caller jump a job that is already being generated —
+// the force clause is scoped to status = 'ready' for exactly this reason.
+// Two generations racing for the same poster would let the second overwrite
+// the first.
+func TestCreatePoster_ForceDoesNotReclaimFreshPendingJob(t *testing.T) {
+	gen := &stubGenerator{release: make(chan struct{})}
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	post := func(force bool) int {
+		body, _ := json.Marshal(map[string]any{
+			"performer": "FreshPendingBand", "venue": "SomeVenue", "date": "2026-09-08", "force": force,
+		})
+		rec := httptest.NewRecorder()
+		handlers.CreatePoster(deps)(rec, httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body))))
+		return rec.Code
+	}
+
+	require.Equal(t, http.StatusAccepted, post(false)) // starts the one legitimate generation
+	require.Equal(t, http.StatusAccepted, post(true))  // force must NOT reclaim a fresh pending row
+	close(gen.release)
+
+	// Same fair-scheduling-window pattern as
+	// TestCreatePosterDoesNotStartASecondGenerationForAPendingJob: wait for the
+	// legitimate call to land, then hold the assertion open so a bogus second
+	// call — one that force wrongly let through — has a chance to appear.
+	require.Eventually(t, func() bool { return gen.callCount() >= 1 }, 2*time.Second, 5*time.Millisecond,
+		"generation never ran")
+	require.Never(t, func() bool { return gen.callCount() > 1 }, 300*time.Millisecond, 10*time.Millisecond,
+		"force:true reclaimed a fresh pending job — two generations are now racing for the same poster")
+}
+
+// A forced reclaim must clear the previous artifacts at claim time, not just
+// at completion — otherwise a failed regeneration leaves the old svg/png
+// keys and artist/credit in place, and a client polling GetPoster mid-flight
+// would see a "ready" job whose links still work but whose content is about
+// to be replaced or never was regenerated at all. Checked immediately after
+// the claim, before the (deliberately blocked) generator runs, since the
+// clearing happens in the same UPDATE that flips the row back to pending.
+func TestCreatePoster_ForceReclaimClearsPreviousArtifacts(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	performer, venue, date := "ClearBand", "SomeVenue", "2026-09-09"
+	id := seedReadyPosterJob(t, q, performer, venue, date)
+
+	before, err := q.GetPosterJob(context.Background(), id)
+	require.NoError(t, err)
+	require.Equal(t, "ready", before.Status)
+	require.NotNil(t, before.SvgKey)
+	require.NotNil(t, before.PngKey)
+	require.NotEmpty(t, before.Artist)
+	require.NotEmpty(t, before.Credit)
+
+	gen := &stubGenerator{release: make(chan struct{})} // block so the row can be inspected mid-flight
+	t.Cleanup(func() { close(gen.release) })
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	body, _ := json.Marshal(map[string]any{"performer": performer, "venue": venue, "date": date, "force": true})
+	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(string(body)))
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	after, err := q.GetPosterJob(context.Background(), id)
+	require.NoError(t, err)
+	require.Equal(t, "pending", after.Status)
+	require.Nil(t, after.SvgKey)
+	require.Nil(t, after.PngKey)
+	require.Empty(t, after.Artist)
+	require.Empty(t, after.Credit)
+	require.Nil(t, after.FailureStage)
+	require.Nil(t, after.FailureReason)
+}
+
 func TestCreatePoster_GeneratorErrorMarksJobFailedWithGenericReason(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
