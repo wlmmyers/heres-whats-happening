@@ -15,15 +15,15 @@
 - **Commit each task.** End every commit message with `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`. A pre-commit hook runs Go and web checks (~60s) — let it finish, never `--no-verify`.
 - Go commands run from the repo root; Lambda commands from `lambda/mastra-handler`.
 - **Tests must be green at the end of every task, without exception.**
-- Typecheck/build is green at the end of every task EXCEPT two, where a
-  deliberate, single, named breakage is carried to the next task rather than
-  papered over with a temporary shim:
-  - **Task 1** leaves one `pnpm typecheck` error in `poster.ts` (`PosterSink.put`
-    still requires an `svg` arg); Task 2 clears it.
-  - **Task 3** leaves `go build` errors in `posters.go` and `client.go` (they
-    still reference the dropped `SvgKey`); Task 4 clears them.
-  Each task states its expected error exactly. An error anywhere else is a real
-  problem — investigate rather than commit.
+- **The Go tree must be fully green at the end of every Go task.** The
+  pre-commit hook runs `go vet` and `go test`, so a red Go build is
+  uncommittable by construction, and `--no-verify` is never acceptable. This is
+  why Task 3 removes `svg_key` from the schema AND its Go consumers together:
+  the hook makes them one atomic change.
+- Task 1 is the ONE exception, and only because `pnpm typecheck` is not part of
+  the hook. It leaves exactly one error — `poster.ts`, `PosterSink.put` still
+  requires an `svg` arg — which Task 2 clears. An error anywhere else is a real
+  problem; investigate rather than commit.
 - Lambda relative imports use the `.js` extension even though files are `.ts`.
 - **These exact limits, identical in all three layers:** `performer` **200**, `venue` **200**, `date` **100**, request body **8 KB**. A mismatch turns a clean 400 into a silently failed job.
 - Bounds are measured on the **trimmed** value.
