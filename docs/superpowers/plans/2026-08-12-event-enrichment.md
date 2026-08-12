@@ -60,7 +60,7 @@
 | File | Responsibility |
 | --- | --- |
 | `testdata/artist-key-contract/cases.json` | Read by a Go test AND a vitest test |
-| `testdata/event-message-contract/enriched.json` | Decoded by `contract_test.go` |
+| `testdata/enriched-message-contract/full.json` | Decoded by the Go enriched contract test AND parsed by the Zod schema. A SIBLING of `event-message-contract/`, whose test decodes into a plain `Message` and would reject it |
 | `lambda/mastra-handler/src/__fixtures__/setlistfm-artist-setlists.json` | Recorded real response |
 
 ---
@@ -391,7 +391,7 @@ COALESCEs so a failed re-enrichment cannot blank a good link."
 **Files:**
 - Create: `internal/events/enriched.go`
 - Create: `internal/events/enriched_test.go`
-- Create: `testdata/event-message-contract/enriched.json`
+- Create: `testdata/enriched-message-contract/full.json` (a SIBLING directory — see Step 5)
 
 **Interfaces:**
 - Consumes: `events.Message` (existing, `internal/events/message.go:10`).
@@ -1047,9 +1047,14 @@ func (h *EventHandler) applyEnrichment(ctx context.Context, e *events.Enrichment
 	}
 
 	if img := e.Image; img != nil && validStatus(img.Status) {
-		credit, err := jsonOrNil(img.Credit)
-		if err != nil {
-			return pgtype.UUID{}, fmt.Errorf("marshal image credit: %w", err)
+		// Marshal only when present: a nil *ImageCredit must store SQL NULL, not
+		// the four bytes "null".
+		var credit []byte
+		if img.Credit != nil {
+			credit, err = json.Marshal(img.Credit)
+			if err != nil {
+				return pgtype.UUID{}, fmt.Errorf("marshal image credit: %w", err)
+			}
 		}
 		if err := h.q.UpsertArtistImage(ctx, store.UpsertArtistImageParams{
 			ArtistID: artistID,
@@ -1141,34 +1146,13 @@ func optInt32(v int) *int32 {
 	n := int32(v)
 	return &n
 }
-
-// jsonOrNil marshals a pointer to JSONB bytes, or nil for a nil pointer so the
-// column stores SQL NULL rather than the four bytes "null".
-func jsonOrNil(v any) ([]byte, error) {
-	if v == nil {
-		return nil, nil
-	}
-	return json.Marshal(v)
-}
 ```
 
-Note `jsonOrNil` takes `any` but is called with a typed nil pointer
-(`*events.ImageCredit`), which is **not** equal to a nil `any`. Guard at the
-call site instead — the `img.Credit != nil` check is implicit in the code above
-because `img.Credit` is only marshalled when the image section exists. To be
-safe and explicit, change the image block's credit line to:
-
-```go
-		var credit []byte
-		if img.Credit != nil {
-			credit, err = json.Marshal(img.Credit)
-			if err != nil {
-				return pgtype.UUID{}, fmt.Errorf("marshal image credit: %w", err)
-			}
-		}
-```
-
-and delete `jsonOrNil` entirely.
+There is deliberately no generic `jsonOrNil(v any)` helper here. A typed nil
+pointer (`(*events.ImageCredit)(nil)`) wrapped in an `any` is **not** `nil`, so
+such a helper would marshal it to the four bytes `"null"` instead of storing SQL
+NULL — a bug that only shows up as a JSONB column holding a JSON null. Each
+call site does its own typed nil check, as the image block above does.
 
 - [ ] **Step 4: Rewire Handle to decode EnrichedMessage**
 
@@ -1498,8 +1482,9 @@ Add an unexported carrier field to `calendarEvent` so the loop can correlate
 without widening the JSON:
 
 ```go
-	// not serialized — carries the row's headline_artist_id to attachArtists
-	artistID pgtype.UUID `json:"-"`
+	// Unexported, so encoding/json ignores it entirely — no tag needed. Carries
+	// the row's headline_artist_id from the page query through to attachArtists.
+	artistID pgtype.UUID
 ```
 
 Add `"log"` to the file's imports.
