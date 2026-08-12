@@ -3,6 +3,11 @@
 **Date:** 2026-08-10
 **Status:** Approved (design)
 
+> **Superseded in part (2026-08-11):** the SVG artifact described below is no
+> longer produced, stored, or served — see
+> `docs/superpowers/specs/2026-08-11-drop-svg-artifact-design.md`. Everything
+> about the PNG, the provenance sidecar, and presigning still applies.
+
 ## Problem
 
 `POST /api/poster` is served publicly by CloudFront with no authentication, no

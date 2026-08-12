@@ -24,8 +24,8 @@ if (!out.ok || !out.render) {
 
 // The workflow writes into a run-scoped temp dir and returns a reference, so copy
 // the finished artifact somewhere durable. The run dir is deliberately left in
-// place — its intermediates (band-N.jpg, poster-N.svg) are the point of running
-// this locally — and artifactStore's one-hour sweep reclaims it.
+// place — its intermediates (band-N.jpg) are the point of running this locally
+// — and artifactStore's one-hour sweep reclaims it.
 await copyFile(out.render.png.path, "poster.png");
 
 console.log("wrote poster.png");
