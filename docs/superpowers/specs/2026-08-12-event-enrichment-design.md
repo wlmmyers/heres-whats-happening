@@ -275,13 +275,27 @@ types and the Zod schemas must land in the same change.
 }
 ```
 
-Everything is `omitempty`. The three calendar queries gain a
-`LEFT JOIN artists` plus left joins to the three enrichment tables — left, so an
-unenriched event still returns.
+Everything is `omitempty`. Rather than widen the three calendar queries with
+four left joins each, the page queries gain a single `e.headline_artist_id`
+column and the handler makes one batched follow-up call — the pattern
+`ListEventPerformersBatch` and `ListEventGenresBatch` already establish:
 
-**One free win:** `image_url` becomes `COALESCE(events.image_url, artist_images.url)`
-at read time. The existing frontend renders band photos with no change at all,
-and the source-provided image always wins, so nothing regresses.
+```sql
+-- name: GetArtistEnrichmentBatch :many
+SELECT … FROM artists a
+  LEFT JOIN artist_images         i ON i.artist_id = a.id
+  LEFT JOIN artist_bios           b ON b.artist_id = a.id
+  LEFT JOIN artist_tour_snapshots t ON t.artist_id = a.id
+WHERE a.id = ANY($1::uuid[]);
+```
+
+Left joins throughout, so a resolved artist with no successful enrichment still
+returns a row.
+
+**One free win:** `image_url` falls back to the artist image when the event has
+none — applied in the handler after the batch call, not in SQL. The existing
+frontend renders band photos with no change at all, and the source-provided
+image always wins, so nothing regresses.
 
 The image credit must be surfaced even though the FE does not render it yet —
 Commons images are predominantly CC-BY/CC-BY-SA and attribution is a licence
@@ -493,10 +507,10 @@ skip is a property of the *event*, not the artist. Recording it would make the
 first well-illustrated event for a band suppress the image workflow for every
 later event of theirs that has no image at all — for up to 90 days.
 
-Unlike the poster path, this workflow does not need the bytes to survive: it
-writes to the run's artifact directory to judge them, records the Commons
-thumbnail URL and credit, and the caller cleans the directory up. Nothing is
-uploaded to S3.
+Unlike the poster path, this workflow does not need the bytes to survive. It
+holds them in memory just long enough for the vision call, then records only the
+Commons thumbnail URL and its credit. Nothing is written to disk or uploaded to
+S3, so there is no run directory and no cleanup to get wrong.
 
 | outcome | status |
 | --- | --- |
@@ -655,8 +669,14 @@ When `Enrichment` is present the handler additionally:
    which the message carries a section.
 3. Sets `events.headline_artist_id`, guarded by the `COALESCE` above.
 
-All of this happens in the same transaction as the event upsert, so an event and
-its artist link never diverge.
+**Order matters, a transaction does not.** The artist upsert must precede the
+event upsert, because `events.headline_artist_id` has a foreign key to
+`artists.id`. Beyond that, every write here is an idempotent upsert and a
+handler error leaves the message on the queue for redelivery, so a partial
+failure self-heals on retry. The worst case is an orphan `artists` row with no
+event pointing at it, which the next delivery repairs. Wrapping this in a
+transaction would mean threading a `*pgxpool.Pool` through `NewEventHandler`
+purely to buy something retry already provides.
 
 `cmd/app/main.go:133` reads `cfg.EnrichedEventsQueueURL` instead of
 `cfg.EventsQueueURL`, via a new `ENRICHED_EVENTS_QUEUE_URL` in `config.go`.
@@ -709,7 +729,7 @@ will invoke the old handler with an SQS event and fall through its unguarded
 | Layer | Approach |
 | --- | --- |
 | `artistKey()` ↔ `NormalizeString` | shared `testdata/artist-key-contract/cases.json`, asserted by a Go test and a vitest test |
-| Wire contract | extend `testdata/event-message-contract/` with an enriched fixture; `contract_test.go` decodes with `DisallowUnknownFields` |
+| Wire contract | a **sibling** `testdata/enriched-message-contract/` — the existing directory is decoded into a plain `Message` with `DisallowUnknownFields`, so an enriched fixture there would fail. The new fixture is decoded by a Go test and parsed by the Zod schema, so a divergence fails on both sides |
 | setlist.fm parser | recorded real response as a fixture; unit tests via `stub-fetch.ts` |
 | setlist.fm live | opt-in in `live-apis.test.ts` under `LIVE_API_TESTS=1` |
 | Enrichment cache | `StubEnrichmentCache`; hit/miss/stale/`AccessDenied`-throws cases |
