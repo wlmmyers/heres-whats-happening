@@ -1,0 +1,9 @@
+[
+  { "in": "AC/DC",         "out": "ac/dc",       "why": "punctuation is PRESERVED — the key difference from hash.ts normalize()" },
+  { "in": "Sunn O)))",     "out": "sunn o)))",   "why": "parentheses survive; the S3 key is hashed so this never reaches a path" },
+  { "in": "Sigur Rós",     "out": "sigur ros",   "why": "combining acute is stripped" },
+  { "in": "Björk",         "out": "bjork",       "why": "combining diaeresis is stripped" },
+  { "in": "MØ",            "out": "mø",          "why": "U+00F8 is a distinct letter, NOT a combining mark — it must survive" },
+  { "in": "  The Beatles ", "out": "the beatles", "why": "trimmed, not collapsed internally" },
+  { "in": "Godspeed You! Black Emperor", "out": "godspeed you! black emperor", "why": "exclamation and spacing preserved" }
+]
