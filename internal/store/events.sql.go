@@ -264,9 +264,9 @@ func (q *Queries) UpdateEventEmbedding(ctx context.Context, arg UpdateEventEmbed
 const upsertEvent = `-- name: UpsertEvent :one
 INSERT INTO events (
     source_id, source_event_id, title, description, starts_at, ends_at,
-    venue_id, image_url, url, time_tbd, last_seen_at
+    venue_id, image_url, url, time_tbd, headline_artist_id, last_seen_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
 ON CONFLICT (source_id, source_event_id)
 DO UPDATE SET
     title         = EXCLUDED.title,
@@ -277,6 +277,9 @@ DO UPDATE SET
     image_url     = EXCLUDED.image_url,
     url           = EXCLUDED.url,
     time_tbd      = EXCLUDED.time_tbd,
+    -- COALESCE, not EXCLUDED: a re-scrape whose enrichment happened to fail
+    -- sends a NULL here, and assigning it would blank a good link.
+    headline_artist_id = COALESCE(EXCLUDED.headline_artist_id, events.headline_artist_id),
     last_seen_at  = NOW(),
     archived_at   = NULL,
     updated_at    = NOW()
@@ -284,16 +287,17 @@ RETURNING id
 `
 
 type UpsertEventParams struct {
-	SourceID      pgtype.UUID        `json:"source_id"`
-	SourceEventID string             `json:"source_event_id"`
-	Title         string             `json:"title"`
-	Description   string             `json:"description"`
-	StartsAt      pgtype.Timestamptz `json:"starts_at"`
-	EndsAt        pgtype.Timestamptz `json:"ends_at"`
-	VenueID       pgtype.UUID        `json:"venue_id"`
-	ImageUrl      *string            `json:"image_url"`
-	Url           *string            `json:"url"`
-	TimeTbd       bool               `json:"time_tbd"`
+	SourceID         pgtype.UUID        `json:"source_id"`
+	SourceEventID    string             `json:"source_event_id"`
+	Title            string             `json:"title"`
+	Description      string             `json:"description"`
+	StartsAt         pgtype.Timestamptz `json:"starts_at"`
+	EndsAt           pgtype.Timestamptz `json:"ends_at"`
+	VenueID          pgtype.UUID        `json:"venue_id"`
+	ImageUrl         *string            `json:"image_url"`
+	Url              *string            `json:"url"`
+	TimeTbd          bool               `json:"time_tbd"`
+	HeadlineArtistID pgtype.UUID        `json:"headline_artist_id"`
 }
 
 func (q *Queries) UpsertEvent(ctx context.Context, arg UpsertEventParams) (pgtype.UUID, error) {
@@ -308,6 +312,7 @@ func (q *Queries) UpsertEvent(ctx context.Context, arg UpsertEventParams) (pgtyp
 		arg.ImageUrl,
 		arg.Url,
 		arg.TimeTbd,
+		arg.HeadlineArtistID,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
