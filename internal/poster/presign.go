@@ -14,17 +14,37 @@ import (
 // Presigned GET lifetime. Matches what the Lambda used to mint.
 const presignTTL = 3600 * time.Second
 
-// keyPrefix is every poster key's required prefix. posterKeyBase in the Lambda
-// emits "posters/v<N>/<performer>/<venue>-<date>.<ext>".
-const keyPrefix = "posters/v"
+// Every poster key's required prefix and extension. posterKeyBase in the Lambda
+// emits "posters/v<N>/u-<userId>/<performer>/<venue>-<date>-<digest>", to which
+// the sink appends ".png".
+const (
+	keyPrefix = "posters/v"
+	keySuffix = ".png"
+)
 
-var ErrKeyOutsidePosterPrefix = errors.New("poster: key outside the posters/v prefix")
+var (
+	ErrKeyOutsidePosterPrefix = errors.New("poster: key outside the posters/v prefix")
+	ErrKeyNotPNG              = errors.New("poster: key is not a .png")
+)
 
 // ValidateKey guards the one place this service signs on another component's
 // say-so. The key arrives in the Lambda's response body; the bucket never does.
+//
+// The extension check matters because PresignGetObject sets no
+// ResponseContentType, so a browser following the URL sees whatever
+// Content-Type the object was stored with. A key ending in .svg or .html would
+// therefore be served as ACTIVE CONTENT from the S3 origin — which is the
+// stored-XSS shape the SVG artifact was removed to close. Nothing writes those
+// objects anymore, so this check is not load-bearing today; it is here so the
+// property holds structurally rather than by the accident of what the current
+// producer happens to emit. Go only ever signs the png: the .json provenance
+// sidecar is read by the Lambda's find(), never by this service.
 func ValidateKey(key string) (string, error) {
 	if !strings.HasPrefix(key, keyPrefix) || strings.Contains(key, "..") {
 		return "", fmt.Errorf("%w: %q", ErrKeyOutsidePosterPrefix, key)
+	}
+	if !strings.HasSuffix(key, keySuffix) {
+		return "", fmt.Errorf("%w: %q", ErrKeyNotPNG, key)
 	}
 	return key, nil
 }

@@ -494,6 +494,32 @@ func TestCreatePoster_BadArtifactKeyMarksJobFailed(t *testing.T) {
 	require.Equal(t, "failed", decodeBody(t, getRec)["status"])
 }
 
+// Same protection, reached through the extension check rather than the prefix.
+// A key that is correctly prefixed but is not a .png would be presigned and
+// served with whatever Content-Type S3 holds for it — active content from the
+// S3 origin, if it were an .svg or .html. The job must fail instead.
+func TestCreatePoster_NonPNGArtifactKeyMarksJobFailed(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	gen := &stubGenerator{result: poster.Result{PngKey: "posters/v2/u-x/a/b.svg"}}
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	performer, venue, date := posterFixture(t)
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, false))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	require.Eventually(t, func() bool {
+		job, err := getPosterJob(t, q, uid, performer, venue, date)
+		return err == nil && job.Status == "failed"
+	}, 2*time.Second, 20*time.Millisecond, "a non-png png_key must fail the job, not mark it ready")
+
+	job, err := getPosterJob(t, q, uid, performer, venue, date)
+	require.NoError(t, err)
+	require.Nil(t, job.PngKey, "a failed job must not carry an artifact key")
+}
+
 // force is the escape hatch for regenerating a poster the user dislikes —
 // i.e. one that is already "ready". See
 // docs/superpowers/specs/2026-08-09-file-backed-poster-artifacts-design.md.
