@@ -1,0 +1,37 @@
+{
+	"source_id": "ticketmaster",
+	"source_event_id": "tm-bbb",
+	"title": "La Luz",
+	"starts_at": "2026-09-02T20:00:00Z",
+	"venue": {"name": "The Chapel"},
+	"enrichment": {
+		"attempted_at": "2026-08-12T04:11:22Z",
+		"artist": {
+			"performer": "La Luz",
+			"display_name": "La Luz",
+			"mbid": "9b5ae4cc-15ae-4f0b-8a4e-8c44e42ba52a",
+			"disambiguation": "US rock band",
+			"status": "ok"
+		},
+		"image": {
+			"status": "ok",
+			"url": "https://upload.wikimedia.org/x.jpg",
+			"width": 640,
+			"height": 427,
+			"file": "La_Luz.jpg",
+			"source": "p18",
+			"credit": {"license_short_name": "CC BY-SA 4.0", "attribution_required": true}
+		},
+		"bio": {
+			"status": "ok",
+			"bio_md": "La Luz formed in Seattle in 2012.",
+			"sources": [{"kind": "wikipedia", "title": "La Luz (band)", "revision_id": 12345}]
+		},
+		"tour": {
+			"status": "ok",
+			"tour_name": "News of the Universe Tour",
+			"songs": [{"name": "Sure As Spring"}, {"name": "Strange World", "encore": 1}],
+			"observed_date": "2026-07-14"
+		}
+	}
+}
