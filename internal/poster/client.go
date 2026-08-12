@@ -24,6 +24,17 @@ const generateTimeout = 310 * time.Second
 // maxUpstreamError bounds how much of an upstream body reaches our logs.
 const maxUpstreamError = 200
 
+// Request field bounds. These MUST match the Lambda's zod schema
+// (MAX_PERFORMER/MAX_VENUE/MAX_DATE in src/poster-schema.ts) and the
+// poster_jobs CHECK constraints. A mismatch means the caller gets a 202 and
+// then a silently failed job instead of a clean 400.
+const (
+	MaxPerformer   = 200
+	MaxVenue       = 200
+	MaxDate        = 100
+	MaxRequestBody = 8 << 10
+)
+
 type Request struct {
 	Performer string `json:"performer"`
 	Venue     string `json:"venue"`

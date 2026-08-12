@@ -778,3 +778,100 @@ func TestCreatePoster_GeneratorErrorMarksJobFailedWithGenericReason(t *testing.T
 	require.Equal(t, "poster service unavailable", *job.FailureReason)
 	require.NotContains(t, *job.FailureReason, "upstream 500")
 }
+
+// Lengths here are hard-coded (not derived from poster.MaxPerformer etc.) on
+// purpose: this test must keep asserting "201 chars is rejected" even if the
+// constant it is meant to guard ever drifts, or it stops being a check on
+// that constant at all.
+func TestCreatePoster_RejectsOverlongFields(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	deps := handlers.PosterDeps{Queries: q, Generator: &stubGenerator{}, Presigner: stubPresigner{}}
+
+	for _, tc := range []struct {
+		name, performer, venue, date string
+	}{
+		{"performer", strings.Repeat("a", 201), "V", "D"},
+		{"venue", "P", strings.Repeat("a", 201), "D"},
+		{"date", "P", "V", strings.Repeat("a", 101)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handlers.CreatePoster(deps)(rec, posterPostRequest(uid, tc.performer, tc.venue, tc.date, false))
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+		})
+	}
+}
+
+func TestCreatePoster_AcceptsFieldsAtTheLimit(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	gen := &stubGenerator{release: make(chan struct{})}
+	t.Cleanup(func() { close(gen.release) })
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	performer := strings.Repeat("a", 200)
+	venue := strings.Repeat("b", 200)
+	date := strings.Repeat("c", 100)
+
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, false))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+}
+
+// The bound is measured on the TRIMMED value, matching what poster.JobID
+// hashes. Untrimmed, this performer is well over the limit; trimmed, it is
+// exactly 200 — so acceptance here proves trimming happens before measuring,
+// not after.
+func TestCreatePoster_AcceptsFieldsWithSurroundingWhitespaceAtTheLimit(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	gen := &stubGenerator{release: make(chan struct{})}
+	t.Cleanup(func() { close(gen.release) })
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	performer := "   " + strings.Repeat("a", 200) + "   "
+
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, "V", "D", false))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+}
+
+// MaxBytesReader must reject before the JSON decoder allocates the whole
+// oversize body.
+func TestCreatePoster_RejectsAnOversizeBody(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	deps := handlers.PosterDeps{Queries: q, Generator: &stubGenerator{}, Presigner: stubPresigner{}}
+
+	huge := `{"performer":"` + strings.Repeat("a", 9000) + `","venue":"V","date":"D"}`
+	req := httptest.NewRequest(http.MethodPost, "/posters", strings.NewReader(huge))
+	req = req.WithContext(middleware.ContextWithUserID(req.Context(), uid))
+
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// Without bounds on the GET path too, a 1MB query string would still reach
+// poster.JobID: GET reads its natural key from the query string, not a
+// size-limited body, so this needs its own check independent of
+// MaxBytesReader.
+func TestGetPoster_RejectsOverlongQueryValues(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	deps := handlers.PosterDeps{Queries: q, Presigner: stubPresigner{}}
+
+	target := "/posters?performer=" + strings.Repeat("a", 201) + "&venue=V&date=D"
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req = req.WithContext(middleware.ContextWithUserID(req.Context(), uid))
+
+	rec := httptest.NewRecorder()
+	handlers.GetPoster(deps)(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}

@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -35,6 +37,29 @@ type posterRequest struct {
 	Force     bool   `json:"force"`
 }
 
+// validateFields trims and bounds the three natural-key fields. Bounds are
+// measured AFTER trimming: poster.JobID hashes the trimmed, lowercased
+// fields, so measuring the raw string could let two inputs that normalize to
+// the same job id disagree on acceptance (e.g. "a" vs "a" + 199 spaces). The
+// trimmed values returned here are what callers must use downstream — for
+// JobID and for the claim/generate calls — not the original request fields.
+func validateFields(performer, venue, date string) (string, string, string, error) {
+	performer = strings.TrimSpace(performer)
+	venue = strings.TrimSpace(venue)
+	date = strings.TrimSpace(date)
+	switch {
+	case performer == "" || venue == "" || date == "":
+		return "", "", "", errors.New("performer, venue and date are required")
+	case len(performer) > poster.MaxPerformer:
+		return "", "", "", fmt.Errorf("performer must be at most %d characters", poster.MaxPerformer)
+	case len(venue) > poster.MaxVenue:
+		return "", "", "", fmt.Errorf("venue must be at most %d characters", poster.MaxVenue)
+	case len(date) > poster.MaxDate:
+		return "", "", "", fmt.Errorf("date must be at most %d characters", poster.MaxDate)
+	}
+	return performer, venue, date, nil
+}
+
 // CreatePoster claims (or joins) an async poster-generation job and returns
 // 202 immediately. The natural key (user, performer, venue, date) is hashed
 // into a job id via poster.JobID, so a later GET without any id supplied by
@@ -55,20 +80,22 @@ func CreatePoster(d PosterDeps) http.HandlerFunc {
 			return
 		}
 
+		r.Body = http.MaxBytesReader(w, r.Body, poster.MaxRequestBody)
 		var in posterRequest
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			httperr.Write(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON")
+			httperr.Write(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON or is too large")
 			return
 		}
-		if in.Performer == "" || in.Venue == "" || in.Date == "" {
-			httperr.Write(w, http.StatusBadRequest, "invalid_body", "performer, venue and date are required")
+		performer, venue, date, err := validateFields(in.Performer, in.Venue, in.Date)
+		if err != nil {
+			httperr.Write(w, http.StatusBadRequest, "invalid_body", err.Error())
 			return
 		}
 
-		id := poster.JobID(uid.String(), in.Performer, in.Venue, in.Date)
-		_, err := d.Queries.ClaimPosterJob(r.Context(), store.ClaimPosterJobParams{
+		id := poster.JobID(uid.String(), performer, venue, date)
+		_, err = d.Queries.ClaimPosterJob(r.Context(), store.ClaimPosterJobParams{
 			ID: id, UserID: pgtype.UUID{Bytes: uid, Valid: true},
-			Performer: in.Performer, Venue: in.Venue, Date: in.Date,
+			Performer: performer, Venue: venue, Date: date,
 			StaleBefore: pgtype.Timestamptz{Time: time.Now().Add(-stalePendingAfter), Valid: true},
 			Force:       in.Force,
 		})
@@ -76,7 +103,7 @@ func CreatePoster(d PosterDeps) http.HandlerFunc {
 		case err == nil:
 			// We won the claim: this request owns the generation.
 			startGeneration(d, id, poster.Request{
-				Performer: in.Performer, Venue: in.Venue, Date: in.Date, Force: in.Force,
+				Performer: performer, Venue: venue, Date: date, Force: in.Force,
 			})
 		case errors.Is(err, pgx.ErrNoRows):
 			// Someone else already has it in flight, or it is already ready.
@@ -156,11 +183,10 @@ func GetPoster(d PosterDeps) http.HandlerFunc {
 			return
 		}
 
-		performer := r.URL.Query().Get("performer")
-		venue := r.URL.Query().Get("venue")
-		date := r.URL.Query().Get("date")
-		if performer == "" || venue == "" || date == "" {
-			httperr.Write(w, http.StatusBadRequest, "invalid_query", "performer, venue and date are required")
+		performer, venue, date, err := validateFields(
+			r.URL.Query().Get("performer"), r.URL.Query().Get("venue"), r.URL.Query().Get("date"))
+		if err != nil {
+			httperr.Write(w, http.StatusBadRequest, "invalid_body", err.Error())
 			return
 		}
 
