@@ -30,7 +30,6 @@ INSERT INTO poster_jobs (id, user_id, performer, venue, date, status, updated_at
 VALUES ($1, sqlc.arg(user_id), $2, $3, $4, 'pending', NOW())
 ON CONFLICT (id) DO UPDATE SET
     status         = 'pending',
-    svg_key        = NULL,
     png_key        = NULL,
     artist         = NULL,
     credit         = NULL,
@@ -51,7 +50,7 @@ SELECT * FROM poster_jobs WHERE id = $1 AND user_id = $2;
 
 -- name: MarkPosterJobReady :exec
 UPDATE poster_jobs
-SET status = 'ready', svg_key = $2, png_key = $3, artist = $4, credit = $5,
+SET status = 'ready', png_key = $2, artist = $3, credit = $4,
     failure_stage = NULL, failure_reason = NULL, updated_at = NOW()
 WHERE id = $1;
 

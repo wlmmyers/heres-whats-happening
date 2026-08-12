@@ -115,26 +115,24 @@ func startGeneration(d PosterDeps, id string, req poster.Request) {
 			})
 			return
 		}
-		// BOTH keys are checked before the row goes ready. GetPoster presigns
-		// both, and ValidateKey is what PresignGet itself enforces — so a ready
-		// row holding a bad png_key makes every later GET fail the presign and
+		// The key is checked before the row goes ready. GetPoster presigns it,
+		// and ValidateKey is what PresignGet itself enforces — so a ready row
+		// holding a bad png_key makes every later GET fail the presign and
 		// return 500, permanently: a ready row is neither failed nor
 		// stale-pending, so nothing ever re-claims it and there is no self-heal.
 		// Failing the job here instead leaves a state the client can act on and
-		// a POST can legitimately retry. The stage is "svg" for both, matching
-		// the Lambda's own stage vocabulary ("image" | "svg") — the png is a
-		// render of the svg, not a stage of its own.
-		for _, key := range []string{res.SvgKey, res.PngKey} {
-			if _, err := poster.ValidateKey(key); err != nil {
-				slog.Error("poster returned an unexpected key", "job", id, "error", err)
-				_ = d.Queries.MarkPosterJobFailed(ctx, store.MarkPosterJobFailedParams{
-					ID: id, FailureStage: ptr("svg"), FailureReason: ptr("poster service returned an unexpected artifact"),
-				})
-				return
-			}
+		// a POST can legitimately retry. The stage is "svg", matching the
+		// Lambda's own stage vocabulary ("image" | "svg") — the png is a render
+		// of the source artwork, not a stage of its own.
+		if _, err := poster.ValidateKey(res.PngKey); err != nil {
+			slog.Error("poster returned an unexpected key", "job", id, "error", err)
+			_ = d.Queries.MarkPosterJobFailed(ctx, store.MarkPosterJobFailedParams{
+				ID: id, FailureStage: ptr("svg"), FailureReason: ptr("poster service returned an unexpected artifact"),
+			})
+			return
 		}
 		_ = d.Queries.MarkPosterJobReady(ctx, store.MarkPosterJobReadyParams{
-			ID: id, SvgKey: &res.SvgKey, PngKey: &res.PngKey,
+			ID: id, PngKey: &res.PngKey,
 			Artist: res.Artist, Credit: res.Credit,
 		})
 	}()
@@ -189,11 +187,6 @@ func GetPoster(d PosterDeps) http.HandlerFunc {
 				"failure_reason": job.FailureReason,
 			})
 		case "ready":
-			svgURL, err := d.Presigner.PresignGet(r.Context(), strVal(job.SvgKey))
-			if err != nil {
-				httperr.WriteErr(w, r, http.StatusInternalServerError, "poster_presign_failed", "could not presign poster artifact", err)
-				return
-			}
 			pngURL, err := d.Presigner.PresignGet(r.Context(), strVal(job.PngKey))
 			if err != nil {
 				httperr.WriteErr(w, r, http.StatusInternalServerError, "poster_presign_failed", "could not presign poster artifact", err)
@@ -201,7 +194,6 @@ func GetPoster(d PosterDeps) http.HandlerFunc {
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
 				"status": "ready",
-				"svgUrl": svgURL,
 				"pngUrl": pngURL,
 				"artist": json.RawMessage(job.Artist),
 				"credit": json.RawMessage(job.Credit),
@@ -215,8 +207,8 @@ func GetPoster(d PosterDeps) http.HandlerFunc {
 func ptr[T any](v T) *T { return &v }
 
 // strVal dereferences a possibly-nil *string, returning "" for nil. Used for
-// svg_key/png_key on a ready row, which are set together with status and so
-// are never nil by the time this runs — but the column type is nullable.
+// png_key on a ready row, which is set together with status and so is never
+// nil by the time this runs — but the column type is nullable.
 func strVal(s *string) string {
 	if s == nil {
 		return ""

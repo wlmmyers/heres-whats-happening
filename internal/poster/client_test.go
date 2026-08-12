@@ -24,7 +24,7 @@ func TestGenerateSignsTheRequestForLambda(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		w.Header().Set("content-type", "application/json")
-		_, _ = w.Write([]byte(`{"svgKey":"posters/v1/a/b.svg","pngKey":"posters/v1/a/b.png","cached":false}`))
+		_, _ = w.Write([]byte(`{"pngKey":"posters/v1/a/b.png","cached":false}`))
 	})
 
 	if _, err := c.Generate(context.Background(), poster.Request{Performer: "La Luz", Venue: "Neumos", Date: "2026-08-20"}); err != nil {
@@ -40,6 +40,12 @@ func TestGenerateSignsTheRequestForLambda(t *testing.T) {
 }
 
 func TestGenerateReturnsKeysOnSuccess(t *testing.T) {
+	// The response body still includes a stray "svgKey", as a real Lambda
+	// mid-rollout (or one instance behind another) might: the client must
+	// tolerate and ignore it rather than fail to decode, and Result must
+	// carry no SVG data of any kind — the field does not exist on the type,
+	// which this test pins by construction (it would not compile with a
+	// res.SvgKey reference if the field ever came back).
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"svgKey":"posters/v1/a/b.svg","pngKey":"posters/v1/a/b.png","cached":true,"artist":{"mbid":"m"}}`))
 	})
@@ -48,8 +54,8 @@ func TestGenerateReturnsKeysOnSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate returned %v", err)
 	}
-	if res.SvgKey != "posters/v1/a/b.svg" || res.PngKey != "posters/v1/a/b.png" {
-		t.Errorf("keys = %q/%q", res.SvgKey, res.PngKey)
+	if res.PngKey != "posters/v1/a/b.png" {
+		t.Errorf("PngKey = %q", res.PngKey)
 	}
 	if !res.Cached {
 		t.Error("Cached = false, want true")

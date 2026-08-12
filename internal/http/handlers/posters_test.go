@@ -258,10 +258,9 @@ func seedReadyPosterJob(t *testing.T, q *store.Queries, uid uuid.UUID, performer
 		Performer: performer, Venue: venue, Date: date,
 		StaleBefore: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
-	svgKey := "posters/v1/la-luz/neumos-2026-08-20.svg"
 	pngKey := "posters/v1/la-luz/neumos-2026-08-20.png"
 	require.NoError(t, q.MarkPosterJobReady(ctx, store.MarkPosterJobReadyParams{
-		ID: id, SvgKey: &svgKey, PngKey: &pngKey,
+		ID: id, PngKey: &pngKey,
 		Artist: json.RawMessage(`{"name":"La Luz"}`),
 		Credit: json.RawMessage(`{"text":"Photo by Someone"}`),
 	}))
@@ -294,9 +293,11 @@ func TestGetPosterPresignsFreshOnEveryCall(t *testing.T) {
 		handlers.GetPoster(deps)(rec, posterGetRequest(uid, performer, venue, date))
 		require.Equal(t, http.StatusOK, rec.Code)
 		body := decodeBody(t, rec)
-		svgURL, _ := body["svgUrl"].(string)
+		// The SVG artifact is gone: a ready response must carry pngUrl only, no
+		// svgUrl key at all — not an absent one masked by an empty string.
+		require.NotContains(t, body, "svgUrl")
 		pngURL, _ := body["pngUrl"].(string)
-		return svgURL + "|" + pngURL
+		return pngURL
 	}
 
 	if first, second := urls(), urls(); first == second {
@@ -393,10 +394,9 @@ func TestGetPoster_ReadyReturnsUrlsArtistAndCredit(t *testing.T) {
 		StaleBefore: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	require.NoError(t, err)
-	svgKey := "posters/v1/ready-band/some-venue-2026-09-03.svg"
 	pngKey := "posters/v1/ready-band/some-venue-2026-09-03.png"
 	require.NoError(t, q.MarkPosterJobReady(ctx, store.MarkPosterJobReadyParams{
-		ID: id, SvgKey: &svgKey, PngKey: &pngKey,
+		ID: id, PngKey: &pngKey,
 		Artist: json.RawMessage(`{"name":"Ready Band","mbid":"abc-123"}`),
 		Credit: json.RawMessage(`{"text":"Photo by Someone","url":"https://example.com/photo"}`),
 	}))
@@ -409,9 +409,9 @@ func TestGetPoster_ReadyReturnsUrlsArtistAndCredit(t *testing.T) {
 	body := decodeBody(t, rec)
 	require.Equal(t, "ready", body["status"])
 
-	svgURL, _ := body["svgUrl"].(string)
+	// The SVG artifact is gone: the ready body must carry pngUrl only.
+	require.NotContains(t, body, "svgUrl")
 	pngURL, _ := body["pngUrl"].(string)
-	require.Contains(t, svgURL, svgKey)
 	require.Contains(t, pngURL, pngKey)
 
 	artist, ok := body["artist"].(map[string]any)
@@ -448,53 +448,42 @@ func TestCreatePoster_ControlledFailureMarksJobFailed(t *testing.T) {
 	require.Equal(t, "no match found", *job.FailureReason)
 }
 
-// Either key failing poster.ValidateKey must fail the JOB — neither may reach
-// "ready". GetPoster presigns both keys and PresignGet re-runs the very same
+// A bad png_key failing poster.ValidateKey must fail the JOB, not reach
+// "ready". GetPoster presigns the key and PresignGet re-runs the very same
 // check, so a ready row holding a bad key returns 500 on every GET, forever: a
 // ready row is neither failed nor stale-pending, so nothing re-claims it and
 // there is no self-heal. png_key used to be unvalidated, which made exactly
 // that state reachable; the failed row this produces instead is one a client
 // can see and a POST can retry.
 func TestCreatePoster_BadArtifactKeyMarksJobFailed(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		result poster.Result
-	}{
-		{"bad-svg-key", poster.Result{SvgKey: "../../etc/passwd", PngKey: "posters/v1/ok/ok.png"}},
-		{"bad-png-key", poster.Result{SvgKey: "posters/v1/ok/ok.svg", PngKey: "../../etc/passwd"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			pool := testdb.MustOpen(t)
-			q := store.New(pool)
-			uid := posterUser(t, q, "a")
-			gen := &stubGenerator{result: tc.result}
-			deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	gen := &stubGenerator{result: poster.Result{PngKey: "../../etc/passwd"}}
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
 
-			performer, venue, date := posterFixture(t)
-			rec := httptest.NewRecorder()
-			handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, false))
-			require.Equal(t, http.StatusAccepted, rec.Code)
+	performer, venue, date := posterFixture(t)
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, date, false))
+	require.Equal(t, http.StatusAccepted, rec.Code)
 
-			require.Eventually(t, func() bool {
-				job, err := getPosterJob(t, q, uid, performer, venue, date)
-				return err == nil && job.Status == "failed"
-			}, 2*time.Second, 20*time.Millisecond, "an unusable %s must fail the job, not mark it ready", tc.name)
+	require.Eventually(t, func() bool {
+		job, err := getPosterJob(t, q, uid, performer, venue, date)
+		return err == nil && job.Status == "failed"
+	}, 2*time.Second, 20*time.Millisecond, "an unusable png_key must fail the job, not mark it ready")
 
-			job, err := getPosterJob(t, q, uid, performer, venue, date)
-			require.NoError(t, err)
-			require.Equal(t, "failed", job.Status)
-			require.Nil(t, job.SvgKey, "a failed job must not carry artifact keys")
-			require.Nil(t, job.PngKey)
-			require.NotNil(t, job.FailureReason)
-			require.Equal(t, "poster service returned an unexpected artifact", *job.FailureReason)
+	job, err := getPosterJob(t, q, uid, performer, venue, date)
+	require.NoError(t, err)
+	require.Equal(t, "failed", job.Status)
+	require.Nil(t, job.PngKey, "a failed job must not carry an artifact key")
+	require.NotNil(t, job.FailureReason)
+	require.Equal(t, "poster service returned an unexpected artifact", *job.FailureReason)
 
-			// And the GET that follows reports the failure instead of 500ing.
-			getRec := httptest.NewRecorder()
-			handlers.GetPoster(deps)(getRec, posterGetRequest(uid, performer, venue, date))
-			require.Equal(t, http.StatusOK, getRec.Code)
-			require.Equal(t, "failed", decodeBody(t, getRec)["status"])
-		})
-	}
+	// And the GET that follows reports the failure instead of 500ing.
+	getRec := httptest.NewRecorder()
+	handlers.GetPoster(deps)(getRec, posterGetRequest(uid, performer, venue, date))
+	require.Equal(t, http.StatusOK, getRec.Code)
+	require.Equal(t, "failed", decodeBody(t, getRec)["status"])
 }
 
 // force is the escape hatch for regenerating a poster the user dislikes —
@@ -548,7 +537,6 @@ func TestCreatePoster_ForceCannotReclaimAnotherUsersJob(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "ready", victimJob.Status,
 		"another user's force:true re-claimed this row — one user can blank another's poster")
-	require.NotNil(t, victimJob.SvgKey)
 	require.NotNil(t, victimJob.PngKey)
 	require.NotEmpty(t, victimJob.Artist)
 
@@ -745,7 +733,6 @@ func TestCreatePoster_ForceReclaimClearsPreviousArtifacts(t *testing.T) {
 	before, err := getPosterJob(t, q, uid, performer, venue, date)
 	require.NoError(t, err)
 	require.Equal(t, "ready", before.Status)
-	require.NotNil(t, before.SvgKey)
 	require.NotNil(t, before.PngKey)
 	require.NotEmpty(t, before.Artist)
 	require.NotEmpty(t, before.Credit)
@@ -761,7 +748,6 @@ func TestCreatePoster_ForceReclaimClearsPreviousArtifacts(t *testing.T) {
 	after, err := getPosterJob(t, q, uid, performer, venue, date)
 	require.NoError(t, err)
 	require.Equal(t, "pending", after.Status)
-	require.Nil(t, after.SvgKey)
 	require.Nil(t, after.PngKey)
 	require.Empty(t, after.Artist)
 	require.Empty(t, after.Credit)

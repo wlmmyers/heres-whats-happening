@@ -16,7 +16,6 @@ INSERT INTO poster_jobs (id, user_id, performer, venue, date, status, updated_at
 VALUES ($1, $5, $2, $3, $4, 'pending', NOW())
 ON CONFLICT (id) DO UPDATE SET
     status         = 'pending',
-    svg_key        = NULL,
     png_key        = NULL,
     artist         = NULL,
     credit         = NULL,
@@ -27,7 +26,7 @@ WHERE poster_jobs.user_id = $5
   AND (poster_jobs.status = 'failed'
    OR (poster_jobs.status = 'pending' AND poster_jobs.updated_at < $6)
    OR (poster_jobs.status = 'ready'   AND $7::boolean))
-RETURNING id, user_id, performer, venue, date, status, svg_key, png_key, artist, credit, failure_stage, failure_reason, created_at, updated_at
+RETURNING id, user_id, performer, venue, date, status, png_key, artist, credit, failure_stage, failure_reason, created_at, updated_at
 `
 
 type ClaimPosterJobParams struct {
@@ -53,11 +52,12 @@ type ClaimPosterJobParams struct {
 // would run concurrently for the same job and the second would stomp the
 // first's result.
 //
-// The cutoff and the force flag use sqlc.arg(stale_before)/sqlc.arg(force)
-// rather than positional $5/$6: this statement both SETS columns and COMPARES
+// The cutoff, the force flag and the user id use sqlc.arg(...) rather than
+// bare positional placeholders: this statement both SETS columns and COMPARES
 // against new values, and sqlc names positional params after the column they
-// touch, so a bare $5/$6 would collide with an assignment and produce a
-// confusing generated field name.
+// touch, so a bare placeholder would collide with an assignment and produce a
+// confusing generated field name. sqlc.arg(user_id) additionally lets one
+// parameter serve both the INSERT value and the conflict guard.
 //
 // The trailing "poster_jobs.user_id = sqlc.arg(user_id)" is belt and braces.
 // id is already a digest that includes the user, so a row with this id can
@@ -84,7 +84,6 @@ func (q *Queries) ClaimPosterJob(ctx context.Context, arg ClaimPosterJobParams) 
 		&i.Venue,
 		&i.Date,
 		&i.Status,
-		&i.SvgKey,
 		&i.PngKey,
 		&i.Artist,
 		&i.Credit,
@@ -97,7 +96,7 @@ func (q *Queries) ClaimPosterJob(ctx context.Context, arg ClaimPosterJobParams) 
 }
 
 const getPosterJob = `-- name: GetPosterJob :one
-SELECT id, user_id, performer, venue, date, status, svg_key, png_key, artist, credit, failure_stage, failure_reason, created_at, updated_at FROM poster_jobs WHERE id = $1 AND user_id = $2
+SELECT id, user_id, performer, venue, date, status, png_key, artist, credit, failure_stage, failure_reason, created_at, updated_at FROM poster_jobs WHERE id = $1 AND user_id = $2
 `
 
 type GetPosterJobParams struct {
@@ -118,7 +117,6 @@ func (q *Queries) GetPosterJob(ctx context.Context, arg GetPosterJobParams) (Pos
 		&i.Venue,
 		&i.Date,
 		&i.Status,
-		&i.SvgKey,
 		&i.PngKey,
 		&i.Artist,
 		&i.Credit,
@@ -149,14 +147,13 @@ func (q *Queries) MarkPosterJobFailed(ctx context.Context, arg MarkPosterJobFail
 
 const markPosterJobReady = `-- name: MarkPosterJobReady :exec
 UPDATE poster_jobs
-SET status = 'ready', svg_key = $2, png_key = $3, artist = $4, credit = $5,
+SET status = 'ready', png_key = $2, artist = $3, credit = $4,
     failure_stage = NULL, failure_reason = NULL, updated_at = NOW()
 WHERE id = $1
 `
 
 type MarkPosterJobReadyParams struct {
 	ID     string  `json:"id"`
-	SvgKey *string `json:"svg_key"`
 	PngKey *string `json:"png_key"`
 	Artist []byte  `json:"artist"`
 	Credit []byte  `json:"credit"`
@@ -165,7 +162,6 @@ type MarkPosterJobReadyParams struct {
 func (q *Queries) MarkPosterJobReady(ctx context.Context, arg MarkPosterJobReadyParams) error {
 	_, err := q.db.Exec(ctx, markPosterJobReady,
 		arg.ID,
-		arg.SvgKey,
 		arg.PngKey,
 		arg.Artist,
 		arg.Credit,

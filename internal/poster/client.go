@@ -34,7 +34,6 @@ type Request struct {
 // Result is a completed generation. A non-empty FailureStage means the Lambda
 // returned a controlled 422 — the job failed, but the call did not.
 type Result struct {
-	SvgKey        string
 	PngKey        string
 	Cached        bool
 	Artist        json.RawMessage
@@ -102,7 +101,6 @@ func (c *Client) Generate(ctx context.Context, req Request) (Result, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var ok struct {
-			SvgKey string          `json:"svgKey"`
 			PngKey string          `json:"pngKey"`
 			Cached bool            `json:"cached"`
 			Artist json.RawMessage `json:"artist"`
@@ -111,7 +109,7 @@ func (c *Client) Generate(ctx context.Context, req Request) (Result, error) {
 		if err := json.Unmarshal(raw, &ok); err != nil {
 			return Result{}, fmt.Errorf("decode poster response: %w", err)
 		}
-		return Result{SvgKey: ok.SvgKey, PngKey: ok.PngKey, Cached: ok.Cached, Artist: ok.Artist, Credit: ok.Credit}, nil
+		return Result{PngKey: ok.PngKey, Cached: ok.Cached, Artist: ok.Artist, Credit: ok.Credit}, nil
 
 	case http.StatusUnprocessableEntity:
 		// A controlled failure: no MusicBrainz match, no usable image, and so

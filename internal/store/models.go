@@ -97,7 +97,6 @@ type PosterJob struct {
 	Venue         string             `json:"venue"`
 	Date          string             `json:"date"`
 	Status        string             `json:"status"`
-	SvgKey        *string            `json:"svg_key"`
 	PngKey        *string            `json:"png_key"`
 	Artist        []byte             `json:"artist"`
 	Credit        []byte             `json:"credit"`
