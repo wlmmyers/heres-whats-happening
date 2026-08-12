@@ -28,6 +28,12 @@ const bounded = (field: string, max: number) =>
 
 export const PosterRequestSchema = z
   .object({
+    // Scopes the S3 key, so one user's forced regeneration cannot overwrite
+    // another's poster. Constrained to a UUID rather than any string because it
+    // is interpolated straight into an object key: the format guarantees no "/"
+    // and no ".." can enter the path. Supplied by the API service from the
+    // authenticated session, never by the browser.
+    userId: z.string().uuid("userId must be a UUID"),
     // .trim() runs before the bound, so it measures the trimmed value — which
     // is what JobID hashes.
     performer: bounded("performer", MAX_PERFORMER),

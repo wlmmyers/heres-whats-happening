@@ -2,9 +2,9 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { S3PosterSink } from "./poster-sink.js";
+import { posterKeyBase, S3PosterSink } from "./poster-sink.js";
 
-const req = { performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15", force: false };
+const req = { userId: "550e8400-e29b-41d4-a716-446655440000", performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15", force: false };
 const provenance = {
   artist: { mbid: "mb", name: "Khruangbin", score: 100 },
   credit: { file: "File:K.jpg", descriptionUrl: "https://commons/K", attributionRequired: true },
@@ -90,10 +90,7 @@ describe("S3PosterSink.put", () => {
     const keys = s3.sent
       .filter((c: any) => c.constructor.name === "PutObjectCommand")
       .map((c: any) => c.input.Key as string);
-    expect(keys).toEqual([
-      "posters/v1/khruangbin/the-fillmore-2026-08-15.png",
-      "posters/v1/khruangbin/the-fillmore-2026-08-15.json",
-    ]);
+    expect(keys).toEqual([`${posterKeyBase(req)}.png`, `${posterKeyBase(req)}.json`]);
     // The sidecar is still the commit marker, so the writes stay sequential.
     expect(s3.maxInFlight).toBe(1);
   });
@@ -102,7 +99,7 @@ describe("S3PosterSink.put", () => {
     const s3 = fakeS3();
     const { png } = await refs();
     const out = await new S3PosterSink(s3, "bkt").put(req, png, provenance);
-    expect(out.pngKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.png");
+    expect(out.pngKey).toBe(`${posterKeyBase(req)}.png`);
     expect("svgKey" in out).toBe(false);
     expect("pngUrl" in out).toBe(false);
     expect(out.credit).toEqual(provenance.credit);
@@ -110,14 +107,14 @@ describe("S3PosterSink.put", () => {
 });
 
 describe("S3PosterSink.find", () => {
-  const key = "posters/v1/khruangbin/the-fillmore-2026-08-15.json";
+  const key = `${posterKeyBase(req)}.json`;
 
   it("returns keys and provenance when the sidecar exists", async () => {
     const s3 = fakeS3({ [key]: JSON.stringify(provenance) });
     const hit = await new S3PosterSink(s3, "bkt").find(req);
 
     expect(hit).not.toBeNull();
-    expect(hit!.pngKey).toBe("posters/v1/khruangbin/the-fillmore-2026-08-15.png");
+    expect(hit!.pngKey).toBe(`${posterKeyBase(req)}.png`);
     expect("svgKey" in hit!).toBe(false);
     expect(hit!.artist).toEqual(provenance.artist);
   });

@@ -110,6 +110,7 @@ func CreatePoster(d PosterDeps) http.HandlerFunc {
 		case err == nil:
 			// We won the claim: this request owns the generation.
 			startGeneration(d, id, poster.Request{
+				UserID:    uid.String(),
 				Performer: performer, Venue: venue, Date: date, Force: in.Force,
 			})
 		case errors.Is(err, pgx.ErrNoRows):

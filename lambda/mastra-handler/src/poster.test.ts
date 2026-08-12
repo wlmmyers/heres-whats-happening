@@ -2,10 +2,10 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { StubPosterSink } from "./poster-sink.js";
+import { posterKeyBase, StubPosterSink } from "./poster-sink.js";
 import { BadRequestError, parsePosterRequest, posterHttpResponse, processPosterRequest } from "./poster.js";
 
-const req = { performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15", force: false };
+const req = { userId: "550e8400-e29b-41d4-a716-446655440000", performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15", force: false };
 
 /** processPosterRequest now reads the render ref off disk, so tests need a real file. */
 async function renderFixture(pngBase64 = "AAAA") {
@@ -28,7 +28,7 @@ describe("processPosterRequest", () => {
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.cached).toBe(false);
-      expect(res.pngKey).toContain("posters/v1/khruangbin");
+      expect(res.pngKey).toBe(`${posterKeyBase(req)}.png`);
     }
     expect(sink.calls).toHaveLength(1);
   });
@@ -108,7 +108,7 @@ describe("provenance passthrough", () => {
   it("includes artist and credit in the 200 body", () => {
     const out = posterHttpResponse({
       ok: true,
-      pngKey: "posters/v1/x/s.png",
+      pngKey: "posters/v2/x/s.png",
       cached: false,
       artist,
       credit,
@@ -244,14 +244,14 @@ describe("Key-only response", () => {
   it("omits the svg key entirely and includes cached", () => {
     const out = posterHttpResponse({
       ok: true,
-      pngKey: "posters/v1/x/s.png",
+      pngKey: "posters/v2/x/s.png",
       cached: true,
     });
     const body = JSON.parse(out.body);
     expect(out.statusCode).toBe(200);
     expect("svg" in body).toBe(false);
     expect("svgKey" in body).toBe(false);
-    expect(body.pngKey).toBe("posters/v1/x/s.png");
+    expect(body.pngKey).toBe("posters/v2/x/s.png");
     expect(body.cached).toBe(true);
   });
 });

@@ -40,7 +40,7 @@ describe("handlePosterHttp", () => {
   };
 
   it("returns 200 for a valid request", async () => {
-    const res = await handlePosterHttp(fnUrlEvent({ performer: "K", venue: "F", date: "2026-08-15" }), deps);
+    const res = await handlePosterHttp(fnUrlEvent({ userId: "550e8400-e29b-41d4-a716-446655440000", performer: "K", venue: "F", date: "2026-08-15" }), deps);
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).pngKey).toBeTruthy();
     expect("svg" in JSON.parse(res.body)).toBe(false);
@@ -55,7 +55,7 @@ describe("handlePosterHttp", () => {
 
   it("returns 500 if the workflow throws", async () => {
     const res = await handlePosterHttp(
-      fnUrlEvent({ performer: "K", venue: "F", date: "2026-08-15" }),
+      fnUrlEvent({ userId: "550e8400-e29b-41d4-a716-446655440000", performer: "K", venue: "F", date: "2026-08-15" }),
       { sink: new StubPosterSink(), runWorkflow: async () => { throw new Error("boom"); } },
     );
     expect(res.statusCode).toBe(500);

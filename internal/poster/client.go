@@ -36,6 +36,11 @@ const (
 )
 
 type Request struct {
+	// UserID scopes the Lambda's S3 key. Without it the object key is derived
+	// from performer/venue/date alone, and Force — which skips the cache read
+	// and always re-puts — lets any confirmed user overwrite any other user's
+	// poster. Must be the authenticated user's id, never a client-supplied one.
+	UserID    string `json:"userId"`
 	Performer string `json:"performer"`
 	Venue     string `json:"venue"`
 	Date      string `json:"date"`

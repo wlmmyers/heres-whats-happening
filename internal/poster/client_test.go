@@ -2,6 +2,7 @@ package poster_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,6 +37,36 @@ func TestGenerateSignsTheRequestForLambda(t *testing.T) {
 	// Signing for the wrong service silently yields 403s in production.
 	if want := "/us-east-1/lambda/aws4_request"; !strings.Contains(gotAuth, want) {
 		t.Errorf("Authorization credential scope = %q, want it to contain %q", gotAuth, want)
+	}
+}
+
+// The Lambda scopes its S3 object key by userId and its zod schema requires a
+// UUID, so a Request whose UserID never reaches the wire is rejected with a 400
+// at generation time — or, worse on an older Lambda, silently writes to a global
+// key that any other user can overwrite. Assert the field is actually marshaled.
+func TestGenerateSendsTheUserIDOnTheWire(t *testing.T) {
+	var gotBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Errorf("decoding request body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"pngKey":"posters/v2/u-x/a/b.png","cached":false}`))
+	})
+
+	const uid = "550e8400-e29b-41d4-a716-446655440000"
+	if _, err := c.Generate(context.Background(), poster.Request{
+		UserID: uid, Performer: "La Luz", Venue: "Neumos", Date: "2026-08-20", Force: true,
+	}); err != nil {
+		t.Fatalf("Generate returned %v", err)
+	}
+	if got := gotBody["userId"]; got != uid {
+		t.Errorf("userId on the wire = %v, want %q", got, uid)
+	}
+	// The other fields travel under the names the Lambda's schema expects.
+	for k, want := range map[string]any{"performer": "La Luz", "venue": "Neumos", "date": "2026-08-20", "force": true} {
+		if got := gotBody[k]; got != want {
+			t.Errorf("%s on the wire = %v, want %v", k, got, want)
+		}
 	}
 }
 

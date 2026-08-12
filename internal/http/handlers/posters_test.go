@@ -30,15 +30,17 @@ import (
 type stubGenerator struct {
 	mu       sync.Mutex
 	calls    int
+	lastReq  poster.Request
 	release  chan struct{}
 	result   poster.Result
 	err      error
 	sawCtxOK chan bool
 }
 
-func (s *stubGenerator) Generate(ctx context.Context, _ poster.Request) (poster.Result, error) {
+func (s *stubGenerator) Generate(ctx context.Context, req poster.Request) (poster.Result, error) {
 	s.mu.Lock()
 	s.calls++
+	s.lastReq = req
 	s.mu.Unlock()
 	if s.release != nil {
 		<-s.release
@@ -53,6 +55,12 @@ func (s *stubGenerator) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls
+}
+
+func (s *stubGenerator) request() poster.Request {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastReq
 }
 
 // stubPresigner mints a distinct URL on every call — package-wide, since the
@@ -838,6 +846,27 @@ func TestCreatePoster_AcceptsFieldsWithSurroundingWhitespaceAtTheLimit(t *testin
 	rec := httptest.NewRecorder()
 	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, "V", "D", false))
 	require.Equal(t, http.StatusAccepted, rec.Code)
+}
+
+// The Lambda scopes the S3 object key by userId, so an unset or wrong value here
+// silently un-scopes it and one user's forced regeneration overwrites another's
+// poster. The handler must send the AUTHENTICATED user's id — never anything
+// from the request body.
+func TestCreatePoster_SendsTheAuthenticatedUserIDToTheGenerator(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	gen := &stubGenerator{}
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, "Khruangbin", "The Fillmore", "2026-08-15", false))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	require.Eventually(t, func() bool { return gen.callCount() == 1 }, 2*time.Second, 5*time.Millisecond)
+	got := gen.request()
+	require.Equal(t, uid.String(), got.UserID, "generator must receive the authenticated user id")
+	require.Equal(t, "Khruangbin", got.Performer)
 }
 
 // The bound counts CHARACTERS, not bytes. A 200-character CJK performer is 600

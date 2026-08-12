@@ -13,8 +13,11 @@ stubAwsLambdaGlobal();
 const { runPosterWorkflow } = await import("../src/handler.js");
 
 // `force` skips the S3 lookup, which this script never reaches anyway — it calls
-// the workflow directly rather than going through processPosterRequest.
-const out = await runPosterWorkflow({ performer, venue, date, force: false });
+// the workflow directly rather than going through processPosterRequest. `userId`
+// scopes the S3 key for the same reason, so a fixed local value is fine: nothing
+// here writes to S3.
+const LOCAL_USER_ID = "00000000-0000-4000-8000-000000000000";
+const out = await runPosterWorkflow({ userId: LOCAL_USER_ID, performer, venue, date, force: false });
 
 if (!out.ok || !out.render) {
   console.error(JSON.stringify({ ok: false, failureStage: out.failureStage, reason: out.reason, artist: out.artist }, null, 2));

@@ -30,7 +30,7 @@ vi.mock("./mastra/tools/artifact-store.js", async () => {
 const { runPosterWorkflow } = await import("./handler.js");
 const { artifactStore } = await import("./mastra/tools/artifact-store.js");
 
-const req = { performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15", force: false };
+const req = { userId: "550e8400-e29b-41d4-a716-446655440000", performer: "Khruangbin", venue: "The Fillmore", date: "2026-08-15", force: false };
 
 const success = {
   status: "success",
