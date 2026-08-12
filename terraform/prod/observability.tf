@@ -34,6 +34,7 @@ locals {
     authed           = { threshold = 50, description = "Sustained authenticated rate-limit rejections — an account is being scripted or a client is looping." }
     manual_interests = { threshold = 10, description = "Manual-interest rejections — each allowed call publishes to the interests queue, so this caps runaway downstream compute." }
     spotify_exchange = { threshold = 5, description = "Spotify OAuth exchange rejections — this quota is shared across all users, so abuse here breaks the integration for everyone." }
+    poster_create    = { threshold = 5, description = "Poster-creation rejections — each allowed call can drive nine LLM requests, so this caps runaway spend from one account." }
     ical_feed        = { threshold = 100, description = "Sustained iCal feed rejections — an unauthenticated route being flooded from one source." }
   }
 }

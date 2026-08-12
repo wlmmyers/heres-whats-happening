@@ -65,7 +65,10 @@ resource "aws_cloudfront_distribution" "frontend" {
     max_ttl     = 86400
   }
 
-  # SPA: 404s on dynamic routes are normal — return index.html so client-side routing works.
+  # NOTE (spec §8): the poster endpoint is no longer served through CloudFront —
+  # it moved behind the authenticated Go API, reached directly, not via this
+  # distribution. SPA: 404s on dynamic routes are normal — return index.html so
+  # client-side routing works.
   custom_error_response {
     error_code         = 403
     response_code      = 200

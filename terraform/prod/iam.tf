@@ -89,6 +89,26 @@ data "aws_iam_policy_document" "task" {
       "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/${var.domain_name}",
     ]
   }
+
+  statement {
+    sid       = "InvokePosterFunctionUrl"
+    actions   = ["lambda:InvokeFunctionUrl"]
+    resources = [aws_lambda_function.mastra_handler.arn]
+    condition {
+      test     = "StringEquals"
+      variable = "lambda:FunctionUrlAuthType"
+      values   = ["AWS_IAM"]
+    }
+  }
+
+  # Required to SIGN, not merely to fetch: a presigned URL cannot grant more
+  # than the signing principal holds. Omitting this is why every poster URL
+  # 403'd before the band-image branch fixed the Lambda's own copy of this bug.
+  statement {
+    sid       = "ReadPosters"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.posters.arn}/*"]
+  }
 }
 
 resource "aws_iam_role_policy" "task" {

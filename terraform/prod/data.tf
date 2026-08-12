@@ -8,11 +8,11 @@ data "aws_ecr_repository" "app" {
   name = "${var.app_name_prefix}-app"
 }
 
-# Email-parser Lambda image repo — also owned by the bootstrap stack (so a bootstrap
+# Mastra-handler Lambda image repo — also owned by the bootstrap stack (so a bootstrap
 # image exists before this stack's aws_lambda_function references it, and the lambda
 # CI lane can push to it). Apply bootstrap + push a bootstrap image before this stack.
-data "aws_ecr_repository" "email_parser" {
-  name = "${var.app_name_prefix}-email-parser"
+data "aws_ecr_repository" "mastra_handler" {
+  name = "${var.app_name_prefix}-mastra-handler"
 }
 
 # Public hosted zone for the domain. Must be created manually before applying this stack.

@@ -107,6 +107,57 @@ func TestLoad_IcalBaseURL(t *testing.T) {
 	require.Equal(t, "http://localhost:8080", cfg.IcalBaseURL)
 }
 
+func TestLoad_PosterFields(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("POSTER_FUNCTION_URL", "https://poster.example.com/lambda-url")
+	t.Setenv("POSTERS_BUCKET", "posters-bucket")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "https://poster.example.com/lambda-url", cfg.PosterFunctionURL)
+	require.Equal(t, "posters-bucket", cfg.PostersBucket)
+}
+
+// An empty POSTER_FUNCTION_URL or POSTERS_BUCKET is invisible at runtime —
+// POST /posters still returns 202 and the background goroutine fails with
+// `unsupported protocol scheme ""`, so every poster silently ends up "failed"
+// with no 5xx and no alarm. Neither Terraform nor the app pipeline can add a
+// new env var to the live task definition (see the DEPLOYMENT note in
+// docs/superpowers/specs/2026-08-10-poster-proxy-design.md), so this is the
+// single check standing between a merge and that outcome.
+func TestLoad_RequiresEveryPosterVar(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		unset   string
+		wantErr string
+	}{
+		{"function url missing", "POSTER_FUNCTION_URL", "POSTER_FUNCTION_URL"},
+		{"bucket missing", "POSTERS_BUCKET", "POSTERS_BUCKET"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setRequiredDB(t)
+			t.Setenv("JWT_SIGNING_KEY", "k")
+			t.Setenv(tc.unset, "")
+
+			_, err := Load()
+			require.Error(t, err, "Load must refuse to start without %s", tc.unset)
+			require.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestLoad_NamesEveryMissingPosterVar(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("POSTER_FUNCTION_URL", "")
+	t.Setenv("POSTERS_BUCKET", "")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "POSTER_FUNCTION_URL")
+	require.Contains(t, err.Error(), "POSTERS_BUCKET")
+}
+
 func TestLoad_CORSAllowedOrigins(t *testing.T) {
 	setRequiredDB(t)
 	t.Setenv("JWT_SIGNING_KEY", "k")
@@ -144,9 +195,10 @@ func TestLoad_TrustProxy(t *testing.T) {
 	require.Error(t, err)
 }
 
-// setRequiredDB sets the DB_* component vars plus the mail vars every Load()
-// call now needs. Email confirmation is unconditional, so a Load() without the
-// mail vars is an error in every test, not just the confirmation ones.
+// setRequiredDB sets the DB_* component vars plus the mail and poster vars
+// every Load() call now needs. Email confirmation is unconditional and the
+// poster proxy has no disabled mode, so a Load() without either group is an
+// error in every test, not just the ones about those features.
 func setRequiredDB(t *testing.T) {
 	t.Helper()
 	t.Setenv("DB_USER", "app")
@@ -159,6 +211,8 @@ func setRequiredDB(t *testing.T) {
 	t.Setenv("EMAIL_FROM_ADDRESS", "dev@localhost")
 	t.Setenv("APP_BASE_URL", "http://localhost:5173")
 	t.Setenv("API_BASE_URL", "http://localhost:8080")
+	t.Setenv("POSTER_FUNCTION_URL", "https://poster.example.com/lambda-url")
+	t.Setenv("POSTERS_BUCKET", "posters-bucket")
 }
 
 // setMinimalEnv sets everything Load() needs except the mail vars, which it

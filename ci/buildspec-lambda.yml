@@ -1,6 +1,6 @@
 version: 0.2
 
-# Builds the email-parser Lambda container image and pushes it to its ECR repo,
+# Builds the mastra-handler Lambda container image and pushes it to its ECR repo,
 # then points the function at the new image. Run by the hwh-lambda-build CodeBuild
 # project (terraform/bootstrap) with env: AWS_ACCOUNT_ID, AWS_REGION, LAMBDA_ECR_REPO,
 # FUNCTION_NAME. No Docker Hub auth needed — the image's base is ECR Public
@@ -19,20 +19,22 @@ phases:
 
   build:
     commands:
-      # LAMBDA_ECR_REPO must be the repo NAME only (e.g. hwh-email-parser), not the full
-      # registry URL. The terraform output `email_parser_ecr_repo` emits the full URL;
+      # LAMBDA_ECR_REPO must be the repo NAME only (e.g. hwh-mastra-handler), not the full
+      # registry URL. The terraform output `mastra_handler_ecr_repo` emits the full URL;
       # the CodeBuild project should pass just the repository name here.
       - SHORT_SHA=$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION}" | cut -c1-7)
       - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${LAMBDA_ECR_REPO}:${SHORT_SHA}"
       - echo "IMAGE_URI=${IMAGE_URI}"
       - aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-      # Lambda unit + contract tests (the two ElasticMQ-dependent specs — sqs.test.ts
-      # and handler.e2e.test.ts — are excluded here; they run in local dev).
-      - cd lambda/email-parser
+      # Lambda unit + contract tests. No file list to maintain: vitest.config.ts
+      # excludes *.integration.test.ts (the ElasticMQ-dependent specs, which need
+      # the docker-compose stack and run via `pnpm test:integration` in local dev).
+      # Any new spec is therefore picked up here automatically.
+      - cd lambda/mastra-handler
       - pnpm install --frozen-lockfile --ignore-scripts
       - pnpm typecheck
-      - pnpm vitest run src/schema.test.ts src/hash.test.ts src/map.test.ts src/email.test.ts src/extractor.test.ts src/handler.test.ts
+      - pnpm test
       - cd ../..
 
       # Skip build+push if this SHA was already pushed (immutable tags mean a
@@ -41,7 +43,7 @@ phases:
         if aws ecr describe-images --repository-name "${LAMBDA_ECR_REPO}" --image-ids imageTag="${SHORT_SHA}" --region "${AWS_REGION}" > /dev/null 2>&1; then
           echo "Image ${IMAGE_URI} already exists in ECR, skipping build+push"
         else
-          docker build -t "${IMAGE_URI}" lambda/email-parser
+          docker build -t "${IMAGE_URI}" lambda/mastra-handler
           docker push "${IMAGE_URI}"
         fi
       - aws lambda update-function-code --function-name "${FUNCTION_NAME}" --image-uri "${IMAGE_URI}" --region "${AWS_REGION}"

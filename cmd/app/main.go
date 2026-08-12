@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -24,6 +26,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
 	"github.com/wmyers/heres-whats-happening/internal/matcher"
 	"github.com/wmyers/heres-whats-happening/internal/migrate"
+	"github.com/wmyers/heres-whats-happening/internal/poster"
 	"github.com/wmyers/heres-whats-happening/internal/queue"
 	"github.com/wmyers/heres-whats-happening/internal/scraper"
 	spotifyscrape "github.com/wmyers/heres-whats-happening/internal/scraper/spotify"
@@ -174,6 +177,13 @@ func serve() error {
 		mailer = email.NewLogSender()
 	}
 
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.AWSRegion))
+	if err != nil {
+		return fmt.Errorf("aws config: %w", err)
+	}
+	posterGen := poster.NewClient(cfg.PosterFunctionURL, awsCfg.Region, awsCfg.Credentials)
+	posterPresigner := poster.NewPresigner(s3.NewFromConfig(awsCfg), cfg.PostersBucket)
+
 	s := &hs.Server{
 		Addr:               cfg.HTTPAddr,
 		DB:                 pool,
@@ -195,6 +205,9 @@ func serve() error {
 		EmailSender: mailer,
 		AppBaseURL:  cfg.AppBaseURL,
 		APIBaseURL:  cfg.APIBaseURL,
+
+		PosterGenerator: posterGen,
+		PosterPresigner: posterPresigner,
 	}
 	fmt.Printf("listening on %s (ingest workers=%d)\n", cfg.HTTPAddr, cfg.IngestWorkers)
 	return s.Run(ctx)

@@ -1,5 +1,5 @@
 {
-  "name": "email-parser",
+  "name": "mastra-handler",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,17 +7,22 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.scripts.json",
     "invoke-local": "tsx scripts/invoke-local.ts",
+    "invoke-poster-local": "tsx scripts/invoke-poster-local.ts",
     "parse-email": "tsx scripts/parse-email.ts",
     "dev": "mastra dev"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.0.0",
-    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.1077.0",
     "@aws-sdk/client-secrets-manager": "^3.1057.0",
     "@aws-sdk/client-sqs": "^3.600.0",
+    "@expo-google-fonts/inter": "0.4.2",
     "@mastra/core": "^1.51.0",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "fast-xml-parser": "^5.9.3",
     "html-to-text": "^10.0.0",
     "mailparser": "^3.7.0",
     "zod": "^3.23.0"

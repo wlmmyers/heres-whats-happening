@@ -16,6 +16,7 @@ import (
 	"github.com/wmyers/heres-whats-happening/internal/http/handlers"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/ingest"
+	"github.com/wmyers/heres-whats-happening/internal/poster"
 	"github.com/wmyers/heres-whats-happening/internal/ratelimit"
 	"github.com/wmyers/heres-whats-happening/internal/spotify"
 	"github.com/wmyers/heres-whats-happening/internal/store"
@@ -53,6 +54,10 @@ type Server struct {
 	EmailSender email.Sender
 	AppBaseURL  string
 	APIBaseURL  string
+
+	// Poster proxy additions.
+	PosterGenerator poster.Generator
+	PosterPresigner poster.Presigner
 }
 
 // confirmationDeps bundles the confirmation config for the auth handlers.
@@ -91,6 +96,8 @@ func (s *Server) Router() http.Handler {
 	manualInterestsLimiter := ratelimit.NewMemory(60, time.Hour)
 	spotifyExchangeLimiter := ratelimit.NewMemory(10, time.Hour)
 	icalTokenLimiter := ratelimit.NewMemory(10, time.Hour)
+	// Each allowed call can drive nine LLM requests in the poster Lambda.
+	posterCreateLimiter := ratelimit.NewMemory(10, time.Hour)
 
 	// Confirmation. IP-keyed: the emailed link is followed by a browser with no
 	// Authorization header.
@@ -200,6 +207,18 @@ func (s *Server) Router() http.Handler {
 		// Mints a fresh token on every call.
 		r.With(middleware.RateLimitByUser(icalTokenLimiter, middleware.EndpointIcalToken)).
 			Post("/me/ical-token", handlers.CreateIcalToken(s.Queries, s.IcalBaseURL))
+
+		// Poster generation proxy. GET is covered by the group's authed net
+		// alone; POST gets its own budget since an allowed call can drive nine
+		// LLM requests in the poster Lambda.
+		posterDeps := handlers.PosterDeps{
+			Queries:   s.Queries,
+			Generator: s.PosterGenerator,
+			Presigner: s.PosterPresigner,
+		}
+		r.Get("/posters", handlers.GetPoster(posterDeps))
+		r.With(middleware.RateLimitByUser(posterCreateLimiter, middleware.EndpointPosterCreate)).
+			Post("/posters", handlers.CreatePoster(posterDeps))
 	})
 
 	return r

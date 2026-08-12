@@ -159,6 +159,7 @@ func runMigrations(dsn string) error {
 //
 // Order matters: children before parents to avoid FK violations on TRUNCATE CASCADE.
 var truncateTables = []string{
+	"poster_jobs",
 	"user_event_not_interested",
 	"user_event_match",
 	"event_genres",

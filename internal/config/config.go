@@ -53,6 +53,10 @@ type Config struct {
 	EmailFromAddress string
 	AppBaseURL       string
 	APIBaseURL       string
+
+	// Poster proxy additions
+	PosterFunctionURL string
+	PostersBucket     string
 }
 
 func Load() (*Config, error) {
@@ -154,6 +158,37 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid EMAIL_SENDER=%q (want ses or log)", emailSender)
 	}
 
+	posterFunctionURL := os.Getenv("POSTER_FUNCTION_URL")
+	postersBucket := os.Getenv("POSTERS_BUCKET")
+
+	// Same fail-fast reasoning as the mail vars, with a sharper edge: an empty
+	// POSTER_FUNCTION_URL is *silently* survivable. Every POST /posters still
+	// returns 202, and the background goroutine then fails with "unsupported
+	// protocol scheme """ — no 5xx, no alarm, every poster permanently
+	// "failed". Refusing to start is the only failure loud enough to notice.
+	//
+	// This matters because neither Terraform nor the app pipeline can introduce
+	// a new env var on the live task: aws_ecs_task_definition.api ignores
+	// container_definitions, and ci/buildspec-app.yml re-registers the CURRENT
+	// live definition with only the image swapped. The values arrive solely via
+	// scripts/taskdef-edit.sh --set-env, on every family that runs this binary
+	// (hwh-api and the scheduled families) — see the DEPLOYMENT note in
+	// docs/superpowers/specs/2026-08-10-poster-proxy-design.md.
+	var missingPoster []string
+	for _, v := range []struct {
+		name, val string
+	}{
+		{"POSTER_FUNCTION_URL", posterFunctionURL},
+		{"POSTERS_BUCKET", postersBucket},
+	} {
+		if v.val == "" {
+			missingPoster = append(missingPoster, v.name)
+		}
+	}
+	if len(missingPoster) > 0 {
+		return nil, fmt.Errorf("poster generation requires %s", strings.Join(missingPoster, ", "))
+	}
+
 	cfg := &Config{
 		DatabaseURL:         dbURL,
 		HTTPAddr:            addr,
@@ -182,6 +217,9 @@ func Load() (*Config, error) {
 		EmailFromAddress: emailFrom,
 		AppBaseURL:       appBaseURL,
 		APIBaseURL:       apiBaseURL,
+
+		PosterFunctionURL: posterFunctionURL,
+		PostersBucket:     postersBucket,
 	}
 	return cfg, nil
 }
