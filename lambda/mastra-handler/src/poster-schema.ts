@@ -8,25 +8,31 @@ export const MAX_PERFORMER = 200;
 export const MAX_VENUE = 200;
 export const MAX_DATE = 100;
 
+/**
+ * Length in Unicode CODE POINTS, which is what all three layers agree to count.
+ * Not `.length`, which counts UTF-16 code units and so charges two per astral
+ * character — a 200-emoji performer measures 400 here but 200 to Postgres
+ * `char_length` and 200 to Go's utf8.RuneCountInString. Counting code units
+ * would make this schema stricter than the Go bound in front of it, which is
+ * the one direction that turns a clean 400 into a 202-then-failed job.
+ */
+const codePoints = (s: string) => [...s].length;
+
+/** A required, trimmed string bounded by code-point count. */
+const bounded = (field: string, max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1, `${field} is required`)
+    .refine((s) => codePoints(s) <= max, `${field} must be at most ${max} characters`);
+
 export const PosterRequestSchema = z
   .object({
-    // .trim() runs before .max(), so the bound measures the trimmed value —
-    // which is what JobID hashes.
-    performer: z
-      .string()
-      .trim()
-      .min(1, "performer is required")
-      .max(MAX_PERFORMER, `performer must be at most ${MAX_PERFORMER} characters`),
-    venue: z
-      .string()
-      .trim()
-      .min(1, "venue is required")
-      .max(MAX_VENUE, `venue must be at most ${MAX_VENUE} characters`),
-    date: z
-      .string()
-      .trim()
-      .min(1, "date is required")
-      .max(MAX_DATE, `date must be at most ${MAX_DATE} characters`),
+    // .trim() runs before the bound, so it measures the trimmed value — which
+    // is what JobID hashes.
+    performer: bounded("performer", MAX_PERFORMER),
+    venue: bounded("venue", MAX_VENUE),
+    date: bounded("date", MAX_DATE),
     // Poster generation is LLM-driven and nondeterministic, so a user who
     // dislikes a result needs a re-roll. NOT part of posterKeyBase: a forced run
     // overwrites the same keys rather than creating a parallel copy.

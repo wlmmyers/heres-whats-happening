@@ -37,4 +37,19 @@ describe("PosterRequestSchema length bounds", () => {
     expect(PosterRequestSchema.safeParse({ performer: "P", date: "D", venue: "a".repeat(201) }).success).toBe(false);
     expect(PosterRequestSchema.safeParse({ performer: "P", venue: "V", date: "a".repeat(101) }).success).toBe(false);
   });
+
+  // The bound counts CODE POINTS, matching Postgres char_length and Go's
+  // utf8.RuneCountInString. zod's own .max() counts UTF-16 code units, which
+  // charges two per astral character — so a 200-emoji performer would measure
+  // 400 here and be rejected after Go had already accepted it and returned 202.
+  it("counts code points, not UTF-16 code units", () => {
+    const emoji = "🎸".repeat(200); // 200 code points, 400 UTF-16 units
+    expect(emoji.length).toBe(400); // the trap this guards against
+    expect(PosterRequestSchema.safeParse({ ...ok, performer: emoji }).success).toBe(true);
+    expect(PosterRequestSchema.safeParse({ ...ok, performer: "🎸".repeat(201) }).success).toBe(false);
+  });
+
+  it("accepts 200 CJK characters, which are 600 bytes", () => {
+    expect(PosterRequestSchema.safeParse({ ...ok, performer: "林".repeat(200) }).success).toBe(true);
+  });
 });

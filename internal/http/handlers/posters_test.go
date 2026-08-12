@@ -840,6 +840,41 @@ func TestCreatePoster_AcceptsFieldsWithSurroundingWhitespaceAtTheLimit(t *testin
 	require.Equal(t, http.StatusAccepted, rec.Code)
 }
 
+// The bound counts CHARACTERS, not bytes. A 200-character CJK performer is 600
+// bytes, so a len()-based bound rejects it at a third of the advertised limit —
+// while telling the caller the limit is 200 characters. Postgres char_length
+// counts characters too, so bytes here would also break the "all three layers
+// agree" invariant the bounds exist to maintain.
+func TestCreatePoster_AcceptsMultiByteFieldsAtTheCharacterLimit(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	gen := &stubGenerator{release: make(chan struct{})}
+	t.Cleanup(func() { close(gen.release) })
+	deps := handlers.PosterDeps{Queries: q, Generator: gen, Presigner: stubPresigner{}}
+
+	performer := strings.Repeat("林", 200) // 200 runes, 600 bytes
+	venue := strings.Repeat("л", 200)     // 200 runes, 400 bytes
+	require.Greater(t, len(performer), 200, "test is pointless unless the byte count exceeds the bound")
+
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, performer, venue, "D", false))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+}
+
+// ...and one character past it is still rejected, so the fix widened the unit
+// rather than removing the bound.
+func TestCreatePoster_RejectsMultiByteFieldsOverTheCharacterLimit(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	uid := posterUser(t, q, "a")
+	deps := handlers.PosterDeps{Queries: q, Generator: &stubGenerator{}, Presigner: stubPresigner{}}
+
+	rec := httptest.NewRecorder()
+	handlers.CreatePoster(deps)(rec, posterPostRequest(uid, strings.Repeat("林", 201), "V", "D", false))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 // MaxBytesReader must reject before the JSON decoder allocates the whole
 // oversize body.
 func TestCreatePoster_RejectsAnOversizeBody(t *testing.T) {

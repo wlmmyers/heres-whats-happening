@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -50,11 +51,17 @@ func validateFields(performer, venue, date string) (string, string, string, erro
 	switch {
 	case performer == "" || venue == "" || date == "":
 		return "", "", "", errors.New("performer, venue and date are required")
-	case len(performer) > poster.MaxPerformer:
+	// RuneCountInString, not len: len counts BYTES, and the bound this backs
+	// onto is Postgres char_length, which counts characters. Counting bytes
+	// rejects a 67-character Japanese performer at 201 bytes while telling the
+	// caller the limit is 200 characters — a message that is simply false, and
+	// a limit that makes non-Latin names unusable at a third of their stated
+	// length.
+	case utf8.RuneCountInString(performer) > poster.MaxPerformer:
 		return "", "", "", fmt.Errorf("performer must be at most %d characters", poster.MaxPerformer)
-	case len(venue) > poster.MaxVenue:
+	case utf8.RuneCountInString(venue) > poster.MaxVenue:
 		return "", "", "", fmt.Errorf("venue must be at most %d characters", poster.MaxVenue)
-	case len(date) > poster.MaxDate:
+	case utf8.RuneCountInString(date) > poster.MaxDate:
 		return "", "", "", fmt.Errorf("date must be at most %d characters", poster.MaxDate)
 	}
 	return performer, venue, date, nil
