@@ -174,3 +174,56 @@ func TestHandle_NotFoundArtist_StillCreatesRow(t *testing.T) {
 	require.Nil(t, rows[0].Mbid)
 	require.Nil(t, rows[0].ImageStatus, "no image section means no image row")
 }
+
+// A nil *ImageCredit must land as SQL NULL in artist_images.credit, not the
+// four literal bytes "null" — and a nil Sources/Songs slice must not violate
+// the NOT NULL DEFAULT '[]' constraint on artist_bios.sources and
+// artist_tour_snapshots.songs. GetArtistEnrichmentBatch can't distinguish a
+// []byte scan of SQL NULL from the bytes `null`, so this asserts against the
+// database directly.
+func TestHandle_NilCreditAndSlices_ImageCreditIsSQLNull(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	h := ingest.NewEventHandler(q, defaultCityID(t, q))
+	ctx := context.Background()
+
+	m := enrichedSample()
+	m.SourceEventID = "tm-nil-credit"
+	m.Enrichment.Image.Credit = nil
+	m.Enrichment.Bio.Sources = nil
+	m.Enrichment.Tour.Songs = nil
+
+	body, _ := json.Marshal(m)
+	require.NoError(t, h.Handle(ctx, body))
+
+	src, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
+	ev, err := q.GetEventBySourceKey(ctx, store.GetEventBySourceKeyParams{
+		SourceID: src.ID, SourceEventID: "tm-nil-credit",
+	})
+	require.NoError(t, err)
+	require.True(t, ev.HeadlineArtistID.Valid)
+
+	var creditIsNull bool
+	err = pool.QueryRow(ctx,
+		"SELECT credit IS NULL FROM artist_images WHERE artist_id = $1",
+		ev.HeadlineArtistID,
+	).Scan(&creditIsNull)
+	require.NoError(t, err)
+	require.True(t, creditIsNull, "nil *ImageCredit must store SQL NULL, not the bytes \"null\"")
+
+	var sources, songs []byte
+	err = pool.QueryRow(ctx,
+		"SELECT sources FROM artist_bios WHERE artist_id = $1",
+		ev.HeadlineArtistID,
+	).Scan(&sources)
+	require.NoError(t, err)
+	require.JSONEq(t, "[]", string(sources))
+
+	err = pool.QueryRow(ctx,
+		"SELECT songs FROM artist_tour_snapshots WHERE artist_id = $1",
+		ev.HeadlineArtistID,
+	).Scan(&songs)
+	require.NoError(t, err)
+	require.JSONEq(t, "[]", string(songs))
+}
