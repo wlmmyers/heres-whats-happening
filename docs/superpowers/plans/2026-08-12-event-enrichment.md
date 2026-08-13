@@ -20,7 +20,8 @@
 - **Wire JSON is snake_case throughout**, including nested credit fields. The Lambda's internal `ImageCredit` is camelCase and must be mapped explicitly at the boundary.
 - **`web/` type checking uses `tsc -b`**, never `tsc --noEmit`. Not needed for this plan — no frontend changes.
 - **Lambda tests:** `pnpm test` (unit, no external services). `LIVE_API_TESTS=1 pnpm vitest run src/mastra/tools/live-apis.test.ts` for opt-in live API checks.
-- **The pre-commit hook runs gofmt, go vet, go test, eslint, tsc, prettier, vitest.** Every commit step below assumes it passes; bypass only with explicit reason.
+- **The pre-commit hook covers both workspaces.** gofmt, go vet and go test at the repo root; then eslint / tsc / prettier / vitest for `web/` via `in_web()` and again for `lambda/mastra-handler/` via `in_lambda()` (`.githooks/pre-commit:98-111`). A green hook is real evidence for Lambda work. Bypass only with explicit reason.
+- **The Lambda is prettier-formatted** (`pnpm run format:check` gates commits). Its style is **single quotes**. Run `pnpm run format` from `lambda/mastra-handler/` before committing rather than hand-matching the style.
 - **No frontend changes.** Every new API field is `omitempty`.
 
 ## File Structure
