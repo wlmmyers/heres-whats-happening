@@ -4135,7 +4135,8 @@ and delete the now-unused `EventMessage` import.
 import type { SQSEvent } from "aws-lambda";
 import { EventMessageSchema } from "./schema.js";
 import { enrichEvent, type EnrichDeps } from "./enrichment.js";
-import { StubEnrichmentCache, S3EnrichmentCache } from "./enrichment-cache.js";
+// NOT StubEnrichmentCache — the repo lints unused vars as an error.
+import { S3EnrichmentCache } from "./enrichment-cache.js";
 import { prodBioDeps, enrichBio } from "./enrich-bio.js";
 import { prodTourDeps, enrichTour } from "./enrich-tour.js";
 import { prodImageDeps, enrichImage } from "./enrich-image.js";
