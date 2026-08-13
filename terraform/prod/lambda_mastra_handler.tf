@@ -60,6 +60,28 @@ data "aws_iam_policy_document" "mastra_handler" {
     actions   = ["s3:PutObject", "s3:GetObject"]
     resources = ["${aws_s3_bucket.posters.arn}/*"]
   }
+  statement {
+    sid = "ConsumeEventsQueue"
+    # The event source mapping polls with the FUNCTION's role, so these three
+    # actions are what make the trigger work at all.
+    actions   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
+    resources = [aws_sqs_queue.events.arn]
+  }
+  statement {
+    sid       = "SendToEnrichedQueue"
+    actions   = ["sqs:SendMessage", "sqs:SendMessageBatch", "sqs:GetQueueAttributes"]
+    resources = [aws_sqs_queue.events_enriched.arn]
+  }
+  statement {
+    sid       = "ReadWriteEnrichmentCache"
+    actions   = ["s3:GetObject", "s3:PutObject"]
+    resources = ["${aws_s3_bucket.enrichment_cache.arn}/*"]
+  }
+  statement {
+    sid       = "ReadSetlistFmKey"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.setlistfm_key.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "mastra_handler" {
@@ -78,12 +100,15 @@ resource "aws_lambda_function" "mastra_handler" {
 
   environment {
     variables = {
-      EVENTS_QUEUE_URL   = aws_sqs_queue.events.url
-      LLM_API_KEY_SECRET = aws_secretsmanager_secret.email_llm_key.arn
-      LLM_MODEL          = "anthropic/claude-sonnet-4-5"
-      POSTERS_BUCKET     = aws_s3_bucket.posters.bucket
-      MAX_IMAGE_ATTEMPTS = "3"
-      MAX_SVG_ATTEMPTS   = "3"
+      EVENTS_QUEUE_URL          = aws_sqs_queue.events.url
+      LLM_API_KEY_SECRET        = aws_secretsmanager_secret.email_llm_key.arn
+      LLM_MODEL                 = "anthropic/claude-sonnet-4-5"
+      POSTERS_BUCKET            = aws_s3_bucket.posters.bucket
+      MAX_IMAGE_ATTEMPTS        = "3"
+      MAX_SVG_ATTEMPTS          = "3"
+      ENRICHED_EVENTS_QUEUE_URL = aws_sqs_queue.events_enriched.url
+      ENRICHMENT_CACHE_BUCKET   = aws_s3_bucket.enrichment_cache.bucket
+      SETLISTFM_API_KEY_SECRET  = aws_secretsmanager_secret.setlistfm_key.arn
     }
   }
 

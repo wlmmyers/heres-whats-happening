@@ -1,0 +1,52 @@
+{
+  "type": "setlists",
+  "itemsPerPage": 20,
+  "page": 1,
+  "total": 3,
+  "setlist": [
+    {
+      "id": "aaaaaaa1",
+      "versionId": "v1",
+      "eventDate": "02-08-2026",
+      "lastUpdated": "2026-08-03T10:00:00.000+0000",
+      "artist": { "mbid": "9b5ae4cc-15ae-4f0b-8a4e-8c44e42ba52a", "name": "La Luz" },
+      "venue": {
+        "id": "ven1",
+        "name": "Empty Room",
+        "city": { "name": "Portland", "state": "OR" }
+      },
+      "tour": { "name": "News of the Universe Tour" },
+      "sets": { "set": [] },
+      "url": "https://www.setlist.fm/setlist/la-luz/2026/empty-room.html"
+    },
+    {
+      "id": "aaaaaaa2",
+      "versionId": "v2",
+      "eventDate": "14-07-2026",
+      "lastUpdated": "2026-07-15T10:00:00.000+0000",
+      "artist": { "mbid": "9b5ae4cc-15ae-4f0b-8a4e-8c44e42ba52a", "name": "La Luz" },
+      "venue": { "id": "ven2", "name": "The Greek", "city": { "name": "Berkeley", "state": "CA" } },
+      "tour": { "name": "News of the Universe Tour" },
+      "sets": {
+        "set": [
+          { "song": [{ "name": "Sure As Spring" }, { "name": "Cicada", "info": "acoustic" }] },
+          {
+            "encore": 1,
+            "song": [{ "name": "Strange World", "cover": { "name": "Cover Artist" } }]
+          }
+        ]
+      },
+      "url": "https://www.setlist.fm/setlist/la-luz/2026/the-greek.html"
+    },
+    {
+      "id": "aaaaaaa3",
+      "versionId": "v3",
+      "eventDate": "23-08-2019",
+      "lastUpdated": "2019-08-24T10:00:00.000+0000",
+      "artist": { "mbid": "9b5ae4cc-15ae-4f0b-8a4e-8c44e42ba52a", "name": "La Luz" },
+      "venue": { "id": "ven3", "name": "Old Hall", "city": { "name": "Seattle", "state": "WA" } },
+      "sets": { "set": [{ "song": [{ "name": "Ancient Song" }] }] },
+      "url": "https://www.setlist.fm/setlist/la-luz/2019/old-hall.html"
+    }
+  ]
+}

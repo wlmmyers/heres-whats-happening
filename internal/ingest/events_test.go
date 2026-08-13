@@ -152,6 +152,57 @@ func TestHandle_PersistsTimeTBDFlag(t *testing.T) {
 	require.True(t, timeTBD)
 }
 
+// A body whose enrichment block fails to decode (a type mismatch, as would
+// arrive from a Lambda emit that skipped schema validation) must degrade to a
+// plain event rather than being dropped — a plain event still ingests
+// correctly, which is the whole point of the superset contract.
+func TestHandle_BadEnrichmentBlock_DegradesToPlainEvent(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	cityID := defaultCityID(t, q)
+
+	h := ingest.NewEventHandler(q, cityID)
+	ctx := context.Background()
+
+	// "encore" is an int on the wire; sending a string breaks the
+	// EnrichedMessage decode while every plain-Message field stays valid.
+	body := []byte(`{
+		"source_id": "ticketmaster",
+		"source_event_id": "tm-bad-enrich",
+		"title": "Phoebe Bridgers",
+		"starts_at": "2026-06-15T20:00:00Z",
+		"venue": {"name": "The Bowl"},
+		"enrichment": {
+			"attempted_at": "2026-08-12T04:11:22Z",
+			"tour": {"status": "ok", "songs": [{"name": "S", "encore": "not-a-number"}]}
+		}
+	}`)
+	require.NoError(t, h.Handle(ctx, body))
+
+	srcRow, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
+	ev, err := q.GetEventBySourceKey(ctx, store.GetEventBySourceKeyParams{
+		SourceID: srcRow.ID, SourceEventID: "tm-bad-enrich",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Phoebe Bridgers", ev.Title)
+	require.False(t, ev.HeadlineArtistID.Valid, "the broken enrichment block must not be applied")
+}
+
+// A body that fails BOTH the EnrichedMessage and the plain-Message decode
+// (not even valid JSON) is genuinely malformed and must be dropped rather
+// than looping forever.
+func TestHandle_GenuinelyMalformedBody_IsDropped(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	cityID := defaultCityID(t, q)
+
+	h := ingest.NewEventHandler(q, cityID)
+	ctx := context.Background()
+
+	require.NoError(t, h.Handle(ctx, []byte(`not json`)))
+}
+
 func TestHandle_DefaultsTimeTBDToFalse(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)

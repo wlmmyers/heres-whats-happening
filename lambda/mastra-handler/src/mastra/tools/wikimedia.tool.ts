@@ -48,6 +48,9 @@ export interface WikimediaClient {
   resolveImageCandidates(mbid: string, opts?: { artistName?: string }): Promise<ImageCandidate[]>;
   /** Raw bytes of the candidate's thumbnail. The caller decides where they land. */
   fetchImageBytes(candidate: ImageCandidate): Promise<Buffer>;
+  /** MBID -> Wikidata QID via the reverse P434 index. Exposed for the bio
+   * workflow, which needs the QID to reach the enwiki sitelink. */
+  resolveQid(mbid: string): Promise<string | null>;
 }
 
 interface RawImageInfo {
@@ -193,6 +196,8 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
   }
 
   return {
+    resolveQid,
+
     async resolveImageCandidates(mbid, opts) {
       const qid = await resolveQid(mbid);
       if (!qid) return [];

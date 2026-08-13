@@ -32,6 +32,16 @@ output "interests_queue_url" {
   value = aws_sqs_queue.interests.url
 }
 
+output "events_enriched_queue_url" {
+  description = "URL of the enriched-events queue the ingest consumer reads."
+  value       = aws_sqs_queue.events_enriched.url
+}
+
+output "enrichment_cache_bucket" {
+  description = "Bucket holding the per-artist enrichment skip cache."
+  value       = aws_s3_bucket.enrichment_cache.id
+}
+
 output "post_apply_steps" {
   description = "Operator checklist after first apply."
   value       = <<-EOT
@@ -135,5 +145,22 @@ output "email_post_apply_steps" {
 
     5. Watch the ${var.app_name_prefix}-mastra-handler-dlq-depth alarm — depth >= 1
        means emails are failing to parse.
+  EOT
+}
+
+output "setlistfm_post_apply_steps" {
+  description = "Operator step to seed the setlist.fm API key after apply."
+  value       = <<-EOT
+    setlist.fm API key — operator step after apply:
+
+    1. Seed the key (aws_secretsmanager_secret_version ignores secret_string
+       after creation, so REPLACE_ME_AFTER_APPLY sits there until this is run):
+       aws secretsmanager put-secret-value \
+         --secret-id ${aws_secretsmanager_secret.setlistfm_key.name} \
+         --secret-string "<your-setlist.fm-api-key>"
+
+       Skipping this doesn't fail at apply — it fails quietly at runtime. Once
+       Task 17 wires the trigger, every setlist.fm call 401s, enrichTour
+       records status: 'error', and it retries forever on a 6-hour backoff.
   EOT
 }

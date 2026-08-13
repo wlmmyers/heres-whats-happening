@@ -20,7 +20,8 @@
 - **Wire JSON is snake_case throughout**, including nested credit fields. The Lambda's internal `ImageCredit` is camelCase and must be mapped explicitly at the boundary.
 - **`web/` type checking uses `tsc -b`**, never `tsc --noEmit`. Not needed for this plan — no frontend changes.
 - **Lambda tests:** `pnpm test` (unit, no external services). `LIVE_API_TESTS=1 pnpm vitest run src/mastra/tools/live-apis.test.ts` for opt-in live API checks.
-- **The pre-commit hook runs gofmt, go vet, go test, eslint, tsc, prettier, vitest.** Every commit step below assumes it passes; bypass only with explicit reason.
+- **The pre-commit hook covers both workspaces.** gofmt, go vet and go test at the repo root; then eslint / tsc / prettier / vitest for `web/` via `in_web()` and again for `lambda/mastra-handler/` via `in_lambda()` (`.githooks/pre-commit:98-111`). A green hook is real evidence for Lambda work. Bypass only with explicit reason.
+- **The Lambda is prettier-formatted** (`pnpm run format:check` gates commits). Its style is **single quotes**. Run `pnpm run format` from `lambda/mastra-handler/` before committing rather than hand-matching the style.
 - **No frontend changes.** Every new API field is `omitempty`.
 
 ## File Structure
@@ -60,7 +61,7 @@
 | File | Responsibility |
 | --- | --- |
 | `testdata/artist-key-contract/cases.json` | Read by a Go test AND a vitest test |
-| `testdata/event-message-contract/enriched.json` | Decoded by `contract_test.go` |
+| `testdata/enriched-message-contract/full.json` | Decoded by the Go enriched contract test AND parsed by the Zod schema. A SIBLING of `event-message-contract/`, whose test decodes into a plain `Message` and would reject it |
 | `lambda/mastra-handler/src/__fixtures__/setlistfm-artist-setlists.json` | Recorded real response |
 
 ---
@@ -391,7 +392,7 @@ COALESCEs so a failed re-enrichment cannot blank a good link."
 **Files:**
 - Create: `internal/events/enriched.go`
 - Create: `internal/events/enriched_test.go`
-- Create: `testdata/event-message-contract/enriched.json`
+- Create: `testdata/enriched-message-contract/full.json` (a SIBLING directory — see Step 5)
 
 **Interfaces:**
 - Consumes: `events.Message` (existing, `internal/events/message.go:10`).
@@ -813,7 +814,7 @@ import (
 func enrichedSample() events.EnrichedMessage {
 	m := sampleMessage()
 	m.SourceEventID = "tm-enriched"
-	m.ImageURL = "" // no source image, so the artist image is the fallback
+	m.ImageURL = "" // no scraper-sourced image on this event
 	return events.EnrichedMessage{
 		Message: m,
 		Enrichment: &events.Enrichment{
@@ -1047,9 +1048,14 @@ func (h *EventHandler) applyEnrichment(ctx context.Context, e *events.Enrichment
 	}
 
 	if img := e.Image; img != nil && validStatus(img.Status) {
-		credit, err := jsonOrNil(img.Credit)
-		if err != nil {
-			return pgtype.UUID{}, fmt.Errorf("marshal image credit: %w", err)
+		// Marshal only when present: a nil *ImageCredit must store SQL NULL, not
+		// the four bytes "null".
+		var credit []byte
+		if img.Credit != nil {
+			credit, err = json.Marshal(img.Credit)
+			if err != nil {
+				return pgtype.UUID{}, fmt.Errorf("marshal image credit: %w", err)
+			}
 		}
 		if err := h.q.UpsertArtistImage(ctx, store.UpsertArtistImageParams{
 			ArtistID: artistID,
@@ -1141,34 +1147,13 @@ func optInt32(v int) *int32 {
 	n := int32(v)
 	return &n
 }
-
-// jsonOrNil marshals a pointer to JSONB bytes, or nil for a nil pointer so the
-// column stores SQL NULL rather than the four bytes "null".
-func jsonOrNil(v any) ([]byte, error) {
-	if v == nil {
-		return nil, nil
-	}
-	return json.Marshal(v)
-}
 ```
 
-Note `jsonOrNil` takes `any` but is called with a typed nil pointer
-(`*events.ImageCredit`), which is **not** equal to a nil `any`. Guard at the
-call site instead — the `img.Credit != nil` check is implicit in the code above
-because `img.Credit` is only marshalled when the image section exists. To be
-safe and explicit, change the image block's credit line to:
-
-```go
-		var credit []byte
-		if img.Credit != nil {
-			credit, err = json.Marshal(img.Credit)
-			if err != nil {
-				return pgtype.UUID{}, fmt.Errorf("marshal image credit: %w", err)
-			}
-		}
-```
-
-and delete `jsonOrNil` entirely.
+There is deliberately no generic `jsonOrNil(v any)` helper here. A typed nil
+pointer (`(*events.ImageCredit)(nil)`) wrapped in an `any` is **not** `nil`, so
+such a helper would marshal it to the four bytes `"null"` instead of storing SQL
+NULL — a bug that only shows up as a JSONB column holding a JSON null. Each
+call site does its own typed nil check, as the image block above does.
 
 - [ ] **Step 4: Rewire Handle to decode EnrichedMessage**
 
@@ -1459,10 +1444,12 @@ Then add this helper to the same file:
 // each one, following the ListEventPerformersBatch pattern: one page query,
 // then one round trip for the whole page rather than N.
 //
-// It also applies the image fallback. The event's own image always wins, so an
-// event whose source supplied a photo is untouched; only events with no image
-// at all pick up the band photo. That is what lets the existing frontend render
-// band images with no change.
+// Deliberately does NOT fall image_url back to the artist photo: Commons
+// images are predominantly CC-BY/CC-BY-SA, attribution is a licence
+// condition, and the frontend does not render the credit block yet. The band
+// photo is surfaced only under artist.image, next to its credit, so any
+// client that renders it has the attribution in hand. image_url stays purely
+// scraper-sourced, exactly as it is today.
 func attachArtists(ctx context.Context, q *store.Queries, evs []calendarEvent, artistIDs []pgtype.UUID) {
 	if len(artistIDs) == 0 {
 		return
@@ -1487,9 +1474,6 @@ func attachArtists(ctx context.Context, q *store.Queries, evs []calendarEvent, a
 		}
 		a := buildArtist(row)
 		evs[i].Artist = &a
-		if evs[i].ImageURL == "" && a.Image != nil {
-			evs[i].ImageURL = a.Image.URL
-		}
 	}
 }
 ```
@@ -1498,8 +1482,9 @@ Add an unexported carrier field to `calendarEvent` so the loop can correlate
 without widening the JSON:
 
 ```go
-	// not serialized — carries the row's headline_artist_id to attachArtists
-	artistID pgtype.UUID `json:"-"`
+	// Unexported, so encoding/json ignores it entirely — no tag needed. Carries
+	// the row's headline_artist_id from the page query through to attachArtists.
+	artistID pgtype.UUID
 ```
 
 Add `"log"` to the file's imports.
@@ -1533,8 +1518,11 @@ than widening three queries with four left joins each. A section appears
 only when its status is ok, and every field is omitempty so today's
 frontend payloads are byte-identical for unenriched events.
 
-image_url falls back to the band photo when the event has none — the
-source image always wins, so nothing regresses."
+image_url does NOT fall back to the band photo: Commons images are
+predominantly CC-BY/CC-BY-SA, attribution is a licence condition, and the
+frontend does not render the credit block yet. The photo is surfaced only
+under artist.image, beside its credit, so image_url stays purely
+scraper-sourced."
 ```
 
 ---
@@ -2083,10 +2071,14 @@ export class S3EnrichmentCache implements EnrichmentCache {
   }
 }
 
+// Classify on error NAME only, exactly as poster-sink.ts does. Do NOT add a
+// `status === 404` fallback: NoSuchBucket is also a 404, so a mistyped bucket
+// would be swallowed as a cache miss and every workflow would re-run on every
+// event forever while presenting as "the cache isn't working" — the same
+// failure the AccessDenied rule exists to prevent.
 function isNoSuchKey(e: unknown): boolean {
   const name = (e as { name?: string })?.name;
-  const status = (e as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-  return name === "NoSuchKey" || name === "NotFound" || status === 404;
+  return name === "NoSuchKey" || name === "NotFound";
 }
 
 /** In-memory cache for local dev and unit tests. Lives beside the production
@@ -2171,7 +2163,8 @@ that simply isn't working."
 
 **Interfaces:**
 - Consumes: `StubFetch` (`src/mastra/tools/stub-fetch.ts`).
-- Produces: `createSetlistFmClient(opts)`, `setlistFmClient`, `fetchRecentSetlist(mbid)`, `type RecentSetlist`, `parseEventDate(s)`, `pickRecentSetlist(setlists, now)`, `MAX_SETLIST_AGE_DAYS`.
+- Produces: `createSetlistFmClient(opts)`, `type RecentSetlist`, `parseEventDate(s)`, `pickRecentSetlist(setlists, now)`, `MAX_SETLIST_AGE_DAYS`.
+- Deliberately **no** module-level singleton or bare `fetchRecentSetlist(mbid)` wrapper, unlike `musicbrainz.tool.ts`. That module can construct its client at import time because it needs no credentials; this one needs an API key that arrives asynchronously from Secrets Manager during the invocation, so a singleton could not be built at import. Task 12's `prodTourDeps(apiKey)` calls `createSetlistFmClient({ apiKey })` directly.
 
 - [ ] **Step 1: Record the fixture**
 
@@ -2992,7 +2985,8 @@ in setlist.fm evidence by a separate agent instead."
 - Create: `src/enrich-workflows.test.ts`
 
 **Interfaces:**
-- Consumes: `ImageInfo`/`BioInfo`/`TourInfo`/`toWireCredit` (Task 7), `SetlistFmClient` (Task 9), `fetchWikipediaExtract`/`fetchReleaseGroups` (Task 10), `bioAuthorAgent`/`tourBlurbAgent` (Task 11), `judgeBandImageStep` (`src/mastra/workflows/judge-band-image.step.ts`), `resolveImageCandidates`/`fetchImageBytes`.
+- Consumes: `ImageInfo`/`BioInfo`/`TourInfo`/`toWireCredit` (Task 7), `SetlistFmClient` (Task 9), `fetchWikipediaExtract`/`fetchReleaseGroups` (Task 10), `bioAuthorAgent`/`tourBlurbAgent` (Task 11), `imageAnalysisAgent` (`src/mastra/agents/image-analysis.agent.ts`), `resolveImageCandidates`/`fetchImageBytes`.
+- Deliberately **not** `judgeBandImageStep`. That is a Mastra workflow step bound to the poster workflow's loop-state schema, and it writes candidate bytes into a per-run artifact directory that its caller must then clean up. Enrichment keeps no bytes at all, so `enrichImage` reuses the same *agent* while walking candidates itself. The step stays untouched for the shipped poster path.
 - Produces: `enrichImage(deps, artist): Promise<ImageInfo>`, `enrichBio(deps, artist): Promise<BioInfo>`, `enrichTour(deps, artist, event): Promise<TourInfo>`. Each **never throws**.
 
 - [ ] **Step 1: Write the failing tests**
@@ -4143,7 +4137,8 @@ and delete the now-unused `EventMessage` import.
 import type { SQSEvent } from "aws-lambda";
 import { EventMessageSchema } from "./schema.js";
 import { enrichEvent, type EnrichDeps } from "./enrichment.js";
-import { StubEnrichmentCache, S3EnrichmentCache } from "./enrichment-cache.js";
+// NOT StubEnrichmentCache — the repo lints unused vars as an error.
+import { S3EnrichmentCache } from "./enrichment-cache.js";
 import { prodBioDeps, enrichBio } from "./enrich-bio.js";
 import { prodTourDeps, enrichTour } from "./enrich-tour.js";
 import { prodImageDeps, enrichImage } from "./enrich-image.js";
@@ -4689,16 +4684,38 @@ which matters because the daily scrape republishes every event unconditionally.
 **Deploying a change to this path is two applies:**
 
 1. Apply queues, bucket, secret, IAM and Lambda env vars.
-2. Populate the setlist.fm secret:
-   `aws secretsmanager put-secret-value --secret-id hwh-setlistfm-api-key --secret-string '<key>'`
+2. Populate the setlist.fm secret — note the **slash**, matching the
+   `<prefix>/<name>` convention every other secret in this stack uses:
+   `aws secretsmanager put-secret-value --secret-id hwh/setlistfm-api-key --secret-string '<key>'`
+
+   Terraform seeds it with the literal `REPLACE_ME_AFTER_APPLY` under
+   `ignore_changes`, so forgetting this step does **not** fail the apply. It
+   fails quietly at runtime instead: setlist.fm rejects the placeholder, the
+   client throws, and every tour enrichment records `status: 'error'` and
+   retries in 6 hours forever. Step 5's verification below is what catches it.
 3. Deploy the Lambda image (`ci/buildspec-lambda.yml`).
 4. Apply `aws_lambda_event_source_mapping.enrichment`.
-5. Deploy the API image, then point the consumer at the enriched queue with
-   `scripts/taskdef-edit.sh --set-env ENRICHED_EVENTS_QUEUE_URL=... --deploy`.
+5. **Set the env var BEFORE deploying the new API image** — this order is not
+   interchangeable:
 
-Step 5 needs the script because `container_definitions` carries
-`ignore_changes`, so a terraform-only env var change never reaches a running
-task.
+   ```bash
+   scripts/taskdef-edit.sh --set-env ENRICHED_EVENTS_QUEUE_URL=<url> --deploy
+   ```
+
+   then deploy the API image via CI.
+
+   The script is needed at all because `container_definitions` carries
+   `ignore_changes`, so a terraform-only env var change never reaches a running
+   task. The *order* matters because the new binary starts its consumer only
+   when `ENRICHED_EVENTS_QUEUE_URL` is non-empty, with no fallback to the raw
+   queue. Deploy first and the consumer simply does not start: **ingestion stops
+   silently** — no panic, no alarm, just events accumulating on the queue until
+   someone notices.
+
+   Setting it first is safe because the currently-deployed binary ignores an env
+   var it does not read, and it keeps consuming the raw queue throughout. The
+   subsequent CI deploy inherits the var: `ci/buildspec-app.yml:78-84` describes
+   the *current* revision and swaps only the image, preserving the environment.
 
 **setlist.fm caveats:** the free key is non-commercial only, and capped at 1,440
 requests/day. The skip cache is what keeps steady-state usage inside that cap;
@@ -4736,6 +4753,11 @@ aws s3 ls "s3://$(terraform output -raw enrichment_cache_bucket)/enrichment/v1/"
 #    (via the bastion tunnel — see `make bastion-tunnel`)
 psql -c "SELECT status, count(*) FROM artists GROUP BY status;"
 psql -c "SELECT status, count(*) FROM artist_bios GROUP BY status;"
+
+# 5. Tour enrichment specifically — this is what catches an unseeded secret.
+#    All rows at status='error' means the setlist.fm key is still the
+#    REPLACE_ME_AFTER_APPLY placeholder.
+psql -c "SELECT status, count(*) FROM artist_tour_snapshots GROUP BY status;"
 ```
 
 Set `AWS_PROFILE=servant` for all of the above.

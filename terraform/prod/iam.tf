@@ -62,6 +62,8 @@ data "aws_iam_policy_document" "task" {
     resources = [
       aws_sqs_queue.events.arn,
       aws_sqs_queue.events_dlq.arn,
+      aws_sqs_queue.events_enriched.arn,
+      aws_sqs_queue.events_enriched_dlq.arn,
       aws_sqs_queue.interests.arn,
       aws_sqs_queue.interests_dlq.arn,
     ]
