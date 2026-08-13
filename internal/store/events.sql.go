@@ -77,7 +77,7 @@ func (q *Queries) GetEventByID(ctx context.Context, id pgtype.UUID) (GetEventByI
 
 const getEventBySourceKey = `-- name: GetEventBySourceKey :one
 SELECT id, source_id, source_event_id, title, description, starts_at, ends_at,
-       venue_id, image_url, url, last_seen_at, archived_at, created_at, updated_at
+       venue_id, image_url, url, headline_artist_id, last_seen_at, archived_at, created_at, updated_at
 FROM events
 WHERE source_id = $1 AND source_event_id = $2
 `
@@ -88,20 +88,21 @@ type GetEventBySourceKeyParams struct {
 }
 
 type GetEventBySourceKeyRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	SourceID      pgtype.UUID        `json:"source_id"`
-	SourceEventID string             `json:"source_event_id"`
-	Title         string             `json:"title"`
-	Description   string             `json:"description"`
-	StartsAt      pgtype.Timestamptz `json:"starts_at"`
-	EndsAt        pgtype.Timestamptz `json:"ends_at"`
-	VenueID       pgtype.UUID        `json:"venue_id"`
-	ImageUrl      *string            `json:"image_url"`
-	Url           *string            `json:"url"`
-	LastSeenAt    pgtype.Timestamptz `json:"last_seen_at"`
-	ArchivedAt    pgtype.Timestamptz `json:"archived_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID               pgtype.UUID        `json:"id"`
+	SourceID         pgtype.UUID        `json:"source_id"`
+	SourceEventID    string             `json:"source_event_id"`
+	Title            string             `json:"title"`
+	Description      string             `json:"description"`
+	StartsAt         pgtype.Timestamptz `json:"starts_at"`
+	EndsAt           pgtype.Timestamptz `json:"ends_at"`
+	VenueID          pgtype.UUID        `json:"venue_id"`
+	ImageUrl         *string            `json:"image_url"`
+	Url              *string            `json:"url"`
+	HeadlineArtistID pgtype.UUID        `json:"headline_artist_id"`
+	LastSeenAt       pgtype.Timestamptz `json:"last_seen_at"`
+	ArchivedAt       pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetEventBySourceKey(ctx context.Context, arg GetEventBySourceKeyParams) (GetEventBySourceKeyRow, error) {
@@ -118,6 +119,7 @@ func (q *Queries) GetEventBySourceKey(ctx context.Context, arg GetEventBySourceK
 		&i.VenueID,
 		&i.ImageUrl,
 		&i.Url,
+		&i.HeadlineArtistID,
 		&i.LastSeenAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,

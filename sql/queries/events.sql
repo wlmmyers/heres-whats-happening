@@ -30,7 +30,7 @@ WHERE id = $1;
 
 -- name: GetEventBySourceKey :one
 SELECT id, source_id, source_event_id, title, description, starts_at, ends_at,
-       venue_id, image_url, url, last_seen_at, archived_at, created_at, updated_at
+       venue_id, image_url, url, headline_artist_id, last_seen_at, archived_at, created_at, updated_at
 FROM events
 WHERE source_id = $1 AND source_event_id = $2;
 

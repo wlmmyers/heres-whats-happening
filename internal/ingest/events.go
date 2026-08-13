@@ -25,9 +25,11 @@ func NewEventHandler(q *store.Queries, cityID pgtype.UUID) *EventHandler {
 	return &EventHandler{q: q, cityID: cityID}
 }
 
-// Handle decodes an SQS message body as an events.Message and applies it.
+// Handle decodes an SQS message body as an events.EnrichedMessage and applies
+// it. A plain (un-enriched) message decodes into the same type with a nil
+// Enrichment, which is what makes the queue cutover safe.
 func (h *EventHandler) Handle(ctx context.Context, body []byte) error {
-	var m events.Message
+	var m events.EnrichedMessage
 	if err := json.Unmarshal(body, &m); err != nil {
 		// Malformed message — log and return nil so consumer deletes it.
 		log.Printf("ingest: bad event message: %v", err)
@@ -36,10 +38,16 @@ func (h *EventHandler) Handle(ctx context.Context, body []byte) error {
 	return h.handleMessage(ctx, m)
 }
 
-func (h *EventHandler) handleMessage(ctx context.Context, m events.Message) error {
+func (h *EventHandler) handleMessage(ctx context.Context, m events.EnrichedMessage) error {
 	src, err := h.q.GetEventSourceByName(ctx, m.SourceID)
 	if err != nil {
 		return fmt.Errorf("lookup source %q: %w", m.SourceID, err)
+	}
+
+	// Artist BEFORE event: events.headline_artist_id has an FK to artists.id.
+	artistID, err := h.applyEnrichment(ctx, m.Enrichment)
+	if err != nil {
+		return err
 	}
 
 	// Upsert venue
@@ -58,16 +66,17 @@ func (h *EventHandler) handleMessage(ctx context.Context, m events.Message) erro
 
 	// Upsert event
 	eventID, err := h.q.UpsertEvent(ctx, store.UpsertEventParams{
-		SourceID:      src.ID,
-		SourceEventID: m.SourceEventID,
-		Title:         m.Title,
-		Description:   m.Description,
-		StartsAt:      pgtype.Timestamptz{Time: m.StartsAt, Valid: true},
-		EndsAt:        pgTimePtr(m.EndsAt),
-		TimeTbd:       m.TimeTBD,
-		VenueID:       venueID,
-		ImageUrl:      optString(m.ImageURL),
-		Url:           optString(m.URL),
+		SourceID:         src.ID,
+		SourceEventID:    m.SourceEventID,
+		Title:            m.Title,
+		Description:      m.Description,
+		StartsAt:         pgtype.Timestamptz{Time: m.StartsAt, Valid: true},
+		EndsAt:           pgTimePtr(m.EndsAt),
+		TimeTbd:          m.TimeTBD,
+		VenueID:          venueID,
+		ImageUrl:         optString(m.ImageURL),
+		Url:              optString(m.URL),
+		HeadlineArtistID: artistID,
 	})
 	if err != nil {
 		return fmt.Errorf("upsert event: %w", err)
