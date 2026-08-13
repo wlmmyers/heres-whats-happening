@@ -29,6 +29,11 @@ type Config struct {
 	TicketmasterAPIKey string
 	TicketmasterCity   string
 
+	// EnrichedEventsQueueURL is the queue the ingest consumer reads. Events
+	// reach it after the mastra-handler Lambda enriches them off
+	// EventsQueueURL, which scrapers still publish to.
+	EnrichedEventsQueueURL string
+
 	// Plan 3 additions
 	SpotifyClientID     string
 	SpotifyClientSecret string
@@ -190,28 +195,30 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		DatabaseURL:         dbURL,
-		HTTPAddr:            addr,
-		JWTSigningKey:       signingKey,
-		JWTAccessTTL:        accessTTL,
-		RefreshTTL:          refreshTTL,
-		LogLevel:            logLevel,
-		AWSRegion:           os.Getenv("AWS_REGION"),
-		DBSecretARN:         os.Getenv("DB_SECRET_ARN"),
-		SQSEndpoint:         os.Getenv("SQS_ENDPOINT"),
-		EventsQueueURL:      os.Getenv("EVENTS_QUEUE_URL"),
-		IngestWorkers:       workers,
-		TicketmasterAPIKey:  os.Getenv("TICKETMASTER_API_KEY"),
-		TicketmasterCity:    os.Getenv("TICKETMASTER_CITY"),
-		SpotifyClientID:     os.Getenv("SPOTIFY_CLIENT_ID"),
-		SpotifyClientSecret: os.Getenv("SPOTIFY_CLIENT_SECRET"),
-		SpotifyRedirectURI:  os.Getenv("SPOTIFY_REDIRECT_URI"),
-		SpotifyTokenEncKey:  encKey,
-		InterestsQueueURL:   os.Getenv("INTERESTS_QUEUE_URL"),
-		TEIEndpoint:         os.Getenv("TEI_ENDPOINT"),
-		IcalBaseURL:         os.Getenv("ICAL_BASE_URL"),
-		CORSAllowedOrigins:  corsOrigins,
-		TrustProxy:          trustProxy,
+		DatabaseURL:        dbURL,
+		HTTPAddr:           addr,
+		JWTSigningKey:      signingKey,
+		JWTAccessTTL:       accessTTL,
+		RefreshTTL:         refreshTTL,
+		LogLevel:           logLevel,
+		AWSRegion:          os.Getenv("AWS_REGION"),
+		DBSecretARN:        os.Getenv("DB_SECRET_ARN"),
+		SQSEndpoint:        os.Getenv("SQS_ENDPOINT"),
+		EventsQueueURL:     os.Getenv("EVENTS_QUEUE_URL"),
+		IngestWorkers:      workers,
+		TicketmasterAPIKey: os.Getenv("TICKETMASTER_API_KEY"),
+		TicketmasterCity:   os.Getenv("TICKETMASTER_CITY"),
+
+		EnrichedEventsQueueURL: os.Getenv("ENRICHED_EVENTS_QUEUE_URL"),
+		SpotifyClientID:        os.Getenv("SPOTIFY_CLIENT_ID"),
+		SpotifyClientSecret:    os.Getenv("SPOTIFY_CLIENT_SECRET"),
+		SpotifyRedirectURI:     os.Getenv("SPOTIFY_REDIRECT_URI"),
+		SpotifyTokenEncKey:     encKey,
+		InterestsQueueURL:      os.Getenv("INTERESTS_QUEUE_URL"),
+		TEIEndpoint:            os.Getenv("TEI_ENDPOINT"),
+		IcalBaseURL:            os.Getenv("ICAL_BASE_URL"),
+		CORSAllowedOrigins:     corsOrigins,
+		TrustProxy:             trustProxy,
 
 		EmailSender:      emailSender,
 		EmailFromAddress: emailFrom,

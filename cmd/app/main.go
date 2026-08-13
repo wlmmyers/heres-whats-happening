@@ -118,11 +118,12 @@ func serve() error {
 		return fmt.Errorf("load default city: %w", err)
 	}
 
-	// Build the SQS client once if either queue URL is set. Without this guard
+	// Build the SQS client once if any queue URL is set. Without this guard
 	// hoist, a Spotify-only deployment (INTERESTS_QUEUE_URL set, EVENTS_QUEUE_URL
-	// unset) would pass a nil qClient to the interest consumer and panic.
+	// and ENRICHED_EVENTS_QUEUE_URL unset) would pass a nil qClient to the
+	// interest consumer and panic.
 	var qClient *queue.Client
-	if cfg.EventsQueueURL != "" || cfg.InterestsQueueURL != "" {
+	if cfg.EventsQueueURL != "" || cfg.EnrichedEventsQueueURL != "" || cfg.InterestsQueueURL != "" {
 		qClient, err = queue.NewClient(ctx, cfg.AWSRegion, cfg.SQSEndpoint)
 		if err != nil {
 			return fmt.Errorf("queue client: %w", err)
@@ -130,9 +131,13 @@ func serve() error {
 	}
 
 	var consumer *ingest.Consumer
-	if cfg.EventsQueueURL != "" {
+	// Reads ENRICHED events. Scrapers still publish to EventsQueueURL; the
+	// mastra-handler Lambda enriches from there onto this queue. A message
+	// without an enrichment block still applies exactly as it used to, which is
+	// what makes this switch reversible.
+	if cfg.EnrichedEventsQueueURL != "" {
 		h := ingest.NewEventHandler(q, city.ID)
-		consumer = ingest.NewConsumer(qClient, cfg.EventsQueueURL, h, cfg.IngestWorkers, "events")
+		consumer = ingest.NewConsumer(qClient, cfg.EnrichedEventsQueueURL, h, cfg.IngestWorkers, "events-enriched")
 	}
 
 	spClient := spotify.New(cfg.SpotifyClientID, cfg.SpotifyClientSecret, cfg.SpotifyRedirectURI, "")
