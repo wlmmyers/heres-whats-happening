@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -16,16 +17,21 @@ import (
 )
 
 type calendarEvent struct {
-	ID             string        `json:"id"`
-	Title          string        `json:"title"`
-	Description    string        `json:"description,omitempty"`
-	StartsAt       string        `json:"starts_at"`
-	EndsAt         string        `json:"ends_at,omitempty"`
-	ImageURL       string        `json:"image_url,omitempty"`
-	URL            string        `json:"url,omitempty"`
-	Venue          calendarVenue `json:"venue"`
-	Score          float64       `json:"score"`
-	MatchedBecause calendarMatch `json:"matched_because"`
+	ID             string          `json:"id"`
+	Title          string          `json:"title"`
+	Description    string          `json:"description,omitempty"`
+	StartsAt       string          `json:"starts_at"`
+	EndsAt         string          `json:"ends_at,omitempty"`
+	ImageURL       string          `json:"image_url,omitempty"`
+	URL            string          `json:"url,omitempty"`
+	Venue          calendarVenue   `json:"venue"`
+	Score          float64         `json:"score"`
+	MatchedBecause calendarMatch   `json:"matched_because"`
+	Artist         *calendarArtist `json:"artist,omitempty"`
+
+	// Unexported, so encoding/json ignores it entirely — no tag needed. Carries
+	// the row's headline_artist_id from the page query through to attachArtists.
+	artistID pgtype.UUID
 }
 
 type calendarVenue struct {
@@ -62,6 +68,44 @@ func parseCursor(w http.ResponseWriter, r *http.Request) (startsAt pgtype.Timest
 		return pgtype.Timestamptz{}, pgtype.UUID{}, false
 	}
 	return pgtype.Timestamptz{Time: ts, Valid: true}, pgtype.UUID{Bytes: id, Valid: true}, true
+}
+
+// attachArtists batch-loads enrichment for a page of events and hangs it off
+// each one, following the ListEventPerformersBatch pattern: one page query,
+// then one round trip for the whole page rather than N.
+//
+// It also applies the image fallback. The event's own image always wins, so an
+// event whose source supplied a photo is untouched; only events with no image
+// at all pick up the band photo. That is what lets the existing frontend render
+// band images with no change.
+func attachArtists(ctx context.Context, q *store.Queries, evs []calendarEvent, artistIDs []pgtype.UUID) {
+	if len(artistIDs) == 0 {
+		return
+	}
+	rows, err := q.GetArtistEnrichmentBatch(ctx, artistIDs)
+	if err != nil {
+		// Enrichment is decoration: a failure here must not fail the calendar.
+		log.Printf("calendar: artist enrichment lookup: %v", err)
+		return
+	}
+	byID := make(map[[16]byte]store.GetArtistEnrichmentBatchRow, len(rows))
+	for _, r := range rows {
+		byID[r.ArtistID.Bytes] = r
+	}
+	for i := range evs {
+		if !evs[i].artistID.Valid {
+			continue
+		}
+		row, ok := byID[evs[i].artistID.Bytes]
+		if !ok {
+			continue
+		}
+		a := buildArtist(row)
+		evs[i].Artist = &a
+		if evs[i].ImageURL == "" && a.Image != nil {
+			evs[i].ImageURL = a.Image.URL
+		}
+	}
 }
 
 // GetMyCalendar returns one page of the authenticated user's matched events,
@@ -101,6 +145,7 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 			last := rows[len(rows)-1]
 			out.NextCursor = encodeCursor(last.StartsAt.Time, last.EventID)
 		}
+		var artistIDs []pgtype.UUID
 		for _, row := range rows {
 			bd := parseBreakdown(row.ScoreBreakdown)
 			ev := calendarEvent{
@@ -114,6 +159,7 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 					Address: textPtrToString(row.VenueAddress),
 				},
 				MatchedBecause: bd,
+				artistID:       row.HeadlineArtistID,
 			}
 			if row.EndsAt.Valid {
 				ev.EndsAt = row.EndsAt.Time.UTC().Format(time.RFC3339)
@@ -121,7 +167,11 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 			ev.ImageURL = textPtrToString(row.ImageUrl)
 			ev.URL = textPtrToString(row.Url)
 			out.Events = append(out.Events, ev)
+			if row.HeadlineArtistID.Valid {
+				artistIDs = append(artistIDs, row.HeadlineArtistID)
+			}
 		}
+		attachArtists(ctx, q, out.Events, artistIDs)
 		writeJSON(w, http.StatusOK, out)
 	}
 }
@@ -164,6 +214,7 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 			last := rows[len(rows)-1]
 			out.NextCursor = encodeCursor(last.StartsAt.Time, last.EventID)
 		}
+		var artistIDs []pgtype.UUID
 		for _, row := range rows {
 			ev := calendarEvent{
 				ID:          uuidString(row.EventID),
@@ -177,6 +228,7 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 				// No match exists for these events; parseBreakdown(nil) gives the
 				// empty non-nil slices the FE expects.
 				MatchedBecause: parseBreakdown(nil),
+				artistID:       row.HeadlineArtistID,
 			}
 			if row.EndsAt.Valid {
 				ev.EndsAt = row.EndsAt.Time.UTC().Format(time.RFC3339)
@@ -184,7 +236,11 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 			ev.ImageURL = textPtrToString(row.ImageUrl)
 			ev.URL = textPtrToString(row.Url)
 			out.Events = append(out.Events, ev)
+			if row.HeadlineArtistID.Valid {
+				artistIDs = append(artistIDs, row.HeadlineArtistID)
+			}
 		}
+		attachArtists(ctx, q, out.Events, artistIDs)
 		writeJSON(w, http.StatusOK, out)
 	}
 }
@@ -279,12 +335,20 @@ func GetEventByIDForUser(q *store.Queries) http.HandlerFunc {
 				Address: textPtrToString(row.VenueAddress),
 			},
 			MatchedBecause: bd,
+			artistID:       row.HeadlineArtistID,
 		}
 		if row.EndsAt.Valid {
 			ev.EndsAt = row.EndsAt.Time.UTC().Format(time.RFC3339)
 		}
 		ev.ImageURL = textPtrToString(row.ImageUrl)
 		ev.URL = textPtrToString(row.Url)
+		var ids []pgtype.UUID
+		if row.HeadlineArtistID.Valid {
+			ids = append(ids, row.HeadlineArtistID)
+		}
+		evs := []calendarEvent{ev}
+		attachArtists(ctx, q, evs, ids)
+		ev = evs[0]
 		writeJSON(w, http.StatusOK, ev)
 	}
 }
