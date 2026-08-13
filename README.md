@@ -296,3 +296,55 @@ docker exec hwh_postgres psql -U app -d appdb \
 The Lambda also serves an internal **`POST /api/poster`** endpoint on its AWS_IAM-protected Function URL, reachable only by the API service's ECS task role (see `docs/superpowers/specs/2026-08-10-poster-proxy-design.md`). It takes `{ userId, performer, venue, date, force? }` — `performer` and `venue` are bounded to 200 characters and `date` to 100 (measured after trimming, in Unicode code points, so non-Latin names get the full budget; the whole request body is capped at 8 KB) — and returns `{ pngKey, cached, artist?, credit? }` — an S3 object key, not a URL, because the API service presigns at read time. Clients use the API's `/posters` endpoints instead, whose ready response is `{ status, pngUrl, artist?, credit? }`. No SVG is produced, stored, or served anywhere in this pipeline (see `docs/superpowers/specs/2026-08-11-drop-svg-artifact-design.md`).
 
 `userId` is supplied by the API service from the authenticated session and must be a UUID. It scopes the S3 object key (`posters/v2/u-{userId}/…`), which is what stops one user's `force: true` regeneration — `force` skips the cache read and always re-writes — from overwriting another user's poster. The key also ends in a digest of the three normalized fields: the readable slugs drop every non-Latin character, so without it `"La Luz"` and `"La Luz Мумий"` collide on one object.
+
+### Event enrichment
+
+Scrapers publish to `hwh-events-queue`. The mastra-handler Lambda consumes it
+(SQS trigger, `batch_size = 1`), resolves one MusicBrainz artist per event, runs
+three enrichment workflows — band image, Wikipedia/MusicBrainz bio, setlist.fm
+tour snapshot — and republishes onto `hwh-events-enriched-queue`, which the ECS
+ingest consumer reads.
+
+Enrichment is artist-scoped: one band playing five dates is one bio, one photo,
+one setlist. An S3 skip cache (`*-enrichment-cache` bucket) gates repeat work,
+which matters because the daily scrape republishes every event unconditionally.
+
+**Deploying a change to this path is two applies:**
+
+1. Apply queues, bucket, secret, IAM and Lambda env vars.
+2. Populate the setlist.fm secret — note the **slash**, matching the
+   `<prefix>/<name>` convention every other secret in this stack uses:
+   `aws secretsmanager put-secret-value --secret-id hwh/setlistfm-api-key --secret-string '<key>'`
+
+   Terraform seeds it with the literal `REPLACE_ME_AFTER_APPLY` under
+   `ignore_changes`, so forgetting this step does **not** fail the apply. It
+   fails quietly at runtime instead: setlist.fm rejects the placeholder, the
+   client throws, and every tour enrichment records `status: 'error'` and
+   retries in 6 hours forever. Step 5's verification below is what catches it.
+3. Deploy the Lambda image (`ci/buildspec-lambda.yml`).
+4. Apply `aws_lambda_event_source_mapping.enrichment`.
+5. **Set the env var BEFORE deploying the new API image** — this order is not
+   interchangeable:
+
+   ```bash
+   scripts/taskdef-edit.sh --set-env ENRICHED_EVENTS_QUEUE_URL=<url> --deploy
+   ```
+
+   then deploy the API image via CI.
+
+   The script is needed at all because `container_definitions` carries
+   `ignore_changes`, so a terraform-only env var change never reaches a running
+   task. The *order* matters because the new binary starts its consumer only
+   when `ENRICHED_EVENTS_QUEUE_URL` is non-empty, with no fallback to the raw
+   queue. Deploy first and the consumer simply does not start: **ingestion stops
+   silently** — no panic, no alarm, just events accumulating on the queue until
+   someone notices.
+
+   Setting it first is safe because the currently-deployed binary ignores an env
+   var it does not read, and it keeps consuming the raw queue throughout. The
+   subsequent CI deploy inherits the var: `ci/buildspec-app.yml:78-84` describes
+   the *current* revision and swaps only the image, preserving the environment.
+
+**setlist.fm caveats:** the free key is non-commercial only, and capped at 1,440
+requests/day. The skip cache is what keeps steady-state usage inside that cap;
+the documented upgrade path is a manual request to setlist.fm.

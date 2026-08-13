@@ -75,3 +75,26 @@ resource "aws_secretsmanager_secret_version" "setlistfm_key_placeholder" {
     ignore_changes = [secret_string]
   }
 }
+
+# Enrichment trigger. Added in a SEPARATE apply, after an image that handles SQS
+# events is live: with this in place, the first scrape invokes the function with
+# an SQS event, and an older image would fall through to its S3 branch.
+resource "aws_lambda_event_source_mapping" "enrichment" {
+  event_source_arn = aws_sqs_queue.events.arn
+  function_name    = aws_lambda_function.mastra_handler.arn
+
+  # One event per invocation. On the merits: one event is three workflows with
+  # LLM calls, and batching ten into a 300s timeout blows the budget.
+  # Structurally: it avoids partial-batch-failure reporting, which SQS reads
+  # from a JSON response body — not something to depend on through the
+  # streamifyResponse wrapper. At 1, success deletes and a throw returns.
+  batch_size = 1
+
+  # Bounds the SQS path ONLY. reserved_concurrent_executions would be wrong:
+  # this function also serves the poster Function URL and the email S3 path, and
+  # reserving would starve interactive poster requests behind enrichment.
+  # 2 is the minimum AWS allows.
+  scaling_config {
+    maximum_concurrency = 2
+  }
+}
