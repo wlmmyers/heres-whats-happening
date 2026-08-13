@@ -4682,8 +4682,15 @@ which matters because the daily scrape republishes every event unconditionally.
 **Deploying a change to this path is two applies:**
 
 1. Apply queues, bucket, secret, IAM and Lambda env vars.
-2. Populate the setlist.fm secret:
-   `aws secretsmanager put-secret-value --secret-id hwh-setlistfm-api-key --secret-string '<key>'`
+2. Populate the setlist.fm secret — note the **slash**, matching the
+   `<prefix>/<name>` convention every other secret in this stack uses:
+   `aws secretsmanager put-secret-value --secret-id hwh/setlistfm-api-key --secret-string '<key>'`
+
+   Terraform seeds it with the literal `REPLACE_ME_AFTER_APPLY` under
+   `ignore_changes`, so forgetting this step does **not** fail the apply. It
+   fails quietly at runtime instead: setlist.fm rejects the placeholder, the
+   client throws, and every tour enrichment records `status: 'error'` and
+   retries in 6 hours forever. Step 5's verification below is what catches it.
 3. Deploy the Lambda image (`ci/buildspec-lambda.yml`).
 4. Apply `aws_lambda_event_source_mapping.enrichment`.
 5. Deploy the API image, then point the consumer at the enriched queue with
@@ -4729,6 +4736,11 @@ aws s3 ls "s3://$(terraform output -raw enrichment_cache_bucket)/enrichment/v1/"
 #    (via the bastion tunnel — see `make bastion-tunnel`)
 psql -c "SELECT status, count(*) FROM artists GROUP BY status;"
 psql -c "SELECT status, count(*) FROM artist_bios GROUP BY status;"
+
+# 5. Tour enrichment specifically — this is what catches an unseeded secret.
+#    All rows at status='error' means the setlist.fm key is still the
+#    REPLACE_ME_AFTER_APPLY placeholder.
+psql -c "SELECT status, count(*) FROM artist_tour_snapshots GROUP BY status;"
 ```
 
 Set `AWS_PROFILE=servant` for all of the above.
