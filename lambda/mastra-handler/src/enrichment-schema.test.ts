@@ -65,6 +65,36 @@ describe("EnrichedMessageSchema", () => {
     );
     expect(() => EnrichedMessageSchema.parse(JSON.parse(raw))).not.toThrow();
   });
+
+  // Pins EventMessageSchema.extend() preserving .strict(): the TS mirror of
+  // the Go consumer's DisallowUnknownFields. If a future zod upgrade or an
+  // accidentally dropped .strict() ever lets this slip, this is what catches
+  // it — the failure otherwise surfaces on the queue, not in a test.
+  it("rejects an unrecognized top-level key", () => {
+    expect(() =>
+      EnrichedMessageSchema.parse({
+        ...baseEvent,
+        bogus_field: 1,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an unrecognized key nested inside the enrichment block", () => {
+    expect(() =>
+      EnrichedMessageSchema.parse({
+        ...baseEvent,
+        enrichment: {
+          attempted_at: "2026-08-12T04:11:22Z",
+          artist: {
+            performer: "x",
+            display_name: "x",
+            status: "ok",
+            bogus_field: 1,
+          },
+        },
+      }),
+    ).toThrow();
+  });
 });
 
 // The Lambda's internal credit is camelCase; the wire is snake_case, matching
@@ -75,6 +105,7 @@ describe("toWireCredit", () => {
       file: "La_Luz.jpg",
       descriptionUrl: "https://commons/desc",
       artist: "Photographer",
+      credit: "Photographer / Wikimedia Commons",
       license: "cc-by-sa-4.0",
       licenseShortName: "CC BY-SA 4.0",
       licenseUrl: "https://creativecommons.org/x",
@@ -85,6 +116,7 @@ describe("toWireCredit", () => {
       file: "La_Luz.jpg",
       description_url: "https://commons/desc",
       artist: "Photographer",
+      credit: "Photographer / Wikimedia Commons",
       license: "cc-by-sa-4.0",
       license_short_name: "CC BY-SA 4.0",
       license_url: "https://creativecommons.org/x",
