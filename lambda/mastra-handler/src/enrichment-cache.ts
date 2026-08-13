@@ -1,10 +1,10 @@
-import { GetObjectCommand, PutObjectCommand, type S3Client } from "@aws-sdk/client-s3";
-import { createHash } from "node:crypto";
-import { artistKey } from "./artist-key.js";
-import type { ArtistInfo, BioInfo, ImageInfo, TourInfo } from "./enrichment-schema.js";
+import { GetObjectCommand, PutObjectCommand, type S3Client } from '@aws-sdk/client-s3';
+import { createHash } from 'node:crypto';
+import { artistKey } from './artist-key.js';
+import type { ArtistInfo, BioInfo, ImageInfo, TourInfo } from './enrichment-schema.js';
 
-export type WorkflowName = "image" | "bio" | "tour";
-export type CacheStatus = "ok" | "none" | "error";
+export type WorkflowName = 'image' | 'bio' | 'tour';
+export type CacheStatus = 'ok' | 'none' | 'error';
 
 /** How long an attempt with a given outcome suppresses a retry. Mirrors the
  * shape of internal/scraper/spotify/genres.go:17-19 so the two artist caches
@@ -42,7 +42,7 @@ export interface EnrichmentCache {
  * a nested prefix, and "Sunn O)))" and emoji names exist. The readable
  * artist_key lives inside the body so an object stays identifiable. */
 export function cacheObjectKey(performer: string): string {
-  const digest = createHash("sha256").update(artistKey(performer)).digest("hex");
+  const digest = createHash('sha256').update(artistKey(performer)).digest('hex');
   return `enrichment/v1/${digest}.json`;
 }
 
@@ -80,7 +80,7 @@ export class S3EnrichmentCache implements EnrichmentCache {
         Bucket: this.bucket,
         Key: cacheObjectKey(performer),
         Body: JSON.stringify(entry),
-        ContentType: "application/json",
+        ContentType: 'application/json',
       }),
     );
   }
@@ -89,7 +89,7 @@ export class S3EnrichmentCache implements EnrichmentCache {
 function isNoSuchKey(e: unknown): boolean {
   const name = (e as { name?: string })?.name;
   const status = (e as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-  return name === "NoSuchKey" || name === "NotFound" || status === 404;
+  return name === 'NoSuchKey' || name === 'NotFound' || status === 404;
 }
 
 /** In-memory cache for local dev and unit tests. Lives beside the production

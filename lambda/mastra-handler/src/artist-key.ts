@@ -10,9 +10,9 @@
  */
 export function artistKey(performer: string): string {
   return performer
-    .normalize("NFD")
-    .replace(/\p{Mn}/gu, "")
-    .normalize("NFC")
+    .normalize('NFD')
+    .replace(/\p{Mn}/gu, '')
+    .normalize('NFC')
     .toLowerCase()
     .trim();
 }
