@@ -32,6 +32,16 @@ output "interests_queue_url" {
   value = aws_sqs_queue.interests.url
 }
 
+output "events_enriched_queue_url" {
+  description = "URL of the enriched-events queue the ingest consumer reads."
+  value       = aws_sqs_queue.events_enriched.url
+}
+
+output "enrichment_cache_bucket" {
+  description = "Bucket holding the per-artist enrichment skip cache."
+  value       = aws_s3_bucket.enrichment_cache.id
+}
+
 output "post_apply_steps" {
   description = "Operator checklist after first apply."
   value       = <<-EOT

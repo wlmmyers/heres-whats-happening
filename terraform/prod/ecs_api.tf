@@ -20,6 +20,7 @@ locals {
     # DB_PASSWORD (injected below) remains the startup/fallback credential.
     { name = "DB_SECRET_ARN", value = aws_db_instance.main.master_user_secret[0].secret_arn },
     { name = "EVENTS_QUEUE_URL", value = aws_sqs_queue.events.url },
+    { name = "ENRICHED_EVENTS_QUEUE_URL", value = aws_sqs_queue.events_enriched.url },
     { name = "INTERESTS_QUEUE_URL", value = aws_sqs_queue.interests.url },
     { name = "INGEST_WORKERS", value = tostring(var.ingest_workers) },
     { name = "TICKETMASTER_CITY", value = var.ticketmaster_city },
