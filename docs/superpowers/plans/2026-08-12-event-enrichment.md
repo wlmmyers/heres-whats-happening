@@ -2983,7 +2983,8 @@ in setlist.fm evidence by a separate agent instead."
 - Create: `src/enrich-workflows.test.ts`
 
 **Interfaces:**
-- Consumes: `ImageInfo`/`BioInfo`/`TourInfo`/`toWireCredit` (Task 7), `SetlistFmClient` (Task 9), `fetchWikipediaExtract`/`fetchReleaseGroups` (Task 10), `bioAuthorAgent`/`tourBlurbAgent` (Task 11), `judgeBandImageStep` (`src/mastra/workflows/judge-band-image.step.ts`), `resolveImageCandidates`/`fetchImageBytes`.
+- Consumes: `ImageInfo`/`BioInfo`/`TourInfo`/`toWireCredit` (Task 7), `SetlistFmClient` (Task 9), `fetchWikipediaExtract`/`fetchReleaseGroups` (Task 10), `bioAuthorAgent`/`tourBlurbAgent` (Task 11), `imageAnalysisAgent` (`src/mastra/agents/image-analysis.agent.ts`), `resolveImageCandidates`/`fetchImageBytes`.
+- Deliberately **not** `judgeBandImageStep`. That is a Mastra workflow step bound to the poster workflow's loop-state schema, and it writes candidate bytes into a per-run artifact directory that its caller must then clean up. Enrichment keeps no bytes at all, so `enrichImage` reuses the same *agent* while walking candidates itself. The step stays untouched for the shipped poster path.
 - Produces: `enrichImage(deps, artist): Promise<ImageInfo>`, `enrichBio(deps, artist): Promise<BioInfo>`, `enrichTour(deps, artist, event): Promise<TourInfo>`. Each **never throws**.
 
 - [ ] **Step 1: Write the failing tests**
