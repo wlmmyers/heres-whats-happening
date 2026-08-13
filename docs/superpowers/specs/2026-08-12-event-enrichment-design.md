@@ -715,8 +715,14 @@ will invoke the old handler with an SQS event and fall through its unguarded
 3. Deploy the Lambda image via the CI lane.
 4. **Apply 2:** add `aws_lambda_event_source_mapping.enrichment`. Enrichment
    starts here; messages accumulate on the enriched queue with no consumer yet.
-5. Deploy the API/consumer image, then point it at the enriched queue with
-   `scripts/taskdef-edit.sh`.
+5. Point the consumer at the enriched queue **before** deploying the API image:
+   `scripts/taskdef-edit.sh --set-env ENRICHED_EVENTS_QUEUE_URL=<url> --deploy`,
+   then ship the image. Reversing these stops ingestion silently — the new
+   binary starts its consumer only when that var is set, with no fallback to the
+   raw queue, so deploying first means no consumer runs at all. The currently
+   deployed binary ignores the var harmlessly, and the CI deploy inherits it
+   (`ci/buildspec-app.yml` describes the current revision and swaps only the
+   image).
 
 **The ECS env var will not reach the running task by terraform alone** —
 `container_definitions` carries `ignore_changes`. Use

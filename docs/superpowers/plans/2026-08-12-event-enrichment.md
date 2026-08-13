@@ -4693,12 +4693,27 @@ which matters because the daily scrape republishes every event unconditionally.
    retries in 6 hours forever. Step 5's verification below is what catches it.
 3. Deploy the Lambda image (`ci/buildspec-lambda.yml`).
 4. Apply `aws_lambda_event_source_mapping.enrichment`.
-5. Deploy the API image, then point the consumer at the enriched queue with
-   `scripts/taskdef-edit.sh --set-env ENRICHED_EVENTS_QUEUE_URL=... --deploy`.
+5. **Set the env var BEFORE deploying the new API image** — this order is not
+   interchangeable:
 
-Step 5 needs the script because `container_definitions` carries
-`ignore_changes`, so a terraform-only env var change never reaches a running
-task.
+   ```bash
+   scripts/taskdef-edit.sh --set-env ENRICHED_EVENTS_QUEUE_URL=<url> --deploy
+   ```
+
+   then deploy the API image via CI.
+
+   The script is needed at all because `container_definitions` carries
+   `ignore_changes`, so a terraform-only env var change never reaches a running
+   task. The *order* matters because the new binary starts its consumer only
+   when `ENRICHED_EVENTS_QUEUE_URL` is non-empty, with no fallback to the raw
+   queue. Deploy first and the consumer simply does not start: **ingestion stops
+   silently** — no panic, no alarm, just events accumulating on the queue until
+   someone notices.
+
+   Setting it first is safe because the currently-deployed binary ignores an env
+   var it does not read, and it keeps consuming the raw queue throughout. The
+   subsequent CI deploy inherits the var: `ci/buildspec-app.yml:78-84` describes
+   the *current* revision and swaps only the image, preserving the environment.
 
 **setlist.fm caveats:** the free key is non-commercial only, and capped at 1,440
 requests/day. The skip cache is what keeps steady-state usage inside that cap;
