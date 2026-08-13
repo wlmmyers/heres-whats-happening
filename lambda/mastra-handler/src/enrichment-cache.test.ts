@@ -43,6 +43,16 @@ describe('isFresh', () => {
     expect(isFresh({ status: 'ok', at: 'not-a-date' }, NOW)).toBe(false);
   });
 
+  it('is stale exactly at the TTL boundary (strict comparison)', () => {
+    const at = new Date(NOW - CACHE_TTL_MS.ok).toISOString();
+    expect(isFresh({ status: 'ok', at }, NOW)).toBe(false);
+  });
+
+  it('is fresh one millisecond inside the TTL boundary', () => {
+    const at = new Date(NOW - CACHE_TTL_MS.ok + 1).toISOString();
+    expect(isFresh({ status: 'ok', at }, NOW)).toBe(true);
+  });
+
   it('has the TTLs the spec fixed', () => {
     expect(CACHE_TTL_MS.ok).toBe(90 * 24 * 3600_000);
     expect(CACHE_TTL_MS.none).toBe(14 * 24 * 3600_000);
@@ -106,5 +116,23 @@ describe('S3EnrichmentCache', () => {
     } as unknown as S3Client;
 
     expect(await new S3EnrichmentCache(s3, 'b').read('La Luz')).toBeNull();
+  });
+
+  it('throws on NoSuchBucket rather than reporting a miss, even though it is also a 404', async () => {
+    const s3 = {
+      send: async () => {
+        const e = new Error('The specified bucket does not exist') as Error & {
+          name: string;
+          $metadata: { httpStatusCode: number };
+        };
+        e.name = 'NoSuchBucket';
+        e.$metadata = { httpStatusCode: 404 };
+        throw e;
+      },
+    } as unknown as S3Client;
+
+    await expect(new S3EnrichmentCache(s3, 'b').read('La Luz')).rejects.toThrow(
+      /specified bucket does not exist/,
+    );
   });
 });

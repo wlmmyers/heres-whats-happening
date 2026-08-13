@@ -63,7 +63,9 @@ export class S3EnrichmentCache implements EnrichmentCache {
       const out = await this.s3.send(
         new GetObjectCommand({ Bucket: this.bucket, Key: cacheObjectKey(performer) }),
       );
-      return JSON.parse(await out.Body!.transformToString()) as CacheEntry;
+      const body = await out.Body?.transformToString();
+      if (!body) return null;
+      return JSON.parse(body) as CacheEntry;
     } catch (e) {
       // A genuine miss is NoSuchKey. AccessDenied is a misconfiguration, and
       // swallowing it would silently re-run every workflow on every event
@@ -87,9 +89,12 @@ export class S3EnrichmentCache implements EnrichmentCache {
 }
 
 function isNoSuchKey(e: unknown): boolean {
+  // Name only, matching poster-sink.ts's find(). A status-code fallback here
+  // would also swallow NoSuchBucket (also a 404) as a miss, which is the same
+  // failure mode the AccessDenied rule exists to prevent, just triggered by a
+  // bad bucket instead of bad IAM.
   const name = (e as { name?: string })?.name;
-  const status = (e as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-  return name === 'NoSuchKey' || name === 'NotFound' || status === 404;
+  return name === 'NoSuchKey' || name === 'NotFound';
 }
 
 /** In-memory cache for local dev and unit tests. Lives beside the production
