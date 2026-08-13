@@ -84,6 +84,32 @@ describe('handleSQS', () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
+  // The outbound message is validated too: enrich() builds its result from
+  // casts on external API responses, any of which can arrive as the wrong
+  // type. An invalid enrichment block must not cost the event its ingestion —
+  // it degrades to the plain, already-validated event instead.
+  it('emits the plain event when the enriched output fails validation', async () => {
+    const emitted: unknown[] = [];
+    await handleSQS(sqsEvent as never, {
+      enrich: async (m) => ({
+        ...m,
+        enrichment: {
+          attempted_at: '2026-08-12T00:00:00Z',
+          artist: { performer: 'La Luz', display_name: 'La Luz', status: 'ok' },
+          tour: { status: 'ok', songs: [{ name: 'S', encore: 'not-a-number' }] }, // encore must be a number
+        },
+      }),
+      emit: async (msgs) => {
+        emitted.push(...msgs);
+      },
+    });
+
+    expect(emitted).toHaveLength(1);
+    const out = emitted[0] as { title: string; enrichment?: unknown };
+    expect(out.title).toBe('La Luz');
+    expect(out.enrichment).toBeUndefined();
+  });
+
   // A send failure MUST throw: at batch_size 1 that returns the message to the
   // queue, which is the only retry mechanism this path has.
   it('propagates an emit failure', async () => {

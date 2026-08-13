@@ -5,7 +5,7 @@ import { EventMessageSchema } from './schema.js';
 // Wire shape — MUST match Go internal/events/enriched.go JSON tags exactly.
 // snake_case throughout, including nested credit fields.
 
-const StatusSchema = z.enum(['ok', 'none', 'error']);
+export const StatusSchema = z.enum(['ok', 'none', 'error']);
 
 export const WireCreditSchema = z
   .object({

@@ -22,6 +22,7 @@ import { artifactStore } from './mastra/tools/artifact-store.js';
 import type { PosterWorkflowOutput } from './mastra/workflows/poster.schemas.js';
 import { posterWorkflow } from './mastra/workflows/poster.workflow.js';
 import { EventMessageSchema, type EventMessage } from './schema.js';
+import { EnrichedMessageSchema } from './enrichment-schema.js';
 import { sendBatch } from './sqs.js';
 import { enrichEvent, type EnrichDeps } from './enrichment.js';
 import { S3EnrichmentCache } from './enrichment-cache.js';
@@ -182,7 +183,28 @@ export async function handleSQS(event: SQSEvent, deps: SQSDeps): Promise<void> {
       );
       continue;
     }
-    out.push(await deps.enrich(parsed));
+    const enriched = await deps.enrich(parsed);
+    // Validate the OUTBOUND message too: enrich() assembles its result from
+    // casts on external API responses (setlist.fm's `encore`, Wikimedia's
+    // `thumbwidth`, MusicBrainz's revision id), any of which can arrive as the
+    // wrong type. An unvalidated bad payload would fail Go's decode on the
+    // consumer side, which today deletes the message outright — dropping a
+    // perfectly good event, silently, every day until the cache entry expires.
+    const result = EnrichedMessageSchema.safeParse(enriched);
+    if (result.success) {
+      out.push(result.data);
+    } else {
+      console.error(
+        JSON.stringify({
+          msg: 'enrichment-invalid-output',
+          messageId: rec.messageId,
+          error: result.error.message,
+        }),
+      );
+      // Degrade, don't drop: the plain (already-validated) event still
+      // ingests correctly, which is the whole point of the superset contract.
+      out.push(parsed);
+    }
   }
   if (out.length === 0) return;
   // A send failure throws: at batch_size 1 that returns the message to the

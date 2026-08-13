@@ -10,6 +10,12 @@ export interface TourDeps {
   recentSetlist(mbid: string): Promise<RecentSetlist | null>;
   writeBlurb(prompt: string): Promise<TourBlurb>;
   model: string;
+  /** False when the setlist.fm API key was never seeded. Checked BEFORE
+   * recentSetlist is called, not left to createSetlistFmClient — that client
+   * accepts an empty apiKey without complaint, and every call would otherwise
+   * burn a request on a guaranteed 403 (~800/day against setlist.fm's
+   * 1,440/day cap). Defaults to true for stub/test deps that omit it. */
+  apiKeyConfigured?: boolean;
 }
 
 export interface EventRef {
@@ -34,6 +40,10 @@ export async function enrichTour(
   // setlist.fm is keyed by MBID. No MBID, no request spent.
   if (!artist.mbid) {
     return { status: 'none', reason: 'no MusicBrainz match, so no setlist.fm lookup is possible' };
+  }
+  // An unseeded secret must not spend the daily request budget on 403s.
+  if (deps.apiKeyConfigured === false) {
+    return { status: 'none', reason: 'setlist.fm key not configured' };
   }
 
   let setlist: RecentSetlist | null;
@@ -83,8 +93,12 @@ export async function enrichTour(
   return base;
 }
 
-/** Production deps. Throws if the key was never loaded — the orchestrator
- * catches it and records status 'error'. */
+/** Production deps. apiKeyConfigured is false when apiKey is empty —
+ * createSetlistFmClient accepts an empty apiKey without complaint, so without
+ * this guard an unseeded secret would silently spend the daily request budget
+ * on 403s (~800/day against setlist.fm's 1,440/day cap) rather than failing
+ * loudly. enrichTour checks apiKeyConfigured before recentSetlist is ever
+ * called, so the empty key never reaches the network at all. */
 export function prodTourDeps(apiKey: string): TourDeps {
   const client = createSetlistFmClient({ apiKey });
   const model = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4-5';
@@ -95,5 +109,6 @@ export function prodTourDeps(apiKey: string): TourDeps {
       return (res.object as TourBlurb | undefined) ?? { blurb: '', usable: false };
     },
     model,
+    apiKeyConfigured: apiKey !== '',
   };
 }

@@ -135,4 +135,54 @@ describe('S3EnrichmentCache', () => {
       /specified bucket does not exist/,
     );
   });
+
+  // A malformed cached object must be treated as a miss rather than trusted:
+  // this self-heals a poisoned entry on the next successful write, instead of
+  // crashing the workflow that reads it (or feeding it downstream half-typed).
+  function s3ReturningBody(body: string): S3Client {
+    return {
+      send: async () => ({
+        Body: { transformToString: async () => body },
+      }),
+    } as unknown as S3Client;
+  }
+
+  it('reports a miss when the cached object is not valid JSON', async () => {
+    const s3 = s3ReturningBody('{not json');
+    expect(await new S3EnrichmentCache(s3, 'b').read('La Luz')).toBeNull();
+  });
+
+  it('reports a miss when the cached object does not match the schema', async () => {
+    const s3 = s3ReturningBody(JSON.stringify({ artist_key: 'la luz' })); // missing performer/workflows
+    expect(await new S3EnrichmentCache(s3, 'b').read('La Luz')).toBeNull();
+  });
+
+  it('reports a miss when a workflow record has a wrong-typed field', async () => {
+    const s3 = s3ReturningBody(
+      JSON.stringify({
+        artist_key: 'la luz',
+        performer: 'La Luz',
+        workflows: { bio: { status: 'ok', at: 123 } }, // at must be a string
+      }),
+    );
+    expect(await new S3EnrichmentCache(s3, 'b').read('La Luz')).toBeNull();
+  });
+
+  it('accepts a well-formed cached entry', async () => {
+    const entry = {
+      artist_key: 'la luz',
+      performer: 'La Luz',
+      artist: { performer: 'La Luz', display_name: 'La Luz', status: 'ok' as const },
+      workflows: {
+        bio: {
+          status: 'ok' as const,
+          at: '2026-08-12T00:00:00Z',
+          payload: { status: 'ok' as const, bio_md: 'x' },
+        },
+      },
+    };
+    const s3 = s3ReturningBody(JSON.stringify(entry));
+    const got = await new S3EnrichmentCache(s3, 'b').read('La Luz');
+    expect(got?.workflows.bio?.payload).toEqual({ status: 'ok', bio_md: 'x' });
+  });
 });

@@ -1,7 +1,18 @@
 import { GetObjectCommand, PutObjectCommand, type S3Client } from '@aws-sdk/client-s3';
 import { createHash } from 'node:crypto';
+import { z } from 'zod';
 import { artistKey } from './artist-key.js';
-import type { ArtistInfo, BioInfo, ImageInfo, TourInfo } from './enrichment-schema.js';
+import {
+  ArtistInfoSchema,
+  BioInfoSchema,
+  ImageInfoSchema,
+  StatusSchema,
+  TourInfoSchema,
+  type ArtistInfo,
+  type BioInfo,
+  type ImageInfo,
+  type TourInfo,
+} from './enrichment-schema.js';
 
 export type WorkflowName = 'image' | 'bio' | 'tour';
 export type CacheStatus = 'ok' | 'none' | 'error';
@@ -37,6 +48,30 @@ export interface EnrichmentCache {
   write(performer: string, entry: CacheEntry): Promise<void>;
 }
 
+// Runtime validation for a cached object read back from S3. The Lambda wrote
+// it, so it SHOULD already match CacheEntry/CacheRecord — but "should" is not
+// "trusted": a schema change mid-rollout, hand-edited object, or bit-rot must
+// be treated as a cache miss rather than crash the workflow that reads it (or
+// worse, feed it downstream half-typed). Returning a miss also self-heals a
+// poisoned entry, since the next successful run overwrites it.
+const CacheRecordSchema = z.object({
+  status: StatusSchema,
+  at: z.string(),
+  reason: z.string().optional(),
+  payload: z.union([ImageInfoSchema, BioInfoSchema, TourInfoSchema]).optional(),
+});
+
+export const CacheEntrySchema = z.object({
+  artist_key: z.string(),
+  performer: z.string(),
+  artist: ArtistInfoSchema.optional(),
+  workflows: z.object({
+    image: CacheRecordSchema.optional(),
+    bio: CacheRecordSchema.optional(),
+    tour: CacheRecordSchema.optional(),
+  }),
+});
+
 /** v1/ so a schema change is a prefix bump rather than a migration. The key is
  * hashed because normalized band names are not path-safe — "ac/dc" would create
  * a nested prefix, and "Sunn O)))" and emoji names exist. The readable
@@ -44,6 +79,10 @@ export interface EnrichmentCache {
 export function cacheObjectKey(performer: string): string {
   const digest = createHash('sha256').update(artistKey(performer)).digest('hex');
   return `enrichment/v1/${digest}.json`;
+}
+
+function message(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 export function isFresh(record: CacheRecord, now = Date.now()): boolean {
@@ -59,13 +98,12 @@ export class S3EnrichmentCache implements EnrichmentCache {
   ) {}
 
   async read(performer: string): Promise<CacheEntry | null> {
+    let body: string | undefined;
     try {
       const out = await this.s3.send(
         new GetObjectCommand({ Bucket: this.bucket, Key: cacheObjectKey(performer) }),
       );
-      const body = await out.Body?.transformToString();
-      if (!body) return null;
-      return JSON.parse(body) as CacheEntry;
+      body = await out.Body?.transformToString();
     } catch (e) {
       // A genuine miss is NoSuchKey. AccessDenied is a misconfiguration, and
       // swallowing it would silently re-run every workflow on every event
@@ -74,6 +112,33 @@ export class S3EnrichmentCache implements EnrichmentCache {
       if (isNoSuchKey(e)) return null;
       throw e;
     }
+    if (!body) return null;
+
+    // A malformed cached object (corrupt JSON, or JSON that no longer matches
+    // the schema) is a cache MISS, not a trusted read — this is a mis-parsed
+    // provider response away from crashing the workflow that reads it, and
+    // treating it as a miss self-heals the entry on the very next write.
+    let raw: unknown;
+    try {
+      raw = JSON.parse(body);
+    } catch (e) {
+      console.error(
+        JSON.stringify({ msg: 'enrichment-cache-corrupt-json', performer, error: message(e) }),
+      );
+      return null;
+    }
+    const parsed = CacheEntrySchema.safeParse(raw);
+    if (!parsed.success) {
+      console.error(
+        JSON.stringify({
+          msg: 'enrichment-cache-invalid-entry',
+          performer,
+          error: parsed.error.message,
+        }),
+      );
+      return null;
+    }
+    return parsed.data;
   }
 
   async write(performer: string, entry: CacheEntry): Promise<void> {
