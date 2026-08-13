@@ -1,8 +1,8 @@
-import { createRequire } from "node:module";
-import { readFile } from "node:fs/promises";
-import { createTool } from "@mastra/core/tools";
-import { Resvg, initWasm } from "@resvg/resvg-wasm";
-import { z } from "zod";
+import { createRequire } from 'node:module';
+import { readFile } from 'node:fs/promises';
+import { createTool } from '@mastra/core/tools';
+import { Resvg, initWasm } from '@resvg/resvg-wasm';
+import { z } from 'zod';
 
 /**
  * The ONLY font family the renderer can draw with. The wasm build ships no font
@@ -11,14 +11,14 @@ import { z } from "zod";
  * else silently draws NOTHING. The SVG author agent is instructed to emit exactly
  * this family; keep the two in sync.
  */
-export const POSTER_FONT_FAMILY = "Inter";
+export const POSTER_FONT_FAMILY = 'Inter';
 
 // Bundled with the Lambda (a runtime `dependencies` entry, so `pnpm install --prod`
 // ships it). Regular/Bold/Black cover the weights a poster actually uses.
 const FONT_MODULE_PATHS = [
-  "@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf",
-  "@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf",
-  "@expo-google-fonts/inter/900Black/Inter_900Black.ttf",
+  '@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf',
+  '@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf',
+  '@expo-google-fonts/inter/900Black/Inter_900Black.ttf',
 ];
 
 // initWasm must run exactly once per process, and the ~1 MB of font bytes must be
@@ -29,10 +29,12 @@ let ready: Promise<Uint8Array[]> | undefined;
 function ensureReady(): Promise<Uint8Array[]> {
   if (!ready) {
     const require = createRequire(import.meta.url);
-    const wasmPath = require.resolve("@resvg/resvg-wasm/index_bg.wasm");
+    const wasmPath = require.resolve('@resvg/resvg-wasm/index_bg.wasm');
     const fontPaths = FONT_MODULE_PATHS.map((p) => require.resolve(p));
     ready = (async () => {
-      const [wasmBytes, ...fonts] = await Promise.all([wasmPath, ...fontPaths].map((p) => readFile(p)));
+      const [wasmBytes, ...fonts] = await Promise.all(
+        [wasmPath, ...fontPaths].map((p) => readFile(p)),
+      );
       await initWasm(wasmBytes);
       return fonts as Uint8Array[];
     })().catch((e) => {
@@ -43,7 +45,13 @@ function ensureReady(): Promise<Uint8Array[]> {
   return ready;
 }
 
-export type RasterizeResult = { ok: boolean; png?: Buffer; width?: number; height?: number; error?: string };
+export type RasterizeResult = {
+  ok: boolean;
+  png?: Buffer;
+  width?: number;
+  height?: number;
+  error?: string;
+};
 
 /** Render an SVG string to a PNG. Never throws — failures come back as { ok:false, error }. */
 export async function rasterizeSvg(svg: string): Promise<RasterizeResult> {
@@ -67,8 +75,8 @@ export async function rasterizeSvg(svg: string): Promise<RasterizeResult> {
 }
 
 export const rasterizeTool = createTool({
-  id: "rasterize-svg",
-  description: "Render an SVG string to a PNG image (returns base64).",
+  id: 'rasterize-svg',
+  description: 'Render an SVG string to a PNG image (returns base64).',
   inputSchema: z.object({ svg: z.string() }),
   outputSchema: z.object({
     ok: z.boolean(),
@@ -80,6 +88,12 @@ export const rasterizeTool = createTool({
   execute: async ({ svg }) => {
     const res = await rasterizeSvg(svg);
     // Studio cannot render a Buffer; base64 only at this boundary.
-    return { ok: res.ok, pngBase64: res.png?.toString("base64"), width: res.width, height: res.height, error: res.error };
+    return {
+      ok: res.ok,
+      pngBase64: res.png?.toString('base64'),
+      width: res.width,
+      height: res.height,
+      error: res.error,
+    };
   },
 });

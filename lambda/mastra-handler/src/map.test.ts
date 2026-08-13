@@ -1,48 +1,48 @@
-import { describe, expect, it } from "vitest";
-import { contentHash, eventDateYMD } from "./hash.js";
-import { toMessage } from "./map.js";
-import type { EventDraft } from "./schema.js";
+import { describe, expect, it } from 'vitest';
+import { contentHash, eventDateYMD } from './hash.js';
+import { toMessage } from './map.js';
+import type { EventDraft } from './schema.js';
 
 const draft: EventDraft = {
-  title: "Phoebe Bridgers Live",
-  startsAt: "2026-06-15T20:00:00Z",
+  title: 'Phoebe Bridgers Live',
+  startsAt: '2026-06-15T20:00:00Z',
   timeTbd: false,
-  venue: { name: "The Bowl", address: "100 Main St" },
-  performers: ["Phoebe Bridgers", "MUNA"],
-  genres: ["indie"],
+  venue: { name: 'The Bowl', address: '100 Main St' },
+  performers: ['Phoebe Bridgers', 'MUNA'],
+  genres: ['indie'],
 };
 
-describe("toMessage", () => {
-  it("sets the shared email source and a headliner-based content hash", () => {
+describe('toMessage', () => {
+  it('sets the shared email source and a headliner-based content hash', () => {
     const m = toMessage(draft);
-    expect(m.source_id).toBe("email_newsletter");
+    expect(m.source_id).toBe('email_newsletter');
     expect(m.source_event_id).toBe(
-      contentHash("Phoebe Bridgers", "The Bowl", eventDateYMD(draft.startsAt)),
+      contentHash('Phoebe Bridgers', 'The Bowl', eventDateYMD(draft.startsAt)),
     );
     expect(m.venue.website_url).toBeUndefined();
-    expect(m.performers).toEqual(["Phoebe Bridgers", "MUNA"]);
+    expect(m.performers).toEqual(['Phoebe Bridgers', 'MUNA']);
   });
 
-  it("falls back to title when there are no performers", () => {
+  it('falls back to title when there are no performers', () => {
     const m = toMessage({ ...draft, performers: [] });
     expect(m.source_event_id).toBe(
-      contentHash("Phoebe Bridgers Live", "The Bowl", eventDateYMD(draft.startsAt)),
+      contentHash('Phoebe Bridgers Live', 'The Bowl', eventDateYMD(draft.startsAt)),
     );
     expect(m.performers).toBeUndefined();
   });
 
-  it("re-mapping the same draft yields the same hash (idempotent re-sends)", () => {
+  it('re-mapping the same draft yields the same hash (idempotent re-sends)', () => {
     expect(toMessage(draft).source_event_id).toBe(toMessage(draft).source_event_id);
   });
 });
 
-describe("toMessage time_tbd", () => {
-  it("carries the date-only flag onto the wire message", () => {
-    const m = toMessage({ ...draft, startsAt: "2026-07-25T00:00:00-07:00", timeTbd: true });
+describe('toMessage time_tbd', () => {
+  it('carries the date-only flag onto the wire message', () => {
+    const m = toMessage({ ...draft, startsAt: '2026-07-25T00:00:00-07:00', timeTbd: true });
     expect(m.time_tbd).toBe(true);
   });
 
-  it("marks events with a real start time as not TBD", () => {
+  it('marks events with a real start time as not TBD', () => {
     expect(toMessage(draft).time_tbd).toBe(false);
   });
 });

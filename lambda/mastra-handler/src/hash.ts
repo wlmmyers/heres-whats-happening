@@ -1,15 +1,15 @@
-import { createHash } from "node:crypto";
+import { createHash } from 'node:crypto';
 
 /** Deterministic normalization for hashing. Independent of Go's NormalizeString;
  * only needs to be stable within this Lambda. Lowercase, strip diacritics &
  * punctuation, collapse whitespace, trim. */
 export function normalize(s: string): string {
   return s
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "") // combining diacritics
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '') // combining diacritics
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, "") // drop punctuation/symbols
-    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, '') // drop punctuation/symbols
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -22,8 +22,8 @@ export function eventDateYMD(startsAtISO: string): string {
   const d = new Date(startsAtISO);
   if (Number.isNaN(d.getTime())) throw new Error(`invalid startsAt: ${startsAtISO}`);
   const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
   return `${y}${m}${day}`;
 }
 
@@ -32,7 +32,7 @@ export function eventDateYMD(startsAtISO: string): string {
  * extract/map layer); empty inputs hash to a stable but meaningless key.
  */
 export function contentHash(headliner: string, venue: string, dateYMD: string): string {
-  return createHash("sha256")
-    .update([normalize(headliner), normalize(venue), dateYMD].join("|"))
-    .digest("hex");
+  return createHash('sha256')
+    .update([normalize(headliner), normalize(venue), dateYMD].join('|'))
+    .digest('hex');
 }

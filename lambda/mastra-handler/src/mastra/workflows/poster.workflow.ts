@@ -1,22 +1,22 @@
-import { createStep, createWorkflow } from "@mastra/core/workflows";
-import { PosterRequestSchema } from "../../poster-schema.js";
-import { artifactStore } from "../tools/artifact-store.js";
-import { composePosterStep } from "./compose-poster.step.js";
-import { judgeBandImageStep } from "./judge-band-image.step.js";
+import { createStep, createWorkflow } from '@mastra/core/workflows';
+import { PosterRequestSchema } from '../../poster-schema.js';
+import { artifactStore } from '../tools/artifact-store.js';
+import { composePosterStep } from './compose-poster.step.js';
+import { judgeBandImageStep } from './judge-band-image.step.js';
 import {
   MAX_IMAGE_ATTEMPTS,
   MAX_SVG_ATTEMPTS,
   PosterLoopStateSchema,
   PosterWorkflowOutputSchema,
-} from "./poster.schemas.js";
-import { resolveBandCandidatesStep } from "./resolve-band-candidates.step.js";
+} from './poster.schemas.js';
+import { resolveBandCandidatesStep } from './resolve-band-candidates.step.js';
 
 // Terminal step: normalize the last loop state into the controlled workflow output.
 // (Workflows must end on a step whose outputSchema matches the workflow outputSchema.)
 // Provenance is emitted on BOTH branches — a failure that names the resolved
 // artist is far more actionable than a bare "no acceptable band image found".
 const finalizeStep = createStep({
-  id: "finalize-poster",
+  id: 'finalize-poster',
   inputSchema: PosterLoopStateSchema,
   outputSchema: PosterWorkflowOutputSchema,
   execute: async ({ inputData, runId }) => {
@@ -27,8 +27,8 @@ const finalizeStep = createStep({
     if (!inputData.imageOk) {
       return {
         ok: false,
-        failureStage: "image" as const,
-        reason: inputData.imageReason ?? "no acceptable band image found",
+        failureStage: 'image' as const,
+        reason: inputData.imageReason ?? 'no acceptable band image found',
         artifactDir,
         ...provenance,
       };
@@ -38,8 +38,8 @@ const finalizeStep = createStep({
     }
     return {
       ok: false,
-      failureStage: "svg" as const,
-      reason: inputData.critique ?? "could not produce an acceptable poster",
+      failureStage: 'svg' as const,
+      reason: inputData.critique ?? 'could not produce an acceptable poster',
       artifactDir,
       ...provenance,
     };
@@ -47,7 +47,7 @@ const finalizeStep = createStep({
 });
 
 export const posterWorkflow = createWorkflow({
-  id: "poster-workflow",
+  id: 'poster-workflow',
   inputSchema: PosterRequestSchema,
   outputSchema: PosterWorkflowOutputSchema,
 })

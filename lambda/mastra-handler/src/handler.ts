@@ -1,17 +1,28 @@
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { SQSClient } from "@aws-sdk/client-sqs";
-import type { APIGatewayProxyEventV2, S3Event } from "aws-lambda";
-import { gate, parseEmail } from "./email.js";
-import { AwsSecretReader, MastraExtractor, loadModelKey, type EventExtractor } from "./extractor.js";
-import { toMessage } from "./map.js";
-import { BadRequestError, parsePosterRequest, posterHttpResponse, processPosterRequest, type PosterDeps } from "./poster.js";
-import type { PosterRequest } from "./poster-schema.js";
-import { S3PosterSink } from "./poster-sink.js";
-import { artifactStore } from "./mastra/tools/artifact-store.js";
-import type { PosterWorkflowOutput } from "./mastra/workflows/poster.schemas.js";
-import { posterWorkflow } from "./mastra/workflows/poster.workflow.js";
-import type { EventMessage } from "./schema.js";
-import { sendBatch } from "./sqs.js";
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { SQSClient } from '@aws-sdk/client-sqs';
+import type { APIGatewayProxyEventV2, S3Event } from 'aws-lambda';
+import { gate, parseEmail } from './email.js';
+import {
+  AwsSecretReader,
+  MastraExtractor,
+  loadModelKey,
+  type EventExtractor,
+} from './extractor.js';
+import { toMessage } from './map.js';
+import {
+  BadRequestError,
+  parsePosterRequest,
+  posterHttpResponse,
+  processPosterRequest,
+  type PosterDeps,
+} from './poster.js';
+import type { PosterRequest } from './poster-schema.js';
+import { S3PosterSink } from './poster-sink.js';
+import { artifactStore } from './mastra/tools/artifact-store.js';
+import type { PosterWorkflowOutput } from './mastra/workflows/poster.schemas.js';
+import { posterWorkflow } from './mastra/workflows/poster.workflow.js';
+import type { EventMessage } from './schema.js';
+import { sendBatch } from './sqs.js';
 
 export interface ProcessDeps {
   extractor: EventExtractor;
@@ -23,8 +34,10 @@ export interface ProcessDeps {
 export async function processEmail(raw: Buffer, deps: ProcessDeps): Promise<void> {
   const parsed = await parseEmail(raw);
   const decision = gate(parsed);
-  if (decision === "skip") {
-    console.log(JSON.stringify({ msg: "skip", spamFail: parsed.spamFail, virusFail: parsed.virusFail }));
+  if (decision === 'skip') {
+    console.log(
+      JSON.stringify({ msg: 'skip', spamFail: parsed.spamFail, virusFail: parsed.virusFail }),
+    );
     return;
   }
   const drafts = await deps.extractor.extract({
@@ -34,15 +47,15 @@ export async function processEmail(raw: Buffer, deps: ProcessDeps): Promise<void
     receivedAt: parsed.date,
   });
   // Drop drafts missing the fields that define an event and seed the dedup hash.
-  const valid = drafts.filter((d) => d.title.trim() !== "" && d.venue.name.trim() !== "");
+  const valid = drafts.filter((d) => d.title.trim() !== '' && d.venue.name.trim() !== '');
   const dropped = drafts.length - valid.length;
-  if (dropped > 0) console.log(JSON.stringify({ msg: "dropped-invalid-drafts", dropped }));
+  if (dropped > 0) console.log(JSON.stringify({ msg: 'dropped-invalid-drafts', dropped }));
   if (valid.length === 0) {
-    console.log(JSON.stringify({ msg: "no-events", mode: decision }));
+    console.log(JSON.stringify({ msg: 'no-events', mode: decision }));
     return;
   }
   await deps.emit(valid.map(toMessage));
-  console.log(JSON.stringify({ msg: "emitted", count: valid.length, mode: decision }));
+  console.log(JSON.stringify({ msg: 'emitted', count: valid.length, mode: decision }));
 }
 
 function requireEnv(name: string): string {
@@ -53,8 +66,8 @@ function requireEnv(name: string): string {
 
 /** Build production deps from the environment. */
 function prodDeps(): ProcessDeps {
-  const region = requireEnv("AWS_REGION");
-  const queueUrl = requireEnv("EVENTS_QUEUE_URL");
+  const region = requireEnv('AWS_REGION');
+  const queueUrl = requireEnv('EVENTS_QUEUE_URL');
   const endpoint = process.env.SQS_ENDPOINT || undefined; // set for local/ElasticMQ
   const sqs = new SQSClient({ region, endpoint });
   return {
@@ -79,30 +92,52 @@ interface HttpResponse {
 /** True when the event is a Lambda Function URL (API GW v2 payload) request. */
 export function isFunctionUrlEvent(event: HandlerEvent): event is APIGatewayProxyEventV2 {
   return (
-    typeof (event as APIGatewayProxyEventV2).version === "string" &&
-    (event as APIGatewayProxyEventV2).version === "2.0" &&
+    typeof (event as APIGatewayProxyEventV2).version === 'string' &&
+    (event as APIGatewayProxyEventV2).version === '2.0' &&
     !!(event as APIGatewayProxyEventV2).requestContext?.http
   );
 }
 
 /** Poster path: parse -> run -> map to HTTP. Returns 400/422/500 only — never throws. */
-export async function handlePosterHttp(event: APIGatewayProxyEventV2, deps: PosterDeps): Promise<HttpResponse> {
+export async function handlePosterHttp(
+  event: APIGatewayProxyEventV2,
+  deps: PosterDeps,
+): Promise<HttpResponse> {
   let req;
   try {
     req = parsePosterRequest(event.body, event.isBase64Encoded ?? false);
   } catch (e) {
     if (e instanceof BadRequestError) {
-      return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: e.message }) };
+      return {
+        statusCode: 400,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ error: e.message }),
+      };
     }
-    console.error(JSON.stringify({ msg: "poster-parse-error", error: e instanceof Error ? e.message : String(e) }));
-    return { statusCode: 500, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "internal error" }) };
+    console.error(
+      JSON.stringify({
+        msg: 'poster-parse-error',
+        error: e instanceof Error ? e.message : String(e),
+      }),
+    );
+    return {
+      statusCode: 500,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: 'internal error' }),
+    };
   }
   try {
     const result = await processPosterRequest(req, deps);
     return posterHttpResponse(result);
   } catch (e) {
-    console.error(JSON.stringify({ msg: "poster-error", error: e instanceof Error ? e.message : String(e) }));
-    return { statusCode: 500, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "internal error" }) };
+    console.error(
+      JSON.stringify({ msg: 'poster-error', error: e instanceof Error ? e.message : String(e) }),
+    );
+    return {
+      statusCode: 500,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: 'internal error' }),
+    };
   }
 }
 
@@ -115,7 +150,7 @@ export async function handleS3(event: S3Event): Promise<void> {
   // deterministic source_event_id + consumer upsert make re-sends idempotent).
   for (const rec of event.Records) {
     const bucket = rec.s3.bucket.name;
-    const key = decodeURIComponent(rec.s3.object.key.replace(/\+/g, " "));
+    const key = decodeURIComponent(rec.s3.object.key.replace(/\+/g, ' '));
     const raw = await getObject(s3, bucket, key);
     await processEmail(raw, deps);
   }
@@ -130,7 +165,10 @@ export const handler = awslambda.streamifyResponse(
 
     if (isFunctionUrlEvent(event)) {
       const res = await handlePosterHttp(event, prodPosterDeps());
-      const stream = awslambda.HttpResponseStream.from(responseStream, { statusCode: res.statusCode, headers: res.headers });
+      const stream = awslambda.HttpResponseStream.from(responseStream, {
+        statusCode: res.statusCode,
+        headers: res.headers,
+      });
       stream.write(res.body);
       stream.end();
       return;
@@ -157,19 +195,21 @@ export async function runPosterWorkflow(req: PosterRequest): Promise<PosterWorkf
   const artifactDir = artifactStore(run.runId).dir;
   try {
     const result = await run.start({ inputData: req });
-    if (result.status === "success") return result.result as PosterWorkflowOutput;
-    const detail = result.status === "failed" ? result.error?.message : result.status;
+    if (result.status === 'success') return result.result as PosterWorkflowOutput;
+    const detail = result.status === 'failed' ? result.error?.message : result.status;
     return { ok: false, reason: `poster workflow did not complete: ${detail}`, artifactDir };
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
-    console.error(JSON.stringify({ msg: "poster-workflow-threw", runId: run.runId, error: reason }));
+    console.error(
+      JSON.stringify({ msg: 'poster-workflow-threw', runId: run.runId, error: reason }),
+    );
     return { ok: false, reason: `poster workflow failed: ${reason}`, artifactDir };
   }
 }
 
 function prodPosterDeps(): PosterDeps {
-  const region = requireEnv("AWS_REGION");
-  const bucket = requireEnv("POSTERS_BUCKET");
+  const region = requireEnv('AWS_REGION');
+  const bucket = requireEnv('POSTERS_BUCKET');
   return {
     runWorkflow: runPosterWorkflow,
     sink: new S3PosterSink(new S3Client({ region }), bucket),

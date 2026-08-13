@@ -1,11 +1,11 @@
-import { createStep } from "@mastra/core/workflows";
-import { type z } from "zod";
-import { PosterCritiqueSchema, posterCritiqueAgent } from "../agents/poster-critique.agent.js";
-import { SvgAuthorSchema, svgAuthorAgent } from "../agents/svg-author.agent.js";
-import { artifactStore } from "../tools/artifact-store.js";
-import { rasterizeSvg } from "../tools/rasterize.tool.js";
-import { substituteAndValidateSvg } from "../tools/svg-parse.tool.js";
-import { PosterLoopStateSchema } from "./poster.schemas.js";
+import { createStep } from '@mastra/core/workflows';
+import { type z } from 'zod';
+import { PosterCritiqueSchema, posterCritiqueAgent } from '../agents/poster-critique.agent.js';
+import { SvgAuthorSchema, svgAuthorAgent } from '../agents/svg-author.agent.js';
+import { artifactStore } from '../tools/artifact-store.js';
+import { rasterizeSvg } from '../tools/rasterize.tool.js';
+import { substituteAndValidateSvg } from '../tools/svg-parse.tool.js';
+import { PosterLoopStateSchema } from './poster.schemas.js';
 
 type SvgAuthor = z.infer<typeof SvgAuthorSchema>;
 type PosterCritique = z.infer<typeof PosterCritiqueSchema>;
@@ -17,7 +17,7 @@ function message(e: unknown): string {
 // One iteration: author SVG -> substitute+parse -> rasterize -> critique. Any failure
 // sets accepted=false and records actionable feedback in `critique` for the next attempt.
 export const composePosterStep = createStep({
-  id: "compose-poster",
+  id: 'compose-poster',
   inputSchema: PosterLoopStateSchema,
   outputSchema: PosterLoopStateSchema,
   execute: async ({ inputData, runId }) => {
@@ -31,7 +31,7 @@ export const composePosterStep = createStep({
         ...inputData,
         attempts: inputData.attempts + 1,
         accepted: false,
-        critique: inputData.critique ?? "no usable band image was available to compose",
+        critique: inputData.critique ?? 'no usable band image was available to compose',
       };
     }
 
@@ -60,7 +60,7 @@ export const composePosterStep = createStep({
     try {
       authored = await svgAuthorAgent.generate([
         {
-          role: "user",
+          role: 'user',
           content: JSON.stringify({
             performer: inputData.performer,
             venue: inputData.venue,
@@ -73,16 +73,21 @@ export const composePosterStep = createStep({
         },
       ]);
     } catch (e) {
-      return { ...inputData, attempts, accepted: false, critique: `the SVG author failed: ${message(e)}` };
+      return {
+        ...inputData,
+        attempts,
+        accepted: false,
+        critique: `the SVG author failed: ${message(e)}`,
+      };
     }
     const rawSvg = (authored.object as SvgAuthor | undefined)?.svg;
     if (!rawSvg) {
-      return { ...inputData, attempts, accepted: false, critique: "SVG author returned no svg" };
+      return { ...inputData, attempts, accepted: false, critique: 'SVG author returned no svg' };
     }
 
     // 2) Substitute the real image + validate well-formedness. The substituted
     //    string is transient — only the file keeps it.
-    const dataUri = `data:${image.contentType};base64,${photo.toString("base64")}`;
+    const dataUri = `data:${image.contentType};base64,${photo.toString('base64')}`;
     const parsed = substituteAndValidateSvg(rawSvg, dataUri);
     if (!parsed.ok) {
       return {
@@ -108,9 +113,14 @@ export const composePosterStep = createStep({
     //    transient on the way here — resvg needed it, nothing else does.
     let render;
     try {
-      render = { png: await store.write(`poster-${attempts}.png`, raster.png, "image/png") };
+      render = { png: await store.write(`poster-${attempts}.png`, raster.png, 'image/png') };
     } catch (e) {
-      return { ...inputData, attempts, accepted: false, critique: `could not store the render: ${message(e)}` };
+      return {
+        ...inputData,
+        attempts,
+        accepted: false,
+        critique: `could not store the render: ${message(e)}`,
+      };
     }
 
     // 5) Critique the rendered poster. Same rule as the author call: a provider
@@ -120,10 +130,13 @@ export const composePosterStep = createStep({
     try {
       critiqueRes = await posterCritiqueAgent.generate([
         {
-          role: "user",
+          role: 'user',
           content: [
-            { type: "image", image: raster.png, mimeType: "image/png" },
-            { type: "text", text: `Intended poster — performer: ${inputData.performer}, venue: ${inputData.venue}, date: ${inputData.date}. Is this a cool, legible poster?` },
+            { type: 'image', image: raster.png, mimeType: 'image/png' },
+            {
+              type: 'text',
+              text: `Intended poster — performer: ${inputData.performer}, venue: ${inputData.venue}, date: ${inputData.date}. Is this a cool, legible poster?`,
+            },
           ],
         },
       ]);
@@ -142,7 +155,7 @@ export const composePosterStep = createStep({
       attempts,
       render,
       accepted: verdict?.acceptable ?? false,
-      critique: verdict?.critique ?? "critique returned no result",
+      critique: verdict?.critique ?? 'critique returned no result',
     };
   },
 });

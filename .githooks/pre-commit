@@ -2,8 +2,9 @@
 #
 # Pre-commit hook — runs the same checks CI runs, before a commit is created.
 #
-#   Go:  gofmt, go vet, go test -p 1 ./... -count=1
-#   web: eslint, tsc, prettier, vitest
+#   Go:     gofmt, go vet, go test -p 1 ./... -count=1
+#   web:    eslint, tsc, prettier, vitest
+#   lambda: eslint, tsc, prettier, vitest
 #
 # Install with `make hooks` (points core.hooksPath at .githooks/). Bypass a
 # single commit with `git commit --no-verify`.
@@ -39,6 +40,7 @@ MISSING=()
 command -v go   >/dev/null 2>&1 || MISSING+=("go is not on PATH")
 command -v pnpm >/dev/null 2>&1 || MISSING+=("pnpm is not on PATH")
 [ -d web/node_modules ] || MISSING+=("web/node_modules is missing        → cd web && pnpm install")
+[ -d lambda/mastra-handler/node_modules ] || MISSING+=("lambda/mastra-handler/node_modules is missing → cd lambda/mastra-handler && pnpm install")
 port_open 5432 || MISSING+=("Postgres is not listening on :5432  → make db-up")
 port_open 9324 || MISSING+=("ElasticMQ is not listening on :9324 → make queue-up")
 
@@ -90,6 +92,7 @@ gofmt_check() {
 
 # Run a command from web/ so pnpm resolves that workspace, not the repo root.
 in_web() { (cd "$REPO_ROOT/web" && "$@"); }
+in_lambda() { (cd "$REPO_ROOT/lambda/mastra-handler" && "$@"); }
 
 # --- Checks -----------------------------------------------------------------
 
@@ -102,6 +105,10 @@ run_step "web eslint"       in_web pnpm run lint
 run_step "web tsc"          in_web pnpm exec tsc -b
 run_step "web prettier"     in_web pnpm run format:check
 run_step "web vitest"       in_web pnpm run test
+run_step "lambda eslint"    in_lambda pnpm run lint
+run_step "lambda tsc"       in_lambda pnpm run typecheck
+run_step "lambda prettier"  in_lambda pnpm run format:check
+run_step "lambda vitest"    in_lambda pnpm run test
 
 # --- Verdict ----------------------------------------------------------------
 

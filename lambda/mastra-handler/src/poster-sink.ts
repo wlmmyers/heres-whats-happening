@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import type { ArtifactRef, ArtistMatch, ImageCredit } from "./mastra/tools/band-image.js";
-import type { PosterRequest } from "./poster-schema.js";
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import type { ArtifactRef, ArtistMatch, ImageCredit } from './mastra/tools/band-image.js';
+import type { PosterRequest } from './poster-schema.js';
 
 /**
  * Bump when the pipeline changes in a way that should invalidate stored posters
@@ -32,14 +32,14 @@ export interface PosterSink {
 /** Short, stable digest of an already-normalized string. Long enough that two
  * real-world names will not collide, short enough to keep keys readable. */
 function shortDigest(normalized: string): string {
-  return createHash("sha256").update(normalized).digest("hex").slice(0, 10);
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 10);
 }
 
 /** Fold to a comparable form: composition-insensitive, diacritic-free, lowercase. */
 function normalize(s: string): string {
   return s
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "") // strip diacritics
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '') // strip diacritics
     .toLowerCase();
 }
 
@@ -54,7 +54,7 @@ function normalize(s: string): string {
  */
 function slug(s: string): string {
   const normalized = normalize(s);
-  const slugged = normalized.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const slugged = normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return slugged || shortDigest(normalized);
 }
 
@@ -82,13 +82,13 @@ function slug(s: string): string {
  */
 export function posterKeyBase(req: PosterRequest): string {
   const fields = [req.performer, req.venue, req.date].map(normalize);
-  const digest = shortDigest(fields.map((f) => `${f.length}:${f}`).join(""));
+  const digest = shortDigest(fields.map((f) => `${f.length}:${f}`).join(''));
   return [
     `posters/v${POSTER_SCHEMA_VERSION}`,
     `u-${req.userId}`,
     slug(req.performer),
     `${slug(req.venue)}-${slug(req.date)}-${digest}`,
-  ].join("/");
+  ].join('/');
 }
 
 export class S3PosterSink implements PosterSink {
@@ -114,7 +114,9 @@ export class S3PosterSink implements PosterSink {
     const base = posterKeyBase(req);
     let provenance: PosterProvenance;
     try {
-      const res = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: `${base}.json` }));
+      const res = await this.s3.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: `${base}.json` }),
+      );
       const body = await res.Body?.transformToString();
       if (!body) return null;
       provenance = JSON.parse(body) as PosterProvenance;
@@ -122,13 +124,17 @@ export class S3PosterSink implements PosterSink {
       // Absent sidecar == no complete poster. Anything else is a real problem
       // the caller should see (it decides whether to degrade to a miss).
       const name = (e as { name?: string })?.name;
-      if (name === "NoSuchKey" || name === "NotFound") return null;
+      if (name === 'NoSuchKey' || name === 'NotFound') return null;
       throw e;
     }
     return { pngKey: `${base}.png`, ...provenance };
   }
 
-  async put(req: PosterRequest, png: ArtifactRef, provenance: PosterProvenance): Promise<PosterArtifacts> {
+  async put(
+    req: PosterRequest,
+    png: ArtifactRef,
+    provenance: PosterProvenance,
+  ): Promise<PosterArtifacts> {
     const base = posterKeyBase(req);
     await this.putFile(`${base}.png`, png);
     // The sidecar goes LAST. `find` keys off it, so its presence proves the png
@@ -138,7 +144,7 @@ export class S3PosterSink implements PosterSink {
         Bucket: this.bucket,
         Key: `${base}.json`,
         Body: JSON.stringify(provenance),
-        ContentType: "application/json",
+        ContentType: 'application/json',
       }),
     );
     return { pngKey: `${base}.png`, ...provenance };
@@ -157,7 +163,11 @@ export class StubPosterSink implements PosterSink {
     return { pngKey: `${base}.png`, ...provenance };
   }
 
-  async put(req: PosterRequest, png: ArtifactRef, provenance: PosterProvenance): Promise<PosterArtifacts> {
+  async put(
+    req: PosterRequest,
+    png: ArtifactRef,
+    provenance: PosterProvenance,
+  ): Promise<PosterArtifacts> {
     this.calls.push({ req, png, provenance });
     const base = posterKeyBase(req);
     this.stored.set(base, provenance);

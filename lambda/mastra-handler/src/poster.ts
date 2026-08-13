@@ -1,7 +1,7 @@
-import { rm } from "node:fs/promises";
-import { PosterRequestSchema, type PosterRequest, type PosterResult } from "./poster-schema.js";
-import type { PosterSink } from "./poster-sink.js";
-import type { PosterWorkflowOutput } from "./mastra/workflows/poster.schemas.js";
+import { rm } from 'node:fs/promises';
+import { PosterRequestSchema, type PosterRequest, type PosterResult } from './poster-schema.js';
+import type { PosterSink } from './poster-sink.js';
+import type { PosterWorkflowOutput } from './mastra/workflows/poster.schemas.js';
 
 export interface PosterDeps {
   runWorkflow: (req: PosterRequest) => Promise<PosterWorkflowOutput>;
@@ -11,22 +11,22 @@ export interface PosterDeps {
 export class BadRequestError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "BadRequestError";
+    this.name = 'BadRequestError';
   }
 }
 
 /** Parse + validate a Function URL request body into a PosterRequest. */
 export function parsePosterRequest(body: string | undefined, isBase64: boolean): PosterRequest {
-  const raw = body ? (isBase64 ? Buffer.from(body, "base64").toString("utf8") : body) : "";
+  const raw = body ? (isBase64 ? Buffer.from(body, 'base64').toString('utf8') : body) : '';
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
-    throw new BadRequestError("request body is not valid JSON");
+    throw new BadRequestError('request body is not valid JSON');
   }
   const parsed = PosterRequestSchema.safeParse(json);
   if (!parsed.success) {
-    throw new BadRequestError(parsed.error.issues.map((i) => i.message).join("; "));
+    throw new BadRequestError(parsed.error.issues.map((i) => i.message).join('; '));
   }
   return parsed.data;
 }
@@ -35,7 +35,10 @@ export function parsePosterRequest(body: string | undefined, isBase64: boolean):
  * Serve an existing poster when there is one; otherwise run the workflow, upload,
  * and clean up the run's scratch directory. Never persists on failure.
  */
-export async function processPosterRequest(req: PosterRequest, deps: PosterDeps): Promise<PosterResult> {
+export async function processPosterRequest(
+  req: PosterRequest,
+  deps: PosterDeps,
+): Promise<PosterResult> {
   if (!req.force) {
     try {
       const hit = await deps.sink.find(req);
@@ -51,8 +54,8 @@ export async function processPosterRequest(req: PosterRequest, deps: PosterDeps)
     if (!out.ok || !out.render) {
       return {
         ok: false,
-        stage: out.failureStage ?? "svg",
-        reason: out.reason ?? "unknown failure",
+        stage: out.failureStage ?? 'svg',
+        reason: out.reason ?? 'unknown failure',
         artist: out.artist,
       };
     }
@@ -71,9 +74,13 @@ export async function processPosterRequest(req: PosterRequest, deps: PosterDeps)
   }
 }
 
-const JSON_HEADERS = { "content-type": "application/json" };
+const JSON_HEADERS = { 'content-type': 'application/json' };
 
-export function posterHttpResponse(result: PosterResult): { statusCode: number; headers: Record<string, string>; body: string } {
+export function posterHttpResponse(result: PosterResult): {
+  statusCode: number;
+  headers: Record<string, string>;
+  body: string;
+} {
   if (result.ok) {
     // S3 object keys, not signed URLs — the API service presigns at read time.
     // JSON.stringify drops undefined keys, so provenance is simply absent when
