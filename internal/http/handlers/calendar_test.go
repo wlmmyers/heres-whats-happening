@@ -53,6 +53,315 @@ func seedCalendarFixture(t *testing.T, q *store.Queries, ctx context.Context) (p
 	return userRow.ID, eventID
 }
 
+// seedArtistWithImage creates a resolved artists row (status "ok") with an
+// artist_images row also at status "ok", so GetArtistEnrichmentBatch surfaces
+// a populated image section for it. Kept separate from seedCalendarFixture,
+// which never sets headline_artist_id on its event, so as not to perturb any
+// test built on top of that fixture.
+func seedArtistWithImage(t *testing.T, q *store.Queries, ctx context.Context, nameKey, displayName, imageURL string) pgtype.UUID {
+	t.Helper()
+	artistID, err := q.UpsertArtist(ctx, store.UpsertArtistParams{
+		NameKey:     nameKey,
+		DisplayName: displayName,
+		Status:      "ok",
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertArtistImage(ctx, store.UpsertArtistImageParams{
+		ArtistID: artistID,
+		Status:   "ok",
+		Url:      &imageURL,
+	}))
+	return artistID
+}
+
+// seedArtistWithNoEnrichment creates a resolved artists row whose image
+// enrichment explicitly found nothing (status "none"). Used to pin the "only
+// status=ok sections appear" rule through the real batch-load-and-attach path,
+// not just buildArtist in isolation (already covered by artist_test.go).
+func seedArtistWithNoEnrichment(t *testing.T, q *store.Queries, ctx context.Context, nameKey, displayName string) pgtype.UUID {
+	t.Helper()
+	artistID, err := q.UpsertArtist(ctx, store.UpsertArtistParams{
+		NameKey:     nameKey,
+		DisplayName: displayName,
+		Status:      "ok",
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertArtistImage(ctx, store.UpsertArtistImageParams{
+		ArtistID: artistID,
+		Status:   "none",
+	}))
+	return artistID
+}
+
+// TestGetMyCalendar_AttachesArtistEnrichmentWithImageFallback exercises Step 6
+// wiring end-to-end for GetMyCalendar: it must batch-load enrichment for the
+// page, hang it off the matching event as "artist", and fall the top-level
+// image_url back to the artist photo since the event itself supplies none.
+// seedCalendarFixture's own event never sets headline_artist_id, so it
+// doubles here as the "no artist key at all" control in the same response —
+// pinning the omitempty contract that keeps today's frontend payloads
+// unchanged for events without a headline artist.
+func TestGetMyCalendar_AttachesArtistEnrichmentWithImageFallback(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	artistID := seedArtistWithImage(t, q, ctx, "phoebe-bridgers-enrich-fallback", "Phoebe Bridgers", "https://img.example.com/pb.jpg")
+
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Enriched Hall", NormalizedName: "enriched hall",
+	})
+	require.NoError(t, err)
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:         src.ID,
+		SourceEventID:    "enriched-1",
+		Title:            "Enriched Show",
+		Description:      "has a headline artist",
+		StartsAt:         pgtype.Timestamptz{Time: time.Now().Add(50 * time.Hour), Valid: true},
+		VenueID:          venueID,
+		HeadlineArtistID: artistID,
+		// ImageUrl intentionally left nil: the fallback should fill it in.
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+		UserID:         userID,
+		EventID:        eventID,
+		Score:          0.9,
+		ScoreBreakdown: []byte(`{}`),
+		ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	}))
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	req := httptest.NewRequest(http.MethodGet, "/me/calendar", nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	middleware.RequireAuth(signer)(handlers.GetMyCalendar(q)).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	// Raw map decode, not a typed struct: a typed *Artist field decodes to nil
+	// both when the key is absent and (hypothetically) present-but-null, and
+	// the whole point here is to pin that the key is genuinely absent for the
+	// unenriched event, not just zero-valued.
+	var raw struct {
+		Events []map[string]any `json:"events"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	require.Len(t, raw.Events, 2)
+
+	var enriched, plain map[string]any
+	for _, e := range raw.Events {
+		switch e["title"] {
+		case "Enriched Show":
+			enriched = e
+		case "PB Live":
+			plain = e
+		}
+	}
+	require.NotNil(t, enriched, "Enriched Show missing from response")
+	require.NotNil(t, plain, "PB Live missing from response")
+
+	artist, ok := enriched["artist"].(map[string]any)
+	require.True(t, ok, "expected an artist object, got %#v", enriched["artist"])
+	require.Equal(t, "Phoebe Bridgers", artist["name"])
+	image, ok := artist["image"].(map[string]any)
+	require.True(t, ok, "expected an image section, got %#v", artist["image"])
+	require.Equal(t, "https://img.example.com/pb.jpg", image["url"])
+	require.Equal(t, "https://img.example.com/pb.jpg", enriched["image_url"])
+
+	_, hasArtist := plain["artist"]
+	require.False(t, hasArtist, "PB Live has no headline_artist_id and must carry no artist key at all")
+}
+
+// TestGetMyCalendar_ArtistEnrichmentOmitsFailedSections pins the "only
+// status=ok sections appear" rule through the real HTTP path: a resolved
+// artist whose image enrichment explicitly found nothing must still produce
+// an artist object (it has a name), but no image/bio/tour keys, and the
+// image_url fallback must have nothing to contribute.
+func TestGetMyCalendar_ArtistEnrichmentOmitsFailedSections(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	artistID := seedArtistWithNoEnrichment(t, q, ctx, "some-local-opener-enrich", "Some Local Opener")
+
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Opener Room", NormalizedName: "opener room",
+	})
+	require.NoError(t, err)
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:         src.ID,
+		SourceEventID:    "unenriched-1",
+		Title:            "Opener Show",
+		Description:      "headline artist with no successful enrichment",
+		StartsAt:         pgtype.Timestamptz{Time: time.Now().Add(51 * time.Hour), Valid: true},
+		VenueID:          venueID,
+		HeadlineArtistID: artistID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+		UserID:         userID,
+		EventID:        eventID,
+		Score:          0.4,
+		ScoreBreakdown: []byte(`{}`),
+		ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	}))
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	req := httptest.NewRequest(http.MethodGet, "/me/calendar", nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	middleware.RequireAuth(signer)(handlers.GetMyCalendar(q)).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var raw struct {
+		Events []map[string]any `json:"events"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+
+	var target map[string]any
+	for _, e := range raw.Events {
+		if e["title"] == "Opener Show" {
+			target = e
+		}
+	}
+	require.NotNil(t, target, "Opener Show missing from response")
+
+	artist, ok := target["artist"].(map[string]any)
+	require.True(t, ok, "expected an artist object for a resolved artist, got %#v", target["artist"])
+	require.Equal(t, "Some Local Opener", artist["name"])
+
+	_, hasImage := artist["image"]
+	require.False(t, hasImage, "image status=none must not produce an image section")
+	_, hasBio := artist["bio"]
+	require.False(t, hasBio, "no bio row at all must not produce a bio section")
+	_, hasTour := artist["tour"]
+	require.False(t, hasTour, "no tour row at all must not produce a tour section")
+
+	_, hasImageURL := target["image_url"]
+	require.False(t, hasImageURL, "neither the event nor the artist has an image, so the fallback has nothing to contribute")
+}
+
+// TestGetCityCalendar_AttachesArtistEnrichment pins Step 6 wiring for the city
+// endpoint specifically. Each of the three handlers wires its own
+// attachArtists call independently, so a dropped or misplaced call in this
+// handler would not be caught by the GetMyCalendar tests above.
+func TestGetCityCalendar_AttachesArtistEnrichment(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	artistID := seedArtistWithImage(t, q, ctx, "city-enrich-artist", "City Enrich Artist", "https://img.example.com/city.jpg")
+
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "City Enrich Hall", NormalizedName: "city enrich hall",
+	})
+	require.NoError(t, err)
+	_, err = q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:         src.ID,
+		SourceEventID:    "city-enriched-1",
+		Title:            "City Enriched Show",
+		Description:      "seeded",
+		StartsAt:         pgtype.Timestamptz{Time: time.Now().Add(52 * time.Hour), Valid: true},
+		VenueID:          venueID,
+		HeadlineArtistID: artistID,
+	})
+	require.NoError(t, err)
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	url := "/calendar/" + uuidFromPgCal(city.ID).String()
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var raw struct {
+		Events []map[string]any `json:"events"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+
+	var target map[string]any
+	for _, e := range raw.Events {
+		if e["title"] == "City Enriched Show" {
+			target = e
+		}
+	}
+	require.NotNil(t, target, "City Enriched Show missing from response")
+	artist, ok := target["artist"].(map[string]any)
+	require.True(t, ok, "expected an artist object, got %#v", target["artist"])
+	require.Equal(t, "City Enrich Artist", artist["name"])
+	require.Equal(t, "https://img.example.com/city.jpg", target["image_url"])
+}
+
+// TestGetEventByID_AttachesArtistEnrichment pins Step 6 wiring for the
+// single-event endpoint, whose attachArtists call is wrapped differently
+// (evs := []calendarEvent{ev}; attachArtists(...); ev = evs[0]) than the two
+// paged handlers above, so it needs its own direct coverage.
+func TestGetEventByID_AttachesArtistEnrichment(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	artistID := seedArtistWithImage(t, q, ctx, "single-enrich-artist", "Single Enrich Artist", "https://img.example.com/single.jpg")
+
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Single Enrich Hall", NormalizedName: "single enrich hall",
+	})
+	require.NoError(t, err)
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:         src.ID,
+		SourceEventID:    "single-enriched-1",
+		Title:            "Single Enriched Show",
+		Description:      "seeded",
+		StartsAt:         pgtype.Timestamptz{Time: time.Now().Add(53 * time.Hour), Valid: true},
+		VenueID:          venueID,
+		HeadlineArtistID: artistID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+		UserID:         userID,
+		EventID:        eventID,
+		Score:          0.6,
+		ScoreBreakdown: []byte(`{}`),
+		ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	}))
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	r := chi.NewRouter()
+	mw := middleware.RequireAuth(signer)
+	r.With(mw).Get("/events/{id}", handlers.GetEventByIDForUser(q))
+
+	req := httptest.NewRequest(http.MethodGet, "/events/"+uuidFromPgCal(eventID).String(), nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+
+	artist, ok := raw["artist"].(map[string]any)
+	require.True(t, ok, "expected an artist object, got %#v", raw["artist"])
+	require.Equal(t, "Single Enrich Artist", artist["name"])
+	require.Equal(t, "https://img.example.com/single.jpg", raw["image_url"])
+}
+
 func TestGetMyCalendar_ReturnsMatchedEvents(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
