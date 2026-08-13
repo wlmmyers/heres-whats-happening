@@ -2069,10 +2069,14 @@ export class S3EnrichmentCache implements EnrichmentCache {
   }
 }
 
+// Classify on error NAME only, exactly as poster-sink.ts does. Do NOT add a
+// `status === 404` fallback: NoSuchBucket is also a 404, so a mistyped bucket
+// would be swallowed as a cache miss and every workflow would re-run on every
+// event forever while presenting as "the cache isn't working" — the same
+// failure the AccessDenied rule exists to prevent.
 function isNoSuchKey(e: unknown): boolean {
   const name = (e as { name?: string })?.name;
-  const status = (e as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-  return name === "NoSuchKey" || name === "NotFound" || status === 404;
+  return name === "NoSuchKey" || name === "NotFound";
 }
 
 /** In-memory cache for local dev and unit tests. Lives beside the production
