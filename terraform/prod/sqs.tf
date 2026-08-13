@@ -6,7 +6,7 @@ resource "aws_sqs_queue" "events_dlq" {
 resource "aws_sqs_queue" "events" {
   name = "${var.app_name_prefix}-events-queue"
   # Lambda refuses an event source mapping unless this is at least the function
-  # timeout (300s). AWS guidance is 6x, and enrichment runs three LLM workflows
+  # timeout (300s). 900s is 3x that, and enrichment runs three LLM workflows
   # per message, so a generous window costs nothing here.
   visibility_timeout_seconds = 900
   receive_wait_time_seconds  = 20

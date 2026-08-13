@@ -320,7 +320,8 @@ which matters because the daily scrape republishes every event unconditionally.
    `ignore_changes`, so forgetting this step does **not** fail the apply. It
    fails quietly at runtime instead: setlist.fm rejects the placeholder, the
    client throws, and every tour enrichment records `status: 'error'` and
-   retries in 6 hours forever. Step 5's verification below is what catches it.
+   retries in 6 hours forever. The **Post-deploy verification** section below
+   is what catches it.
 3. Deploy the Lambda image (`ci/buildspec-lambda.yml`).
 4. Apply `aws_lambda_event_source_mapping.enrichment`.
 5. **Set the env var BEFORE deploying the new API image** — this order is not
@@ -348,3 +349,36 @@ which matters because the daily scrape republishes every event unconditionally.
 **setlist.fm caveats:** the free key is non-commercial only, and capped at 1,440
 requests/day. The skip cache is what keeps steady-state usage inside that cap;
 the documented upgrade path is a manual request to setlist.fm.
+
+#### Post-deploy verification
+
+After the full deploy, confirm the pipeline end to end:
+
+```bash
+# 1. Trigger a scrape and watch the Lambda pick events up.
+aws logs tail /aws/lambda/hwh-mastra-handler --follow --since 5m
+
+# 2. Enriched messages should be arriving, and both DLQs stay empty.
+aws sqs get-queue-attributes --queue-url "$(terraform output -raw events_enriched_queue_url)" \
+  --attribute-names ApproximateNumberOfMessages
+
+# 3. Cache objects should appear after the first pass.
+aws s3 ls "s3://$(terraform output -raw enrichment_cache_bucket)/enrichment/v1/" | head
+
+# 4. The database should have artist rows.
+#    (via the bastion tunnel — see `make bastion-tunnel`)
+psql -c "SELECT status, count(*) FROM artists GROUP BY status;"
+psql -c "SELECT status, count(*) FROM artist_bios GROUP BY status;"
+
+# 5. Tour enrichment specifically — this is what catches an unseeded secret.
+#    All rows at status='error' means the setlist.fm key is still the
+#    REPLACE_ME_AFTER_APPLY placeholder.
+psql -c "SELECT status, count(*) FROM artist_tour_snapshots GROUP BY status;"
+```
+
+Set `AWS_PROFILE=servant` for all of the above.
+
+**The signal that the gate works:** run the scrape twice and confirm the second
+run produces far fewer LLM invocations than the first. If both runs cost the
+same, the cache is not being consulted — check for `AccessDenied` in the Lambda
+logs, which `S3EnrichmentCache.read` deliberately throws rather than swallowing.
