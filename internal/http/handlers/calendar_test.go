@@ -93,15 +93,18 @@ func seedArtistWithNoEnrichment(t *testing.T, q *store.Queries, ctx context.Cont
 	return artistID
 }
 
-// TestGetMyCalendar_AttachesArtistEnrichmentWithImageFallback exercises Step 6
-// wiring end-to-end for GetMyCalendar: it must batch-load enrichment for the
-// page, hang it off the matching event as "artist", and fall the top-level
-// image_url back to the artist photo since the event itself supplies none.
+// TestGetMyCalendar_AttachesArtistEnrichment exercises Step 6 wiring
+// end-to-end for GetMyCalendar: it must batch-load enrichment for the page and
+// hang it off the matching event as "artist" — including the band photo under
+// artist.image — WITHOUT touching the top-level image_url, which stays purely
+// scraper-sourced (Wikimedia Commons images are predominantly CC-BY/CC-BY-SA,
+// and the frontend does not render the credit block yet, so the photo is only
+// ever served alongside its attribution under artist.image).
 // seedCalendarFixture's own event never sets headline_artist_id, so it
 // doubles here as the "no artist key at all" control in the same response —
 // pinning the omitempty contract that keeps today's frontend payloads
 // unchanged for events without a headline artist.
-func TestGetMyCalendar_AttachesArtistEnrichmentWithImageFallback(t *testing.T) {
+func TestGetMyCalendar_AttachesArtistEnrichment(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
@@ -124,7 +127,8 @@ func TestGetMyCalendar_AttachesArtistEnrichmentWithImageFallback(t *testing.T) {
 		StartsAt:         pgtype.Timestamptz{Time: time.Now().Add(50 * time.Hour), Valid: true},
 		VenueID:          venueID,
 		HeadlineArtistID: artistID,
-		// ImageUrl intentionally left nil: the fallback should fill it in.
+		// ImageUrl intentionally left nil: no scraper image AND no fallback,
+		// so image_url must stay absent even though the artist has a photo.
 	})
 	require.NoError(t, err)
 	require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
@@ -170,7 +174,8 @@ func TestGetMyCalendar_AttachesArtistEnrichmentWithImageFallback(t *testing.T) {
 	image, ok := artist["image"].(map[string]any)
 	require.True(t, ok, "expected an image section, got %#v", artist["image"])
 	require.Equal(t, "https://img.example.com/pb.jpg", image["url"])
-	require.Equal(t, "https://img.example.com/pb.jpg", enriched["image_url"])
+	_, hasImageURL := enriched["image_url"]
+	require.False(t, hasImageURL, "image_url must stay purely scraper-sourced; the band photo lives only under artist.image")
 
 	_, hasArtist := plain["artist"]
 	require.False(t, hasArtist, "PB Live has no headline_artist_id and must carry no artist key at all")
@@ -179,8 +184,9 @@ func TestGetMyCalendar_AttachesArtistEnrichmentWithImageFallback(t *testing.T) {
 // TestGetMyCalendar_ArtistEnrichmentOmitsFailedSections pins the "only
 // status=ok sections appear" rule through the real HTTP path: a resolved
 // artist whose image enrichment explicitly found nothing must still produce
-// an artist object (it has a name), but no image/bio/tour keys, and the
-// image_url fallback must have nothing to contribute.
+// an artist object (it has a name), but no image/bio/tour keys, and no
+// top-level image_url either — there is no scraper-sourced image and no
+// artist photo to have ever populated it.
 func TestGetMyCalendar_ArtistEnrichmentOmitsFailedSections(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
@@ -246,7 +252,7 @@ func TestGetMyCalendar_ArtistEnrichmentOmitsFailedSections(t *testing.T) {
 	require.False(t, hasTour, "no tour row at all must not produce a tour section")
 
 	_, hasImageURL := target["image_url"]
-	require.False(t, hasImageURL, "neither the event nor the artist has an image, so the fallback has nothing to contribute")
+	require.False(t, hasImageURL, "no scraper-sourced image exists, and image_url no longer falls back to the artist photo")
 }
 
 // TestGetCityCalendar_AttachesArtistEnrichment pins Step 6 wiring for the city
@@ -302,7 +308,11 @@ func TestGetCityCalendar_AttachesArtistEnrichment(t *testing.T) {
 	artist, ok := target["artist"].(map[string]any)
 	require.True(t, ok, "expected an artist object, got %#v", target["artist"])
 	require.Equal(t, "City Enrich Artist", artist["name"])
-	require.Equal(t, "https://img.example.com/city.jpg", target["image_url"])
+	image, ok := artist["image"].(map[string]any)
+	require.True(t, ok, "expected an image section, got %#v", artist["image"])
+	require.Equal(t, "https://img.example.com/city.jpg", image["url"])
+	_, hasImageURL := target["image_url"]
+	require.False(t, hasImageURL, "image_url must stay purely scraper-sourced, not fall back to the artist photo")
 }
 
 // TestGetEventByID_AttachesArtistEnrichment pins Step 6 wiring for the
@@ -359,7 +369,11 @@ func TestGetEventByID_AttachesArtistEnrichment(t *testing.T) {
 	artist, ok := raw["artist"].(map[string]any)
 	require.True(t, ok, "expected an artist object, got %#v", raw["artist"])
 	require.Equal(t, "Single Enrich Artist", artist["name"])
-	require.Equal(t, "https://img.example.com/single.jpg", raw["image_url"])
+	image, ok := artist["image"].(map[string]any)
+	require.True(t, ok, "expected an image section, got %#v", artist["image"])
+	require.Equal(t, "https://img.example.com/single.jpg", image["url"])
+	_, hasImageURL := raw["image_url"]
+	require.False(t, hasImageURL, "image_url must stay purely scraper-sourced, not fall back to the artist photo")
 }
 
 func TestGetMyCalendar_ReturnsMatchedEvents(t *testing.T) {

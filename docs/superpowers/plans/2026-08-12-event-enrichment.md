@@ -814,7 +814,7 @@ import (
 func enrichedSample() events.EnrichedMessage {
 	m := sampleMessage()
 	m.SourceEventID = "tm-enriched"
-	m.ImageURL = "" // no source image, so the artist image is the fallback
+	m.ImageURL = "" // no scraper-sourced image on this event
 	return events.EnrichedMessage{
 		Message: m,
 		Enrichment: &events.Enrichment{
@@ -1444,10 +1444,12 @@ Then add this helper to the same file:
 // each one, following the ListEventPerformersBatch pattern: one page query,
 // then one round trip for the whole page rather than N.
 //
-// It also applies the image fallback. The event's own image always wins, so an
-// event whose source supplied a photo is untouched; only events with no image
-// at all pick up the band photo. That is what lets the existing frontend render
-// band images with no change.
+// Deliberately does NOT fall image_url back to the artist photo: Commons
+// images are predominantly CC-BY/CC-BY-SA, attribution is a licence
+// condition, and the frontend does not render the credit block yet. The band
+// photo is surfaced only under artist.image, next to its credit, so any
+// client that renders it has the attribution in hand. image_url stays purely
+// scraper-sourced, exactly as it is today.
 func attachArtists(ctx context.Context, q *store.Queries, evs []calendarEvent, artistIDs []pgtype.UUID) {
 	if len(artistIDs) == 0 {
 		return
@@ -1472,9 +1474,6 @@ func attachArtists(ctx context.Context, q *store.Queries, evs []calendarEvent, a
 		}
 		a := buildArtist(row)
 		evs[i].Artist = &a
-		if evs[i].ImageURL == "" && a.Image != nil {
-			evs[i].ImageURL = a.Image.URL
-		}
 	}
 }
 ```
@@ -1519,8 +1518,11 @@ than widening three queries with four left joins each. A section appears
 only when its status is ok, and every field is omitempty so today's
 frontend payloads are byte-identical for unenriched events.
 
-image_url falls back to the band photo when the event has none — the
-source image always wins, so nothing regresses."
+image_url does NOT fall back to the band photo: Commons images are
+predominantly CC-BY/CC-BY-SA, attribution is a licence condition, and the
+frontend does not render the credit block yet. The photo is surfaced only
+under artist.image, beside its credit, so image_url stays purely
+scraper-sourced."
 ```
 
 ---

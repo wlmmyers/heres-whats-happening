@@ -292,10 +292,13 @@ WHERE a.id = ANY($1::uuid[]);
 Left joins throughout, so a resolved artist with no successful enrichment still
 returns a row.
 
-**One free win:** `image_url` falls back to the artist image when the event has
-none — applied in the handler after the batch call, not in SQL. The existing
-frontend renders band photos with no change at all, and the source-provided
-image always wins, so nothing regresses.
+**No `image_url` fallback.** The band photo is surfaced only under
+`artist.image`, alongside its credit block — `image_url` stays purely
+scraper-sourced, exactly as it is today. Commons images are predominantly
+CC-BY/CC-BY-SA, attribution is a licence condition, and the frontend does not
+render the credit yet; the only place a client can safely render the photo is
+where the attribution travels with it. A top-level `image_url` fallback would
+let a client show the photo with no credit in reach.
 
 The image credit must be surfaced even though the FE does not render it yet —
 Commons images are predominantly CC-BY/CC-BY-SA and attribution is a licence
@@ -741,7 +744,7 @@ will invoke the old handler with an SQS event and fall through its unguarded
 | Enrichment cache | `StubEnrichmentCache`; hit/miss/stale/`AccessDenied`-throws cases |
 | Orchestration | stubbed workflows; assert one failing workflow neither blocks the others nor prevents the message |
 | Consumer | `internal/ingest` tests against the real test DB, incl. a nil-`Enrichment` message behaving as today and the `COALESCE` guard |
-| API | handler tests asserting `omitempty` absence for unenriched events and the `image_url` fallback |
+| API | handler tests asserting `omitempty` absence for unenriched events and that `image_url` never picks up the artist photo |
 
 Note the worktree test-DB caveat: all worktrees share one local `appdb_test`, so
 a new migration here will strand other branches' tests until they migrate.
