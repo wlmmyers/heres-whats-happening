@@ -107,31 +107,37 @@ func (h *EventHandler) applyEnrichment(ctx context.Context, e *events.Enrichment
 	}
 
 	if tour := e.Tour; tour != nil && validStatus(tour.Status) {
-		songs, err := json.Marshal(tour.Songs)
-		if err != nil {
-			return pgtype.UUID{}, fmt.Errorf("marshal setlist songs: %w", err)
-		}
-		if tour.Songs == nil {
-			songs = []byte("[]")
-		}
-		observed, err := parseObservedDate(tour.ObservedDate)
-		if err != nil {
-			return pgtype.UUID{}, fmt.Errorf("parse observed_date %q: %w", tour.ObservedDate, err)
-		}
-		if err := h.q.UpsertArtistTourSnapshot(ctx, store.UpsertArtistTourSnapshotParams{
-			ArtistID:      artistID,
-			Status:        tour.Status,
-			TourName:      optString(tour.TourName),
-			Songs:         songs,
-			ObservedDate:  observed,
-			ObservedVenue: optString(tour.ObservedVenue),
-			ObservedCity:  optString(tour.ObservedCity),
-			SetlistUrl:    optString(tour.SetlistURL),
-			Blurb:         optString(tour.Blurb),
-			BlurbModel:    optString(tour.BlurbModel),
-			Reason:        optString(tour.Reason),
-		}); err != nil {
-			return pgtype.UUID{}, fmt.Errorf("upsert artist tour snapshot: %w", err)
+		observed, dateErr := parseObservedDate(tour.ObservedDate)
+		if dateErr != nil {
+			// A bad calendar date (e.g. setlist.fm's "31-02-2026", which the
+			// Lambda's day<=31 check lets through but Go's time.Parse rejects)
+			// must not DLQ an otherwise good event. Same log-and-continue
+			// policy as validStatus above: skip the tour section, not the
+			// whole message.
+			log.Printf("ingest: bad observed_date %q for tour snapshot, skipping tour section: %v", tour.ObservedDate, dateErr)
+		} else {
+			songs, err := json.Marshal(tour.Songs)
+			if err != nil {
+				return pgtype.UUID{}, fmt.Errorf("marshal setlist songs: %w", err)
+			}
+			if tour.Songs == nil {
+				songs = []byte("[]")
+			}
+			if err := h.q.UpsertArtistTourSnapshot(ctx, store.UpsertArtistTourSnapshotParams{
+				ArtistID:      artistID,
+				Status:        tour.Status,
+				TourName:      optString(tour.TourName),
+				Songs:         songs,
+				ObservedDate:  observed,
+				ObservedVenue: optString(tour.ObservedVenue),
+				ObservedCity:  optString(tour.ObservedCity),
+				SetlistUrl:    optString(tour.SetlistURL),
+				Blurb:         optString(tour.Blurb),
+				BlurbModel:    optString(tour.BlurbModel),
+				Reason:        optString(tour.Reason),
+			}); err != nil {
+				return pgtype.UUID{}, fmt.Errorf("upsert artist tour snapshot: %w", err)
+			}
 		}
 	}
 

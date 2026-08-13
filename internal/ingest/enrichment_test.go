@@ -17,7 +17,7 @@ import (
 func enrichedSample() events.EnrichedMessage {
 	m := sampleMessage()
 	m.SourceEventID = "tm-enriched"
-	m.ImageURL = "" // no source image, so the artist image is the fallback
+	m.ImageURL = "" // no scraper-sourced image on this event
 	return events.EnrichedMessage{
 		Message: m,
 		Enrichment: &events.Enrichment{
@@ -138,6 +138,88 @@ func TestHandle_FailedReenrichment_DoesNotBlankArtistLink(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, before.HeadlineArtistID, after.HeadlineArtistID)
+}
+
+// A transient provider error on re-enrichment (e.g. an LLM 429/529 hit when a
+// 90-day-stale cache entry expires and re-runs) must not blank a good
+// image/bio/tour payload an earlier successful run already wrote — only
+// status/reason move, per the CASE WHEN guard in sql/queries/artists.sql.
+func TestHandle_TransientProviderError_DoesNotBlankGoodEnrichment(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	h := ingest.NewEventHandler(q, defaultCityID(t, q))
+	ctx := context.Background()
+
+	// First: a fully successful image + bio + tour enrichment.
+	body, _ := json.Marshal(enrichedSample())
+	require.NoError(t, h.Handle(ctx, body))
+
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	ev, err := q.GetEventBySourceKey(ctx, store.GetEventBySourceKeyParams{
+		SourceID: src.ID, SourceEventID: "tm-enriched",
+	})
+	require.NoError(t, err)
+	require.True(t, ev.HeadlineArtistID.Valid)
+
+	// Second: the same artist, but every payload section came back 'error'.
+	failed := enrichedSample()
+	failed.Enrichment.Image = &events.ImageInfo{Status: "error", Reason: "429 rate limited"}
+	failed.Enrichment.Bio = &events.BioInfo{Status: "error", Reason: "529 overloaded"}
+	failed.Enrichment.Tour = &events.TourInfo{Status: "error", Reason: "timeout"}
+	failedBody, _ := json.Marshal(failed)
+	require.NoError(t, h.Handle(ctx, failedBody))
+
+	rows, err := q.GetArtistEnrichmentBatch(ctx, []pgtype.UUID{ev.HeadlineArtistID})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	r := rows[0]
+
+	// status moved to 'error' so the failure stays observable...
+	require.Equal(t, "error", *r.ImageStatus)
+	require.Equal(t, "error", *r.BioStatus)
+	require.Equal(t, "error", *r.TourStatus)
+
+	// ...but the good payload from the first run survived the overwrite.
+	require.Equal(t, "https://upload.wikimedia.org/pb.jpg", *r.ImageUrl)
+	require.Contains(t, *r.BioMd, "singer-songwriter")
+	require.Equal(t, "Reunion Tour", *r.TourName)
+	require.Equal(t, "Currently out on the Reunion Tour.", *r.Blurb)
+}
+
+// A bad calendar date in the tour section (e.g. setlist.fm's "31-02-2026",
+// which the Lambda's day<=31 check lets through but Go's time.Parse rejects
+// as "day out of range") must not DLQ an otherwise good event — it degrades
+// to skipping just the tour section, per the log-and-continue policy this
+// file already applies to an unrecognized status.
+func TestHandle_BadObservedDate_SkipsTourSectionKeepsEvent(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	h := ingest.NewEventHandler(q, defaultCityID(t, q))
+	ctx := context.Background()
+
+	m := enrichedSample()
+	m.SourceEventID = "tm-bad-date"
+	m.Enrichment.Tour.ObservedDate = "2026-02-31" // no such calendar date
+
+	body, _ := json.Marshal(m)
+	require.NoError(t, h.Handle(ctx, body))
+
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	ev, err := q.GetEventBySourceKey(ctx, store.GetEventBySourceKeyParams{
+		SourceID: src.ID, SourceEventID: "tm-bad-date",
+	})
+	require.NoError(t, err)
+	require.True(t, ev.HeadlineArtistID.Valid, "the artist and event must still land")
+
+	rows, err := q.GetArtistEnrichmentBatch(ctx, []pgtype.UUID{ev.HeadlineArtistID})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	// No artist_tour_snapshots row was written at all: tour_status is NULL,
+	// not an 'error' row with a bad date.
+	require.Nil(t, rows[0].TourStatus, "the tour section must be skipped, not partially written")
+	// The image and bio sections are independent and must be unaffected.
+	require.Equal(t, "ok", *rows[0].ImageStatus)
+	require.Equal(t, "ok", *rows[0].BioStatus)
 }
 
 // An unresolvable performer still gets an artists row, so the attempt is
