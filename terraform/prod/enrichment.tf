@@ -76,6 +76,59 @@ resource "aws_secretsmanager_secret_version" "setlistfm_key_placeholder" {
   }
 }
 
+# enrichment-cache-{read,write}-failed alerting.
+#
+# enrichment-cache.ts deliberately throws on a cache read AccessDenied so a
+# misconfiguration is loud, but enrichment.ts (by design — a cache failure
+# must not become an ingest outage) catches it and only console.errors. Left
+# there, a wrong bucket or missing IAM is silent: every workflow re-runs for
+# every event on every daily scrape (~200 events x ~5 LLM calls) with nothing
+# but log lines to notice it by. These alarms are what makes that loud again.
+locals {
+  enrichment_cache_alarms = {
+    enrichment-cache-read-failed = {
+      metric_name = "EnrichmentCacheReadFailed"
+      description = "enrichment cache read failed (e.g. AccessDenied) — every workflow is now re-running for every event. Check IAM and ENRICHMENT_CACHE_BUCKET."
+    }
+    enrichment-cache-write-failed = {
+      metric_name = "EnrichmentCacheWriteFailed"
+      description = "enrichment cache write failed — successful enrichment is not being cached, so it re-runs every scrape. Check IAM and ENRICHMENT_CACHE_BUCKET."
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "enrichment_cache" {
+  for_each = local.enrichment_cache_alarms
+
+  name           = "${var.app_name_prefix}-${each.key}"
+  log_group_name = "/aws/lambda/${aws_lambda_function.mastra_handler.function_name}"
+  pattern        = "\"${each.key}\""
+
+  metric_transformation {
+    name      = each.value.metric_name
+    namespace = "HeresWhatsHappening/enrichment"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "enrichment_cache" {
+  for_each = local.enrichment_cache_alarms
+
+  alarm_name          = "${var.app_name_prefix}-${each.key}"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = each.value.metric_name
+  namespace           = "HeresWhatsHappening/enrichment"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 1
+  treat_missing_data  = "notBreaching" # sparse metric: a data point only when a failure occurs
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  alarm_description   = each.value.description
+
+  depends_on = [aws_cloudwatch_log_metric_filter.enrichment_cache]
+}
+
 # Enrichment trigger. Added in a SEPARATE apply, after an image that handles SQS
 # events is live: with this in place, the first scrape invokes the function with
 # an SQS event, and an older image would fall through to its S3 branch.
