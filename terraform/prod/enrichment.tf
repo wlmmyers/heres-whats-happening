@@ -76,14 +76,25 @@ resource "aws_secretsmanager_secret_version" "setlistfm_key_placeholder" {
   }
 }
 
-# enrichment-cache-{read,write}-failed alerting.
+# enrichment-cache-{read,write}-failed alerting, plus the degrade paths added
+# alongside the schema-validation fixes below.
 #
 # enrichment-cache.ts deliberately throws on a cache read AccessDenied so a
 # misconfiguration is loud, but enrichment.ts (by design — a cache failure
 # must not become an ingest outage) catches it and only console.errors. Left
 # there, a wrong bucket or missing IAM is silent: every workflow re-runs for
 # every event on every daily scrape (~200 events x ~5 LLM calls) with nothing
-# but log lines to notice it by. These alarms are what makes that loud again.
+# but log lines to notice it by.
+#
+# The same silence applies to four MORE paths added when the cache and the
+# outbound SQS message gained runtime schema validation: a cached object that
+# fails validation is treated as a miss (split into a corrupt-JSON case and a
+# schema-invalid case), a payload that fails validation is never written in
+# the first place, and an invalid enriched message is emitted without its
+# enrichment block — every one of those "degrades gracefully" outcomes is
+# still a workflow silently re-running forever for one artist, or an artist
+# section silently vanishing from the API, and needs the same alarm treatment
+# as the read/write failures.
 locals {
   enrichment_cache_alarms = {
     enrichment-cache-read-failed = {
@@ -93,6 +104,22 @@ locals {
     enrichment-cache-write-failed = {
       metric_name = "EnrichmentCacheWriteFailed"
       description = "enrichment cache write failed — successful enrichment is not being cached, so it re-runs every scrape. Check IAM and ENRICHMENT_CACHE_BUCKET."
+    }
+    enrichment-cache-corrupt-json = {
+      metric_name = "EnrichmentCacheCorruptJson"
+      description = "A cached enrichment object was not valid JSON and was treated as a miss, so its workflows are re-running every scrape. Check for S3 data corruption or a partial write."
+    }
+    enrichment-cache-invalid-entry = {
+      metric_name = "EnrichmentCacheInvalidEntry"
+      description = "A cached enrichment object failed schema validation on read and was treated as a miss, so its workflows are re-running every scrape. Check for a schema drift between writer and reader, or a hand-edited object."
+    }
+    enrichment-cache-invalid-write = {
+      metric_name = "EnrichmentCacheInvalidWrite"
+      description = "A workflow's result failed schema validation before being cached, so the write was skipped. Check the workflow that produced it — likely an unchecked cast from an external API response (Wikimedia, setlist.fm, MusicBrainz)."
+    }
+    enrichment-invalid-output = {
+      metric_name = "EnrichmentInvalidOutput"
+      description = "An enriched event failed schema validation before being emitted to the enriched queue; the plain event was emitted instead, so its enrichment silently never appears. Check the workflow that produced the invalid enrichment block."
     }
   }
 }

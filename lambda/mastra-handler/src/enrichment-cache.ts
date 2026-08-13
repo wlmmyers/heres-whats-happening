@@ -142,6 +142,28 @@ export class S3EnrichmentCache implements EnrichmentCache {
   }
 
   async write(performer: string, entry: CacheEntry): Promise<void> {
+    // Validate on the way IN too, not just on the way out. A deterministically
+    // invalid payload (e.g. a non-integer width cast unchecked from
+    // Wikimedia's thumbwidth, or a non-string extmetadata credit field in
+    // enrich-image.ts) would otherwise round-trip forever: write() persists
+    // it, read()'s validation (added alongside this) rejects it as a miss
+    // every time, and the next run just rewrites the same bad object. The
+    // cache gate silently stops working for that artist and all three
+    // workflows re-run on every scrape — exactly the expensive failure the
+    // cache exists to prevent. Skipping the write instead leaves the entry
+    // absent, so the next run gets a clean retry rather than a permanently
+    // poisoned one.
+    const parsed = CacheEntrySchema.safeParse(entry);
+    if (!parsed.success) {
+      console.error(
+        JSON.stringify({
+          msg: 'enrichment-cache-invalid-write',
+          performer,
+          error: parsed.error.message,
+        }),
+      );
+      return;
+    }
     await this.s3.send(
       new PutObjectCommand({
         Bucket: this.bucket,

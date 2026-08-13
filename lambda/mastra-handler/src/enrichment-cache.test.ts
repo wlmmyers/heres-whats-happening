@@ -6,6 +6,7 @@ import {
   StubEnrichmentCache,
   cacheObjectKey,
   isFresh,
+  type CacheEntry,
 } from './enrichment-cache.js';
 
 const NOW = Date.parse('2026-08-12T00:00:00Z');
@@ -184,5 +185,59 @@ describe('S3EnrichmentCache', () => {
     const s3 = s3ReturningBody(JSON.stringify(entry));
     const got = await new S3EnrichmentCache(s3, 'b').read('La Luz');
     expect(got?.workflows.bio?.payload).toEqual({ status: 'ok', bio_md: 'x' });
+  });
+
+  // write() must validate too, not just read(). Otherwise a deterministically
+  // invalid payload (e.g. a non-integer width cast unchecked from Wikimedia's
+  // thumbwidth) round-trips forever: write() persists it, read()'s validation
+  // rejects it as a miss every time, and the next run just rewrites the same
+  // bad object — the cache gate silently stops working for that artist.
+  function spyingS3(): { s3: S3Client; calls: unknown[] } {
+    const calls: unknown[] = [];
+    const s3 = {
+      send: async (cmd: unknown) => {
+        calls.push(cmd);
+        return {};
+      },
+    } as unknown as S3Client;
+    return { s3, calls };
+  }
+
+  it('skips the write and logs when the entry fails schema validation', async () => {
+    const { s3, calls } = spyingS3();
+    const bad = {
+      artist_key: 'la luz',
+      performer: 'La Luz',
+      workflows: {
+        image: {
+          status: 'ok',
+          at: '2026-08-12T00:00:00Z',
+          payload: { status: 'ok', width: 'not-a-number' },
+        },
+      },
+    } as unknown as CacheEntry;
+
+    await new S3EnrichmentCache(s3, 'b').write('La Luz', bad);
+
+    expect(calls).toHaveLength(0); // no PutObjectCommand was ever sent
+  });
+
+  it('writes normally when the entry is well-formed', async () => {
+    const { s3, calls } = spyingS3();
+    const good = {
+      artist_key: 'la luz',
+      performer: 'La Luz',
+      workflows: {
+        bio: {
+          status: 'ok' as const,
+          at: '2026-08-12T00:00:00Z',
+          payload: { status: 'ok' as const, bio_md: 'x' },
+        },
+      },
+    };
+
+    await new S3EnrichmentCache(s3, 'b').write('La Luz', good);
+
+    expect(calls).toHaveLength(1);
   });
 });
