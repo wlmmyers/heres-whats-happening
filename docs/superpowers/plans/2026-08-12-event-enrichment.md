@@ -2161,7 +2161,8 @@ that simply isn't working."
 
 **Interfaces:**
 - Consumes: `StubFetch` (`src/mastra/tools/stub-fetch.ts`).
-- Produces: `createSetlistFmClient(opts)`, `setlistFmClient`, `fetchRecentSetlist(mbid)`, `type RecentSetlist`, `parseEventDate(s)`, `pickRecentSetlist(setlists, now)`, `MAX_SETLIST_AGE_DAYS`.
+- Produces: `createSetlistFmClient(opts)`, `type RecentSetlist`, `parseEventDate(s)`, `pickRecentSetlist(setlists, now)`, `MAX_SETLIST_AGE_DAYS`.
+- Deliberately **no** module-level singleton or bare `fetchRecentSetlist(mbid)` wrapper, unlike `musicbrainz.tool.ts`. That module can construct its client at import time because it needs no credentials; this one needs an API key that arrives asynchronously from Secrets Manager during the invocation, so a singleton could not be built at import. Task 12's `prodTourDeps(apiKey)` calls `createSetlistFmClient({ apiKey })` directly.
 
 - [ ] **Step 1: Record the fixture**
 
