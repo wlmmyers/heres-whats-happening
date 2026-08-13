@@ -1,5 +1,5 @@
-import { z } from "zod";
-import type { ArtistMatch, ImageCredit } from "./mastra/tools/band-image.js";
+import { z } from 'zod';
+import type { ArtistMatch, ImageCredit } from './mastra/tools/band-image.js';
 
 // Length bounds. These MUST match the Go handler and the poster_jobs CHECK
 // constraints — if Go accepts what this rejects, the caller gets a 202 and then
@@ -33,12 +33,12 @@ export const PosterRequestSchema = z
     // is interpolated straight into an object key: the format guarantees no "/"
     // and no ".." can enter the path. Supplied by the API service from the
     // authenticated session, never by the browser.
-    userId: z.string().uuid("userId must be a UUID"),
+    userId: z.string().uuid('userId must be a UUID'),
     // .trim() runs before the bound, so it measures the trimmed value — which
     // is what JobID hashes.
-    performer: bounded("performer", MAX_PERFORMER),
-    venue: bounded("venue", MAX_VENUE),
-    date: bounded("date", MAX_DATE),
+    performer: bounded('performer', MAX_PERFORMER),
+    venue: bounded('venue', MAX_VENUE),
+    date: bounded('date', MAX_DATE),
     // Poster generation is LLM-driven and nondeterministic, so a user who
     // dislikes a result needs a re-roll. NOT part of posterKeyBase: a forced run
     // overwrites the same keys rather than creating a parallel copy.
@@ -50,4 +50,4 @@ export type PosterRequest = z.infer<typeof PosterRequestSchema>;
 /** Result of the poster pipeline, mapped to HTTP by the handler. */
 export type PosterResult =
   | { ok: true; pngKey: string; cached: boolean; artist?: ArtistMatch; credit?: ImageCredit }
-  | { ok: false; stage: "image" | "svg"; reason: string; artist?: ArtistMatch };
+  | { ok: false; stage: 'image' | 'svg'; reason: string; artist?: ArtistMatch };

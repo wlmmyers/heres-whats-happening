@@ -1,5 +1,5 @@
-import { SendMessageBatchCommand, type SQSClient } from "@aws-sdk/client-sqs";
-import type { EventMessage } from "./schema.js";
+import { SendMessageBatchCommand, type SQSClient } from '@aws-sdk/client-sqs';
+import type { EventMessage } from './schema.js';
 
 const MAX_BATCH = 10; // SQS SendMessageBatch hard limit
 
@@ -23,7 +23,9 @@ export async function sendBatch(
       }),
     );
     if (out.Failed && out.Failed.length > 0) {
-      throw new Error(`SendMessageBatch failed for ${out.Failed.length} entr(ies): ${JSON.stringify(out.Failed)}`);
+      throw new Error(
+        `SendMessageBatch failed for ${out.Failed.length} entr(ies): ${JSON.stringify(out.Failed)}`,
+      );
     }
   }
 }

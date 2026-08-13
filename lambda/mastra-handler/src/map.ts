@@ -1,7 +1,7 @@
-import { contentHash, eventDateYMD } from "./hash.js";
-import { EventMessageSchema, type EventDraft, type EventMessage } from "./schema.js";
+import { contentHash, eventDateYMD } from './hash.js';
+import { EventMessageSchema, type EventDraft, type EventMessage } from './schema.js';
 
-export const EMAIL_SOURCE_ID = "email_newsletter";
+export const EMAIL_SOURCE_ID = 'email_newsletter';
 
 /** Convert one LLM draft into the canonical wire message. Headliner = performers[0],
  * falling back to title when the draft has no performers. */

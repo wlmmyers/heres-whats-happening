@@ -1,8 +1,8 @@
-import { createTool } from "@mastra/core/tools";
-import { z } from "zod";
-import { ArtistMatchSchema, USER_AGENT, type ArtistMatch } from "./band-image.js";
+import { createTool } from '@mastra/core/tools';
+import { z } from 'zod';
+import { ArtistMatchSchema, USER_AGENT, type ArtistMatch } from './band-image.js';
 
-const DEFAULT_BASE_URL = "https://musicbrainz.org";
+const DEFAULT_BASE_URL = 'https://musicbrainz.org';
 const MIN_INTERVAL_MS = 1000; // MusicBrainz allows ~1 req/sec
 const TIMEOUT_MS = 15_000;
 const DEFAULT_LIMIT = 3;
@@ -12,7 +12,7 @@ const DEFAULT_LIMIT = 3;
 const MAX_ERROR_BODY = 200;
 
 function truncate(text: string, limit = MAX_ERROR_BODY): string {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = text.replace(/\s+/g, ' ').trim();
   return flat.length <= limit ? flat : `${flat.slice(0, limit)}…`;
 }
 
@@ -38,7 +38,7 @@ interface MbArtist {
   disambiguation?: string;
   type?: string;
   country?: string;
-  "life-span"?: { begin?: string | null };
+  'life-span'?: { begin?: string | null };
 }
 
 function toArtistMatch(a: MbArtist): ArtistMatch {
@@ -49,7 +49,7 @@ function toArtistMatch(a: MbArtist): ArtistMatch {
     disambiguation: a.disambiguation || undefined,
     type: a.type || undefined,
     country: a.country || undefined,
-    beginYear: a["life-span"]?.begin?.slice(0, 4) || undefined,
+    beginYear: a['life-span']?.begin?.slice(0, 4) || undefined,
   };
 }
 
@@ -78,7 +78,7 @@ export function createMusicBrainzClient(options: MusicBrainzOptions = {}): Music
     for (let attempt = 0; attempt < 2; attempt++) {
       await throttle();
       const res = await doFetch(`${baseUrl}${path}`, {
-        headers: { "User-Agent": userAgent, Accept: "application/json" },
+        headers: { 'User-Agent': userAgent, Accept: 'application/json' },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (res.status === 503) {
@@ -95,8 +95,12 @@ export function createMusicBrainzClient(options: MusicBrainzOptions = {}): Music
     async searchArtists(performer, opts) {
       const limit = opts?.limit ?? DEFAULT_LIMIT;
       // Escape the Lucene string exactly as internal/musicbrainz/client.go does.
-      const esc = performer.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-      const q = new URLSearchParams({ query: `artist:"${esc}"`, fmt: "json", limit: String(limit) });
+      const esc = performer.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const q = new URLSearchParams({
+        query: `artist:"${esc}"`,
+        fmt: 'json',
+        limit: String(limit),
+      });
       const payload = (await getJson(`/ws/2/artist?${q.toString()}`)) as { artists?: MbArtist[] };
       return (payload.artists ?? []).map(toArtistMatch);
     },
@@ -106,14 +110,17 @@ export function createMusicBrainzClient(options: MusicBrainzOptions = {}): Music
 /** Production client. */
 export const musicBrainzClient = createMusicBrainzClient();
 
-export function searchArtists(performer: string, opts?: { limit?: number }): Promise<ArtistMatch[]> {
+export function searchArtists(
+  performer: string,
+  opts?: { limit?: number },
+): Promise<ArtistMatch[]> {
   return musicBrainzClient.searchArtists(performer, opts);
 }
 
 /** Thin wrapper so the lookup is inspectable in Mastra Studio. */
 export const musicBrainzArtistTool = createTool({
-  id: "musicbrainz-search-artist",
-  description: "Resolve a fuzzy band name to MusicBrainz artist matches with disambiguation hints.",
+  id: 'musicbrainz-search-artist',
+  description: 'Resolve a fuzzy band name to MusicBrainz artist matches with disambiguation hints.',
   inputSchema: z.object({ performer: z.string(), limit: z.number().optional() }),
   outputSchema: z.object({ matches: z.array(ArtistMatchSchema) }),
   execute: async ({ performer, limit }) => ({ matches: await searchArtists(performer, { limit }) }),

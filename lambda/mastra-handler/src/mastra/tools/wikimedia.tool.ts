@@ -1,11 +1,16 @@
-import { createTool } from "@mastra/core/tools";
-import { convert as htmlToText } from "html-to-text";
-import { z } from "zod";
-import { ImageCandidateSchema, USER_AGENT, type ImageCandidate, type ImageCredit } from "./band-image.js";
-import type { FetchFn } from "./musicbrainz.tool.js";
+import { createTool } from '@mastra/core/tools';
+import { convert as htmlToText } from 'html-to-text';
+import { z } from 'zod';
+import {
+  ImageCandidateSchema,
+  USER_AGENT,
+  type ImageCandidate,
+  type ImageCredit,
+} from './band-image.js';
+import type { FetchFn } from './musicbrainz.tool.js';
 
-const DEFAULT_WIKIDATA_BASE_URL = "https://www.wikidata.org";
-const DEFAULT_COMMONS_BASE_URL = "https://commons.wikimedia.org";
+const DEFAULT_WIKIDATA_BASE_URL = 'https://www.wikidata.org';
+const DEFAULT_COMMONS_BASE_URL = 'https://commons.wikimedia.org';
 const TIMEOUT_MS = 15_000;
 
 // Matches the poster canvas width in svg-author.agent.ts (1080x1350). The image
@@ -19,18 +24,18 @@ const MAX_CANDIDATES = 12;
 // measured ~7200 chars against a ~8000 limit, which is too little headroom.
 const CATEGORY_LIMIT = 25;
 const IMAGEINFO_BATCH = 25;
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png"]);
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png']);
 
 const EXTMETA_FIELDS = [
-  "License",
-  "LicenseShortName",
-  "LicenseUrl",
-  "UsageTerms",
-  "Artist",
-  "Credit",
-  "AttributionRequired",
-  "Restrictions",
-].join("|");
+  'License',
+  'LicenseShortName',
+  'LicenseUrl',
+  'UsageTerms',
+  'Artist',
+  'Credit',
+  'AttributionRequired',
+  'Restrictions',
+].join('|');
 
 export interface WikimediaOptions {
   wikidataBaseUrl?: string;
@@ -56,7 +61,11 @@ interface RawImageInfo {
 
 /** Commons stores file titles with spaces or underscores interchangeably. */
 function normalizeTitle(title: string): string {
-  return title.replace(/^File:/i, "").replace(/_/g, " ").trim().toLowerCase();
+  return title
+    .replace(/^File:/i, '')
+    .replace(/_/g, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 /** extmetadata values may contain anchors and spans; we want the bare text. */
@@ -64,7 +73,7 @@ function plainText(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
   const text = htmlToText(String(value), {
     wordwrap: false,
-    selectors: [{ selector: "a", options: { ignoreHref: true } }],
+    selectors: [{ selector: 'a', options: { ignoreHref: true } }],
   }).trim();
   return text.length > 0 ? text : undefined;
 }
@@ -74,14 +83,14 @@ function toCredit(title: string, info: RawImageInfo): ImageCredit {
   const field = (key: string) => plainText(meta[key]?.value);
   return {
     file: title,
-    descriptionUrl: info.descriptionurl ?? "",
-    artist: field("Artist"),
-    credit: field("Credit"),
-    license: field("License"),
-    licenseShortName: field("LicenseShortName"),
-    licenseUrl: field("LicenseUrl"),
-    usageTerms: field("UsageTerms"),
-    attributionRequired: String(meta.AttributionRequired?.value ?? "").toLowerCase() === "true",
+    descriptionUrl: info.descriptionurl ?? '',
+    artist: field('Artist'),
+    credit: field('Credit'),
+    license: field('License'),
+    licenseShortName: field('LicenseShortName'),
+    licenseUrl: field('LicenseUrl'),
+    usageTerms: field('UsageTerms'),
+    attributionRequired: String(meta.AttributionRequired?.value ?? '').toLowerCase() === 'true',
   };
 }
 
@@ -91,10 +100,14 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
   const userAgent = options.userAgent ?? USER_AGENT;
   const doFetch = options.fetchFn ?? globalThis.fetch;
 
+  // Wikimedia's action API returns deeply-nested, endpoint-specific JSON that
+  // callers navigate with optional chaining. `unknown` would buy no safety here
+  // without hand-writing a schema per endpoint.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function getJson(base: string, params: Record<string, string>): Promise<any> {
-    const url = `${base}/w/api.php?${new URLSearchParams({ ...params, format: "json" }).toString()}`;
+    const url = `${base}/w/api.php?${new URLSearchParams({ ...params, format: 'json' }).toString()}`;
     const res = await doFetch(url, {
-      headers: { "User-Agent": userAgent, Accept: "application/json" },
+      headers: { 'User-Agent': userAgent, Accept: 'application/json' },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`wikimedia ${res.status} for ${base}`);
@@ -104,25 +117,29 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
   /** MBID -> QID via Wikidata's reverse P434 index. Avoids a rate-limited MB call. */
   async function resolveQid(mbid: string): Promise<string | null> {
     const payload = await getJson(wikidataBaseUrl, {
-      action: "query",
-      list: "search",
+      action: 'query',
+      list: 'search',
       srsearch: `haswbstatement:P434=${mbid}`,
     });
     return payload?.query?.search?.[0]?.title ?? null;
   }
 
   async function claimValue(qid: string, property: string): Promise<string | null> {
-    const payload = await getJson(wikidataBaseUrl, { action: "wbgetclaims", entity: qid, property });
+    const payload = await getJson(wikidataBaseUrl, {
+      action: 'wbgetclaims',
+      entity: qid,
+      property,
+    });
     const value = payload?.claims?.[property]?.[0]?.mainsnak?.datavalue?.value;
-    return typeof value === "string" && value.length > 0 ? value : null;
+    return typeof value === 'string' && value.length > 0 ? value : null;
   }
 
   async function categoryFiles(category: string): Promise<string[]> {
     const payload = await getJson(commonsBaseUrl, {
-      action: "query",
-      list: "categorymembers",
+      action: 'query',
+      list: 'categorymembers',
       cmtitle: `Category:${category}`,
-      cmtype: "file",
+      cmtype: 'file',
       cmlimit: String(CATEGORY_LIMIT),
     });
     const members = payload?.query?.categorymembers ?? [];
@@ -138,14 +155,16 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
     for (let i = 0; i < titles.length; i += IMAGEINFO_BATCH) {
       const batch = titles.slice(i, i + IMAGEINFO_BATCH);
       const payload = await getJson(commonsBaseUrl, {
-        action: "query",
-        prop: "imageinfo",
-        titles: batch.join("|"),
-        iiprop: "url|size|mime|extmetadata",
+        action: 'query',
+        prop: 'imageinfo',
+        titles: batch.join('|'),
+        iiprop: 'url|size|mime|extmetadata',
         iiextmetadatafilter: EXTMETA_FIELDS,
         iiurlwidth: String(THUMB_WIDTH),
       });
       const pages = payload?.query?.pages ?? {};
+      // Keyed by page id; each value is raw API JSON, narrowed to RawImageInfo below.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const page of Object.values<any>(pages)) {
         const info = page?.imageinfo?.[0];
         if (page?.title && info) out.set(normalizeTitle(page.title), info as RawImageInfo);
@@ -154,8 +173,12 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
     return out;
   }
 
-  function toCandidate(title: string, info: RawImageInfo, source: "p18" | "category"): ImageCandidate | null {
-    const mime = info.mime ?? "";
+  function toCandidate(
+    title: string,
+    info: RawImageInfo,
+    source: 'p18' | 'category',
+  ): ImageCandidate | null {
+    const mime = info.mime ?? '';
     if (!ALLOWED_MIME.has(mime)) return null;
     if (!info.thumburl || !info.thumbwidth || !info.thumbheight) return null;
     return {
@@ -174,7 +197,7 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
       const qid = await resolveQid(mbid);
       if (!qid) return [];
 
-      const [p18, category] = await Promise.all([claimValue(qid, "P18"), claimValue(qid, "P373")]);
+      const [p18, category] = await Promise.all([claimValue(qid, 'P18'), claimValue(qid, 'P373')]);
       if (!p18 && !category) return [];
 
       const p18Title = p18 ? `File:${p18}` : null;
@@ -199,7 +222,7 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
 
       if (p18Title) {
         const raw = info.get(normalizeTitle(p18Title));
-        const candidate = raw ? toCandidate(p18Title, raw, "p18") : null;
+        const candidate = raw ? toCandidate(p18Title, raw, 'p18') : null;
         if (candidate) {
           ordered.push(candidate);
           seen.add(normalizeTitle(p18Title));
@@ -213,7 +236,7 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
         .filter((t) => !seen.has(normalizeTitle(t)))
         .map((t) => {
           const raw = info.get(normalizeTitle(t));
-          return raw ? toCandidate(t, raw, "category") : null;
+          return raw ? toCandidate(t, raw, 'category') : null;
         })
         .filter((c): c is ImageCandidate => c !== null)
         .sort((a, b) => {
@@ -228,7 +251,7 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
 
     async fetchImageBytes(candidate) {
       const res = await doFetch(candidate.url, {
-        headers: { "User-Agent": userAgent },
+        headers: { 'User-Agent': userAgent },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!res.ok) throw new Error(`commons ${res.status} fetching ${candidate.file}`);
@@ -240,7 +263,10 @@ export function createWikimediaClient(options: WikimediaOptions = {}): Wikimedia
 /** Production client. */
 export const wikimediaClient = createWikimediaClient();
 
-export function resolveImageCandidates(mbid: string, opts?: { artistName?: string }): Promise<ImageCandidate[]> {
+export function resolveImageCandidates(
+  mbid: string,
+  opts?: { artistName?: string },
+): Promise<ImageCandidate[]> {
   return wikimediaClient.resolveImageCandidates(mbid, opts);
 }
 
@@ -250,9 +276,12 @@ export function fetchImageBytes(candidate: ImageCandidate): Promise<Buffer> {
 
 /** Thin wrapper so the lookup is inspectable in Mastra Studio. */
 export const wikimediaImagesTool = createTool({
-  id: "wikimedia-artist-images",
-  description: "Resolve a MusicBrainz artist MBID to Wikimedia Commons image candidates with licensing.",
+  id: 'wikimedia-artist-images',
+  description:
+    'Resolve a MusicBrainz artist MBID to Wikimedia Commons image candidates with licensing.',
   inputSchema: z.object({ mbid: z.string(), artistName: z.string().optional() }),
   outputSchema: z.object({ candidates: z.array(ImageCandidateSchema) }),
-  execute: async ({ mbid, artistName }) => ({ candidates: await resolveImageCandidates(mbid, { artistName }) }),
+  execute: async ({ mbid, artistName }) => ({
+    candidates: await resolveImageCandidates(mbid, { artistName }),
+  }),
 });

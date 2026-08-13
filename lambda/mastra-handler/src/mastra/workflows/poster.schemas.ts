@@ -1,11 +1,11 @@
-import { z } from "zod";
+import { z } from 'zod';
 import {
   ArtifactRefSchema,
   ArtistMatchSchema,
   ImageCandidateSchema,
   ImageCreditSchema,
   ImageRefSchema,
-} from "../tools/band-image.js";
+} from '../tools/band-image.js';
 
 // Loop-1 state: input and output of the judge-band-image step are the SAME shape,
 // so the step's output can feed straight back as the next iteration's input.
@@ -55,7 +55,7 @@ export const PosterWorkflowOutputSchema = z.object({
   // branches: a failed run still has files worth cleaning up (and, from Studio,
   // worth inspecting).
   artifactDir: z.string().optional(),
-  failureStage: z.enum(["image", "svg"]).optional(),
+  failureStage: z.enum(['image', 'svg']).optional(),
   reason: z.string().optional(),
   artist: ArtistMatchSchema.optional(),
   credit: ImageCreditSchema.optional(),

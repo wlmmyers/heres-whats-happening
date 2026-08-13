@@ -1,10 +1,10 @@
-import { createStep } from "@mastra/core/workflows";
-import { type z } from "zod";
-import { ImageAnalysisSchema, imageAnalysisAgent } from "../agents/image-analysis.agent.js";
-import { artifactStore } from "../tools/artifact-store.js";
-import type { ArtistMatch } from "../tools/band-image.js";
-import { fetchImageBytes } from "../tools/wikimedia.tool.js";
-import { ImageLoopStateSchema } from "./poster.schemas.js";
+import { createStep } from '@mastra/core/workflows';
+import { type z } from 'zod';
+import { ImageAnalysisSchema, imageAnalysisAgent } from '../agents/image-analysis.agent.js';
+import { artifactStore } from '../tools/artifact-store.js';
+import type { ArtistMatch } from '../tools/band-image.js';
+import { fetchImageBytes } from '../tools/wikimedia.tool.js';
+import { ImageLoopStateSchema } from './poster.schemas.js';
 
 type ImageAnalysis = z.infer<typeof ImageAnalysisSchema>;
 
@@ -23,7 +23,7 @@ function describeArtist(artist: ArtistMatch | undefined, fallback: string): stri
     artist.beginYear ? `formed ${artist.beginYear}` : undefined,
   ]
     .filter(Boolean)
-    .join(", ");
+    .join(', ');
 }
 
 // One iteration: fetch the indexed candidate's bytes, write them to the run's
@@ -31,7 +31,7 @@ function describeArtist(artist: ArtistMatch | undefined, fallback: string): stri
 // workflow state — only an ImageRef does. `candidateIndex` advances on every
 // iteration regardless of verdict, so the next attempt sees a NEW photo.
 export const judgeBandImageStep = createStep({
-  id: "judge-band-image",
+  id: 'judge-band-image',
   inputSchema: ImageLoopStateSchema,
   outputSchema: ImageLoopStateSchema,
   execute: async ({ inputData, runId }) => {
@@ -60,7 +60,7 @@ export const judgeBandImageStep = createStep({
     let image;
     try {
       const store = artifactStore(runId);
-      const ext = candidate.contentType === "image/png" ? "png" : "jpg";
+      const ext = candidate.contentType === 'image/png' ? 'png' : 'jpg';
       const ref = await store.write(`band-${attempts}.${ext}`, bytes, candidate.contentType);
       image = {
         ...ref,
@@ -88,10 +88,13 @@ export const judgeBandImageStep = createStep({
     try {
       res = await imageAnalysisAgent.generate([
         {
-          role: "user",
+          role: 'user',
           content: [
-            { type: "image", image: bytes, mimeType: candidate.contentType },
-            { type: "text", text: `Performer: ${who}. Is this a usable photo of this performer for a concert poster?` },
+            { type: 'image', image: bytes, mimeType: candidate.contentType },
+            {
+              type: 'text',
+              text: `Performer: ${who}. Is this a usable photo of this performer for a concert poster?`,
+            },
           ],
         },
       ]);
@@ -113,7 +116,7 @@ export const judgeBandImageStep = createStep({
         attempts,
         candidateIndex,
         accepted: false,
-        reason: "image analysis returned no result",
+        reason: 'image analysis returned no result',
         image,
       };
     }

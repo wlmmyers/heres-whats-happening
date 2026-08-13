@@ -1,6 +1,6 @@
-import { Agent } from "@mastra/core/agent";
-import { toStandardSchema } from "@mastra/core/schema";
-import { EventDraftsSchema } from "../../schema.js";
+import { Agent } from '@mastra/core/agent';
+import { toStandardSchema } from '@mastra/core/schema';
+import { EventDraftsSchema } from '../../schema.js';
 
 export const EXTRACTOR_INSTRUCTIONS = `You extract live-music events from a concert promoter's email or event flyer.
 
@@ -21,10 +21,10 @@ return EVERY show you can see — downstream dedup handles repeats. If the conte
 
 // Router-string model; overridable via env. ANTHROPIC_API_KEY is required at generate() time (not at construction).
 export const emailExtractorAgent = new Agent({
-  id: "email-extractor",
-  name: "Email Event Extractor",
+  id: 'email-extractor',
+  name: 'Email Event Extractor',
   instructions: EXTRACTOR_INSTRUCTIONS,
-  model: process.env.LLM_MODEL || "anthropic/claude-sonnet-4-5",
+  model: process.env.LLM_MODEL || 'anthropic/claude-sonnet-4-5',
   defaultOptions: {
     structuredOutput: { schema: toStandardSchema(EventDraftsSchema) },
   },

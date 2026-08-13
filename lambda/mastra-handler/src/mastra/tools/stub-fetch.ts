@@ -47,7 +47,8 @@ export function stubFetch(routes: StubRoute[]): StubFetch {
   const counts = new Map<StubRoute, number>();
 
   const fn = async (input: FetchInput, init?: FetchInit): Promise<Response> => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     calls.push({ url, headers: headersOf(init) });
 
     const route = routes.find((r) => r.match.test(url));
@@ -62,12 +63,12 @@ export function stubFetch(routes: StubRoute[]): StubFetch {
     if (route.body) {
       return new Response(new Uint8Array(route.body), {
         status,
-        headers: { "content-type": route.contentType ?? "image/jpeg" },
+        headers: { 'content-type': route.contentType ?? 'image/jpeg' },
       });
     }
     return new Response(JSON.stringify(route.json ?? {}), {
       status,
-      headers: { "content-type": route.contentType ?? "application/json" },
+      headers: { 'content-type': route.contentType ?? 'application/json' },
     });
   };
 
