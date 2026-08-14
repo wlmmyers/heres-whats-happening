@@ -1,7 +1,6 @@
-import type { Writable } from "node:stream";
+import type { Writable } from 'node:stream';
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace awslambda {
     interface ResponseStream extends Writable {
       setContentType(contentType: string): void;

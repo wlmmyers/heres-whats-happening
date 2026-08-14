@@ -37,6 +37,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address,
     m.score,
@@ -59,6 +60,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address,
     m.score,
@@ -103,6 +105,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address
 FROM events e

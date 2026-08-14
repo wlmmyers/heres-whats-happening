@@ -25,21 +25,41 @@ func NewEventHandler(q *store.Queries, cityID pgtype.UUID) *EventHandler {
 	return &EventHandler{q: q, cityID: cityID}
 }
 
-// Handle decodes an SQS message body as an events.Message and applies it.
+// Handle decodes an SQS message body as an events.EnrichedMessage and applies
+// it. A plain (un-enriched) message decodes into the same type with a nil
+// Enrichment, which is what makes the queue cutover safe.
+//
+// A body whose enrichment block fails to decode (e.g. a wrong-typed field from
+// a Lambda emit that skipped schema validation) degrades to a plain
+// events.Message rather than being dropped: a plain event still ingests
+// correctly, which is the whole point of the superset contract. Only a body
+// that fails BOTH decodes is genuinely malformed and gets logged and dropped.
 func (h *EventHandler) Handle(ctx context.Context, body []byte) error {
-	var m events.Message
+	var m events.EnrichedMessage
 	if err := json.Unmarshal(body, &m); err != nil {
-		// Malformed message — log and return nil so consumer deletes it.
-		log.Printf("ingest: bad event message: %v", err)
-		return nil
+		var plain events.Message
+		if err2 := json.Unmarshal(body, &plain); err2 != nil {
+			// Neither decode worked — genuinely malformed. Log and return nil
+			// so the consumer deletes it rather than looping on it forever.
+			log.Printf("ingest: bad event message: %v", err)
+			return nil
+		}
+		log.Printf("ingest: enriched message decode failed, degrading to plain event: %v", err)
+		m = events.EnrichedMessage{Message: plain}
 	}
 	return h.handleMessage(ctx, m)
 }
 
-func (h *EventHandler) handleMessage(ctx context.Context, m events.Message) error {
+func (h *EventHandler) handleMessage(ctx context.Context, m events.EnrichedMessage) error {
 	src, err := h.q.GetEventSourceByName(ctx, m.SourceID)
 	if err != nil {
 		return fmt.Errorf("lookup source %q: %w", m.SourceID, err)
+	}
+
+	// Artist BEFORE event: events.headline_artist_id has an FK to artists.id.
+	artistID, err := h.applyEnrichment(ctx, m.Enrichment)
+	if err != nil {
+		return err
 	}
 
 	// Upsert venue
@@ -58,16 +78,17 @@ func (h *EventHandler) handleMessage(ctx context.Context, m events.Message) erro
 
 	// Upsert event
 	eventID, err := h.q.UpsertEvent(ctx, store.UpsertEventParams{
-		SourceID:      src.ID,
-		SourceEventID: m.SourceEventID,
-		Title:         m.Title,
-		Description:   m.Description,
-		StartsAt:      pgtype.Timestamptz{Time: m.StartsAt, Valid: true},
-		EndsAt:        pgTimePtr(m.EndsAt),
-		TimeTbd:       m.TimeTBD,
-		VenueID:       venueID,
-		ImageUrl:      optString(m.ImageURL),
-		Url:           optString(m.URL),
+		SourceID:         src.ID,
+		SourceEventID:    m.SourceEventID,
+		Title:            m.Title,
+		Description:      m.Description,
+		StartsAt:         pgtype.Timestamptz{Time: m.StartsAt, Valid: true},
+		EndsAt:           pgTimePtr(m.EndsAt),
+		TimeTbd:          m.TimeTBD,
+		VenueID:          venueID,
+		ImageUrl:         optString(m.ImageURL),
+		Url:              optString(m.URL),
+		HeadlineArtistID: artistID,
 	})
 	if err != nil {
 		return fmt.Errorf("upsert event: %w", err)

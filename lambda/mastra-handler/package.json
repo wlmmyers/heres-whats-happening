@@ -4,15 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "mastra dev",
     "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.scripts.json",
     "invoke-local": "tsx scripts/invoke-local.ts",
     "invoke-poster-local": "tsx scripts/invoke-poster-local.ts",
-    "parse-email": "tsx scripts/parse-email.ts",
-    "dev": "mastra dev"
+    "parse-email": "tsx scripts/parse-email.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.0.0",
@@ -28,13 +31,18 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/aws-lambda": "^8.10.140",
     "@types/html-to-text": "^9.0.4",
     "@types/mailparser": "^3.4.4",
     "@types/node": "^20.14.0",
+    "eslint": "^10.8.1",
+    "globals": "^17.10.0",
     "mastra": "^1.19.0",
+    "prettier": "^3.8.3",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0",
+    "typescript-eslint": "^8.59.2",
     "vitest": "^2.0.0"
   }
 }

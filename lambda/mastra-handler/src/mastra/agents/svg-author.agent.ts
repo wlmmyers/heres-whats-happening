@@ -1,14 +1,18 @@
-import { Agent } from "@mastra/core/agent";
-import { toStandardSchema } from "@mastra/core/schema";
-import { z } from "zod";
+import { Agent } from '@mastra/core/agent';
+import { toStandardSchema } from '@mastra/core/schema';
+import { z } from 'zod';
 
 export const SvgAuthorSchema = z.object({
-  svg: z.string().describe("A complete, standalone SVG document string starting with '<svg' and ending with '</svg>'."),
+  svg: z
+    .string()
+    .describe(
+      "A complete, standalone SVG document string starting with '<svg' and ending with '</svg>'.",
+    ),
 });
 
 export const svgAuthorAgent = new Agent({
-  id: "poster-svg-author",
-  name: "Concert Poster SVG Author",
+  id: 'poster-svg-author',
+  name: 'Concert Poster SVG Author',
   instructions: `You design eye-catching concert-poster SVGs.
 The user message is a JSON object: { performer, venue, date, colors: string[], imageWidth, imageHeight, critique? }.
 Produce ONE complete SVG document (default canvas 1080x1350, portrait) that includes:
@@ -23,6 +27,6 @@ Any other family name is not installed, so that text would render as NOTHING. Va
 letter-spacing and color for hierarchy instead of reaching for a second typeface.
 If 'critique' is present, it explains what was wrong with your previous attempt — fix it.
 Return only the SVG via the 'svg' field. Use xmlns="http://www.w3.org/2000/svg". Keep it well-formed.`,
-  model: process.env.LLM_MODEL || "anthropic/claude-sonnet-4-5",
+  model: process.env.LLM_MODEL || 'anthropic/claude-sonnet-4-5',
   defaultOptions: { structuredOutput: { schema: toStandardSchema(SvgAuthorSchema) } },
 });

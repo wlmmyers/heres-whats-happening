@@ -1,9 +1,9 @@
-import { readFileSync } from "fs";
-import { parseEmail } from "../src/email.js";
+import { readFileSync } from 'fs';
+import { parseEmail } from '../src/email.js';
 
 const file = process.argv[2];
 if (!file) {
-  console.error("Usage: parse-email <path-to-ses-email>");
+  console.error('Usage: parse-email <path-to-ses-email>');
   process.exit(1);
 }
 

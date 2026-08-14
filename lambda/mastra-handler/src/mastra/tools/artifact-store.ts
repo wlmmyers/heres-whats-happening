@@ -1,9 +1,9 @@
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { ArtifactRef } from "./band-image.js";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { ArtifactRef } from './band-image.js';
 
-const ROOT_NAME = "hwh-poster";
+const ROOT_NAME = 'hwh-poster';
 const SWEEP_MAX_AGE_MS = 60 * 60 * 1000;
 
 /** Roots already swept in this process — the sweep is a backstop, not per-call work. */

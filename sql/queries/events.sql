@@ -1,9 +1,9 @@
 -- name: UpsertEvent :one
 INSERT INTO events (
     source_id, source_event_id, title, description, starts_at, ends_at,
-    venue_id, image_url, url, time_tbd, last_seen_at
+    venue_id, image_url, url, time_tbd, headline_artist_id, last_seen_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
 ON CONFLICT (source_id, source_event_id)
 DO UPDATE SET
     title         = EXCLUDED.title,
@@ -14,6 +14,9 @@ DO UPDATE SET
     image_url     = EXCLUDED.image_url,
     url           = EXCLUDED.url,
     time_tbd      = EXCLUDED.time_tbd,
+    -- COALESCE, not EXCLUDED: a re-scrape whose enrichment happened to fail
+    -- sends a NULL here, and assigning it would blank a good link.
+    headline_artist_id = COALESCE(EXCLUDED.headline_artist_id, events.headline_artist_id),
     last_seen_at  = NOW(),
     archived_at   = NULL,
     updated_at    = NOW()
@@ -27,7 +30,7 @@ WHERE id = $1;
 
 -- name: GetEventBySourceKey :one
 SELECT id, source_id, source_event_id, title, description, starts_at, ends_at,
-       venue_id, image_url, url, last_seen_at, archived_at, created_at, updated_at
+       venue_id, image_url, url, headline_artist_id, last_seen_at, archived_at, created_at, updated_at
 FROM events
 WHERE source_id = $1 AND source_event_id = $2;
 

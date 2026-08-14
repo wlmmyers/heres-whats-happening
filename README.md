@@ -296,3 +296,15 @@ docker exec hwh_postgres psql -U app -d appdb \
 The Lambda also serves an internal **`POST /api/poster`** endpoint on its AWS_IAM-protected Function URL, reachable only by the API service's ECS task role (see `docs/superpowers/specs/2026-08-10-poster-proxy-design.md`). It takes `{ userId, performer, venue, date, force? }` — `performer` and `venue` are bounded to 200 characters and `date` to 100 (measured after trimming, in Unicode code points, so non-Latin names get the full budget; the whole request body is capped at 8 KB) — and returns `{ pngKey, cached, artist?, credit? }` — an S3 object key, not a URL, because the API service presigns at read time. Clients use the API's `/posters` endpoints instead, whose ready response is `{ status, pngUrl, artist?, credit? }`. No SVG is produced, stored, or served anywhere in this pipeline (see `docs/superpowers/specs/2026-08-11-drop-svg-artifact-design.md`).
 
 `userId` is supplied by the API service from the authenticated session and must be a UUID. It scopes the S3 object key (`posters/v2/u-{userId}/…`), which is what stops one user's `force: true` regeneration — `force` skips the cache read and always re-writes — from overwriting another user's poster. The key also ends in a digest of the three normalized fields: the readable slugs drop every non-Latin character, so without it `"La Luz"` and `"La Luz Мумий"` collide on one object.
+
+### Event enrichment
+
+Scrapers publish to `hwh-events-queue`. The mastra-handler Lambda consumes it
+(SQS trigger, `batch_size = 1`), resolves one MusicBrainz artist per event, runs
+three enrichment workflows — band image, Wikipedia/MusicBrainz bio, setlist.fm
+tour snapshot — and republishes onto `hwh-events-enriched-queue`, which the ECS
+ingest consumer reads.
+
+Enrichment is artist-scoped: one band playing five dates is one bio, one photo,
+one setlist. An S3 skip cache (`*-enrichment-cache` bucket) gates repeat work,
+which matters because the daily scrape republishes every event unconditionally.

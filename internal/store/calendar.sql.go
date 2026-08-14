@@ -20,6 +20,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address
 FROM events e
@@ -48,15 +49,16 @@ type GetCityCalendarPageParams struct {
 }
 
 type GetCityCalendarPageRow struct {
-	EventID      pgtype.UUID        `json:"event_id"`
-	Title        string             `json:"title"`
-	Description  string             `json:"description"`
-	StartsAt     pgtype.Timestamptz `json:"starts_at"`
-	EndsAt       pgtype.Timestamptz `json:"ends_at"`
-	ImageUrl     *string            `json:"image_url"`
-	Url          *string            `json:"url"`
-	VenueName    string             `json:"venue_name"`
-	VenueAddress *string            `json:"venue_address"`
+	EventID          pgtype.UUID        `json:"event_id"`
+	Title            string             `json:"title"`
+	Description      string             `json:"description"`
+	StartsAt         pgtype.Timestamptz `json:"starts_at"`
+	EndsAt           pgtype.Timestamptz `json:"ends_at"`
+	ImageUrl         *string            `json:"image_url"`
+	Url              *string            `json:"url"`
+	HeadlineArtistID pgtype.UUID        `json:"headline_artist_id"`
+	VenueName        string             `json:"venue_name"`
+	VenueAddress     *string            `json:"venue_address"`
 }
 
 // One page of every showable event in the city, with no match filtering and
@@ -85,6 +87,7 @@ func (q *Queries) GetCityCalendarPage(ctx context.Context, arg GetCityCalendarPa
 			&i.EndsAt,
 			&i.ImageUrl,
 			&i.Url,
+			&i.HeadlineArtistID,
 			&i.VenueName,
 			&i.VenueAddress,
 		); err != nil {
@@ -107,6 +110,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address,
     m.score,
@@ -124,17 +128,18 @@ type GetMatchedEventForUserParams struct {
 }
 
 type GetMatchedEventForUserRow struct {
-	EventID        pgtype.UUID        `json:"event_id"`
-	Title          string             `json:"title"`
-	Description    string             `json:"description"`
-	StartsAt       pgtype.Timestamptz `json:"starts_at"`
-	EndsAt         pgtype.Timestamptz `json:"ends_at"`
-	ImageUrl       *string            `json:"image_url"`
-	Url            *string            `json:"url"`
-	VenueName      string             `json:"venue_name"`
-	VenueAddress   *string            `json:"venue_address"`
-	Score          *float64           `json:"score"`
-	ScoreBreakdown []byte             `json:"score_breakdown"`
+	EventID          pgtype.UUID        `json:"event_id"`
+	Title            string             `json:"title"`
+	Description      string             `json:"description"`
+	StartsAt         pgtype.Timestamptz `json:"starts_at"`
+	EndsAt           pgtype.Timestamptz `json:"ends_at"`
+	ImageUrl         *string            `json:"image_url"`
+	Url              *string            `json:"url"`
+	HeadlineArtistID pgtype.UUID        `json:"headline_artist_id"`
+	VenueName        string             `json:"venue_name"`
+	VenueAddress     *string            `json:"venue_address"`
+	Score            *float64           `json:"score"`
+	ScoreBreakdown   []byte             `json:"score_breakdown"`
 }
 
 func (q *Queries) GetMatchedEventForUser(ctx context.Context, arg GetMatchedEventForUserParams) (GetMatchedEventForUserRow, error) {
@@ -148,6 +153,7 @@ func (q *Queries) GetMatchedEventForUser(ctx context.Context, arg GetMatchedEven
 		&i.EndsAt,
 		&i.ImageUrl,
 		&i.Url,
+		&i.HeadlineArtistID,
 		&i.VenueName,
 		&i.VenueAddress,
 		&i.Score,
@@ -248,6 +254,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address,
     m.score,
@@ -288,17 +295,18 @@ type GetUserCalendarPageParams struct {
 }
 
 type GetUserCalendarPageRow struct {
-	EventID        pgtype.UUID        `json:"event_id"`
-	Title          string             `json:"title"`
-	Description    string             `json:"description"`
-	StartsAt       pgtype.Timestamptz `json:"starts_at"`
-	EndsAt         pgtype.Timestamptz `json:"ends_at"`
-	ImageUrl       *string            `json:"image_url"`
-	Url            *string            `json:"url"`
-	VenueName      string             `json:"venue_name"`
-	VenueAddress   *string            `json:"venue_address"`
-	Score          float64            `json:"score"`
-	ScoreBreakdown []byte             `json:"score_breakdown"`
+	EventID          pgtype.UUID        `json:"event_id"`
+	Title            string             `json:"title"`
+	Description      string             `json:"description"`
+	StartsAt         pgtype.Timestamptz `json:"starts_at"`
+	EndsAt           pgtype.Timestamptz `json:"ends_at"`
+	ImageUrl         *string            `json:"image_url"`
+	Url              *string            `json:"url"`
+	HeadlineArtistID pgtype.UUID        `json:"headline_artist_id"`
+	VenueName        string             `json:"venue_name"`
+	VenueAddress     *string            `json:"venue_address"`
+	Score            float64            `json:"score"`
+	ScoreBreakdown   []byte             `json:"score_breakdown"`
 }
 
 // One page of the user's matched events. Ordered by (starts_at, id) so the
@@ -326,6 +334,7 @@ func (q *Queries) GetUserCalendarPage(ctx context.Context, arg GetUserCalendarPa
 			&i.EndsAt,
 			&i.ImageUrl,
 			&i.Url,
+			&i.HeadlineArtistID,
 			&i.VenueName,
 			&i.VenueAddress,
 			&i.Score,

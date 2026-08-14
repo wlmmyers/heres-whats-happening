@@ -1,5 +1,4 @@
-import { SendMessageBatchCommand, type SQSClient } from "@aws-sdk/client-sqs";
-import type { EventMessage } from "./schema.js";
+import { SendMessageBatchCommand, type SQSClient } from '@aws-sdk/client-sqs';
 
 const MAX_BATCH = 10; // SQS SendMessageBatch hard limit
 
@@ -9,7 +8,7 @@ const MAX_BATCH = 10; // SQS SendMessageBatch hard limit
 export async function sendBatch(
   sqs: SQSClient,
   queueUrl: string,
-  messages: EventMessage[],
+  messages: readonly unknown[],
 ): Promise<void> {
   for (let i = 0; i < messages.length; i += MAX_BATCH) {
     const chunk = messages.slice(i, i + MAX_BATCH);
@@ -23,7 +22,9 @@ export async function sendBatch(
       }),
     );
     if (out.Failed && out.Failed.length > 0) {
-      throw new Error(`SendMessageBatch failed for ${out.Failed.length} entr(ies): ${JSON.stringify(out.Failed)}`);
+      throw new Error(
+        `SendMessageBatch failed for ${out.Failed.length} entr(ies): ${JSON.stringify(out.Failed)}`,
+      );
     }
   }
 }

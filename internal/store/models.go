@@ -9,12 +9,65 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
+type Artist struct {
+	ID             pgtype.UUID        `json:"id"`
+	NameKey        string             `json:"name_key"`
+	DisplayName    string             `json:"display_name"`
+	Mbid           *string            `json:"mbid"`
+	Disambiguation *string            `json:"disambiguation"`
+	ArtistType     *string            `json:"artist_type"`
+	Country        *string            `json:"country"`
+	BeginYear      *string            `json:"begin_year"`
+	Status         string             `json:"status"`
+	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ArtistBio struct {
+	ArtistID    pgtype.UUID        `json:"artist_id"`
+	Status      string             `json:"status"`
+	BioMd       *string            `json:"bio_md"`
+	Sources     []byte             `json:"sources"`
+	Model       *string            `json:"model"`
+	Reason      *string            `json:"reason"`
+	GeneratedAt pgtype.Timestamptz `json:"generated_at"`
+}
+
 type ArtistGenreCache struct {
 	NameKey    string             `json:"name_key"`
 	Mbid       *string            `json:"mbid"`
 	Genres     []byte             `json:"genres"`
 	Status     string             `json:"status"`
 	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
+}
+
+type ArtistImage struct {
+	ArtistID  pgtype.UUID        `json:"artist_id"`
+	Status    string             `json:"status"`
+	Url       *string            `json:"url"`
+	Width     *int32             `json:"width"`
+	Height    *int32             `json:"height"`
+	File      *string            `json:"file"`
+	Source    *string            `json:"source"`
+	Credit    []byte             `json:"credit"`
+	Reason    *string            `json:"reason"`
+	CheckedAt pgtype.Timestamptz `json:"checked_at"`
+}
+
+type ArtistTourSnapshot struct {
+	ArtistID      pgtype.UUID        `json:"artist_id"`
+	Status        string             `json:"status"`
+	TourName      *string            `json:"tour_name"`
+	Songs         []byte             `json:"songs"`
+	ObservedDate  pgtype.Date        `json:"observed_date"`
+	ObservedVenue *string            `json:"observed_venue"`
+	ObservedCity  *string            `json:"observed_city"`
+	SetlistUrl    *string            `json:"setlist_url"`
+	Blurb         *string            `json:"blurb"`
+	BlurbModel    *string            `json:"blurb_model"`
+	Reason        *string            `json:"reason"`
+	FetchedAt     pgtype.Timestamptz `json:"fetched_at"`
 }
 
 type City struct {
@@ -50,6 +103,7 @@ type Event struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	TimeTbd            bool               `json:"time_tbd"`
+	HeadlineArtistID   pgtype.UUID        `json:"headline_artist_id"`
 }
 
 type EventGenre struct {

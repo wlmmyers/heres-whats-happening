@@ -1,10 +1,10 @@
-import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
-import type { EmailImage } from "./email.js";
-import { emailExtractorAgent } from "./mastra/agents/email-extractor.agent.js";
-import { type EventDraft } from "./schema.js";
+import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import type { EmailImage } from './email.js';
+import { emailExtractorAgent } from './mastra/agents/email-extractor.agent.js';
+import { type EventDraft } from './schema.js';
 
 export interface ExtractInput {
-  mode: "text" | "image";
+  mode: 'text' | 'image';
   text: string;
   images: EmailImage[];
   receivedAt?: string; // Date header — injected for relative-date year resolution
@@ -52,9 +52,9 @@ export class AwsSecretReader implements SecretReader {
  * ANTHROPIC_API_KEY); exercised via Studio (`pnpm dev`) and the invoke-local harness. */
 export class MastraExtractor implements EventExtractor {
   async extract(input: ExtractInput): Promise<EventDraft[]> {
-    const res = await emailExtractorAgent.generate(
-      [{ role: "user", content: JSON.stringify(input) }],
-    );
+    const res = await emailExtractorAgent.generate([
+      { role: 'user', content: JSON.stringify(input) },
+    ]);
     return (res.object?.events ?? []) as EventDraft[];
   }
 }

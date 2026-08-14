@@ -1,9 +1,9 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 // Identifies the app + a contact. MusicBrainz rejects requests without a
 // User-Agent and Wikimedia's UA policy requires the same. Kept identical to the
 // string the Go side registers (internal/scraper/spotify/genres.go).
-export const USER_AGENT = "heres-whats-happening/1.0 ( wlmmyers@gmail.com )";
+export const USER_AGENT = 'heres-whats-happening/1.0 ( wlmmyers@gmail.com )';
 
 // Attribution data for one Wikimedia Commons file. Every field except the
 // identifiers is optional — public-domain files legitimately carry no author or
@@ -48,7 +48,7 @@ export const ImageCandidateSchema = z.object({
   width: z.number(),
   height: z.number(),
   contentType: z.string(),
-  source: z.enum(["p18", "category"]),
+  source: z.enum(['p18', 'category']),
   credit: ImageCreditSchema,
 });
 export type ImageCandidate = z.infer<typeof ImageCandidateSchema>;
