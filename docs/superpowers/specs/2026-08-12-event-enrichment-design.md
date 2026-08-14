@@ -769,8 +769,10 @@ against MusicBrainz's ~1 req/sec ask. MusicBrainz signals with 503 and the
 client already retries once, so this degrades rather than breaks.
 
 **Hotlinked Commons images can 404.** A file deleted for a licence problem
-becomes a dead image. The event's own `image_url` always wins, so this only
-affects images we supplied, and the stored `file` identifies what vanished.
+becomes a dead image. `image_url` is never populated from Commons (see the
+attribution ruling in the decisions log), so this only affects a client that
+opts into rendering `artist.image`, and the stored `file` identifies what
+vanished.
 
 **Two artist-keyed caches now exist.** `artist_genre_cache` and `artists`
 duplicate `name_key`/`mbid`/`status`/`resolved_at`. Deliberate — see Non-goals.
@@ -778,3 +780,145 @@ duplicate `name_key`/`mbid`/`status`/`resolved_at`. Deliberate — see Non-goals
 **Cache/database drift is bounded by TTL.** If the cache says fresh and the
 database row is missing, the cached payload repopulates it on the next event for
 that artist. Only an artist with no further events stays unrepaired, until TTL.
+
+---
+
+# Decisions log
+
+Rulings made during implementation, kept because the reasoning is not
+recoverable from the code. Each of these was a real fork where the obvious
+choice was the wrong one, or where a plausible-sounding claim turned out to be
+false when checked.
+
+## Design rulings
+
+**`judgeBandImageStep` is deliberately not reused.** The obvious move for
+`enrichImage` was to call the shipped poster step. It is bound to the poster
+workflow's loop-state schema and writes candidate bytes into a per-run artifact
+directory that its caller must then clean up. Enrichment keeps no bytes at all —
+it holds them in memory only for the vision call and records the thumbnail URL.
+So `enrichImage` reuses the same vision *agent* while walking candidates itself,
+and the step stays untouched for the poster path.
+
+**There is no module-level setlist.fm client.** `musicbrainz.tool.ts` exports a
+singleton and a bare wrapper function, and this module was specced to match. It
+cannot: the setlist.fm key arrives asynchronously from Secrets Manager during
+the invocation, so a client constructed at import time would capture an empty
+string. `prodTourDeps(apiKey)` builds it per-invocation instead.
+
+**The consumer degrades rather than deletes.** Its original policy — log and
+return nil on any decode failure, so the message is deleted — was safe when the
+body was a small scraper-produced `Message`. It stopped being safe once the body
+carried a block assembled from unvalidated third-party JSON: one string where an
+int belonged and the event vanished with no DLQ and no alarm, daily, for as long
+as the cache held the payload. `Handle` now falls back to decoding as a plain
+`events.Message` and drops only when both decodes fail.
+
+**Upserts guard payload columns on `status = 'ok'`.** Assigning every column
+from `EXCLUDED` unconditionally meant a transient LLM 429 during a routine
+90-day TTL refresh would overwrite a good bio or photo with NULLs, and the API
+would stop returning them until a later successful run. `status`, `reason` and
+the timestamp stay unconditional so the failure is still observable and the TTL
+clock still moves.
+
+**An invalid cache entry is skipped on write, not persisted.** Once `read()`
+validates, an unvalidated `write()` becomes a trap: a deterministically invalid
+payload makes every subsequent read a permanent miss while the next run rewrites
+the same bad object, silently disabling the gate for that artist forever.
+Skipping leaves the entry absent, which gives the next run a clean miss and a
+real chance to succeed; persisting known-bad data would need a code fix or a
+manual S3 delete to ever recover.
+
+**`error`-status records must still cache.** `CacheRecordSchema.payload` is
+optional precisely so a legitimately failed workflow — which has no payload —
+still validates and persists. If it did not, failed workflows would retry on
+every scrape instead of respecting the 6-hour TTL, inverting the point of the
+three-state status.
+
+**Commons photos are never folded into `image_url`.** Serving them there would
+have been free — the existing frontend would render band photos with no change.
+But Commons images are predominantly CC-BY/CC-BY-SA, attribution is a licence
+condition, and the frontend renders no credit. The photo is exposed only under
+`artist.image`, beside its credit block, so any client that renders it has the
+attribution in hand.
+
+## Facts settled by checking, not reasoning
+
+**Raising `visibility_timeout_seconds` 30 → 900 on the live queue is an in-place
+update.** Replacing that queue would drop in-flight messages, and the AWS
+provider's JSON schema does not expose ForceNew flags, so documentation reasoning
+could not settle it. Verified by copying `terraform/prod` to scratch, pointing it
+at a local backend, fabricating a state file at 30, and running
+`plan -refresh=false` against the real pinned provider: *will be updated
+in-place*, no replacement marker. The technique was then validated by renaming
+the queue in the same setup, which did produce `# forces replacement`.
+
+**A nil `[]byte` encodes as SQL NULL for a `jsonb` parameter.** Previously only
+reasoned from pgx semantics; now asserted by a test that queries
+`SELECT credit IS NULL` directly, because a `[]byte` scan cannot distinguish SQL
+NULL from the four bytes `null`.
+
+**zod 3.25.76's `.extend()` preserves `unknownKeys: "strict"`.** This is what
+mirrors the Go consumer's `DisallowUnknownFields`. It was verified by hand and is
+now pinned by tests that submit an unrecognized key at both the top level and
+inside a nested object, so a zod upgrade cannot silently relax it.
+
+**`ci/buildspec-app.yml` preserves environment variables across a deploy.** It
+describes the *current* task definition revision and swaps only the image. This
+is what makes it safe to set `ENRICHED_EVENTS_QUEUE_URL` before shipping the
+image rather than after.
+
+**`MØ` normalizes to `mø`.** U+00F8 is a distinct letter with no canonical
+decomposition, so NFD does not strip the stroke — unlike the combining marks in
+`Sigur Rós` or `Björk`. The shared fixture pins this in both languages.
+
+## Operational rulings
+
+**The consumer's env var is set before the image ships, never after.** The new
+binary starts its consumer only when `ENRICHED_EVENTS_QUEUE_URL` is non-empty and
+has no fallback to the raw queue, so deploying first leaves a window with no
+consumer running at all — ingestion stops with no panic and no alarm. The
+currently deployed binary ignores an env var it does not read, so setting it
+first is inert.
+
+**The event source mapping lands in its own apply, after the Lambda image.** If
+it exists before an image that handles SQS events is deployed, the first scrape
+invokes the old image with an SQS event.
+
+**A forgotten setlist.fm key fails quietly, by construction.** Terraform seeds
+`REPLACE_ME_AFTER_APPLY` under `ignore_changes`, so the apply succeeds and the
+failure surfaces only at runtime as every tour enrichment recording `error` and
+retrying every six hours. `terraform output setlistfm_post_apply_steps` and the
+`artist_tour_snapshots` verification query exist specifically to catch it.
+
+**Parked: the unseeded-key guard checks for an empty string, not the
+placeholder.** So an unseeded secret still spends one request per event on 403s
+against the 1,440/day cap. Ruled acceptable because the key is seeded directly as
+part of deployment, which closes the window the guard was written for. Worth
+revisiting only if the placeholder is ever left in place across a scrape cycle.
+
+## Non-issues, recorded so they are not re-investigated
+
+**`fetchReleaseGroups` uses its own inline delay rather than the shared
+MusicBrainz limiter.** Two uncoordinated limiters against one rate-limited host
+looks wrong, but the inline delay can only ever *over*-space calls, never
+under — it is conservative, not a rate-limit risk. It costs up to a second of
+wasted latency per bio job. Sharing the limiter would not fix the real gap
+anyway, since the two concurrent Lambda containers hold independent state either
+way.
+
+**`truncateAll` issues `TRUNCATE ... CASCADE` per table.** Its
+children-before-parents ordering comment implies the order is load-bearing; with
+CASCADE it is belt-and-braces.
+
+**`MAX_IMAGE_ATTEMPTS` becomes 0 if its env var is set to the empty string.**
+An exact duplicate of the existing convention in `poster.schemas.ts`, not
+something this feature introduced.
+
+## A note for anyone working in a worktree here
+
+All worktrees share one local `appdb_test`. Applying this feature's migration
+`0024` from a worktree strands every other branch's tests at *"no migration found
+for version 24"* until they carry it too. That is environmental drift, not a
+defect — but it will block commits via the pre-commit hook on branches that
+predate the migration.
