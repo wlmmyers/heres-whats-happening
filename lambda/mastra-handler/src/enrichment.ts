@@ -101,6 +101,19 @@ function cachedPayload<T>(
   return rec.payload as T | undefined;
 }
 
+/** Identity of the event a log line is about — enough to find the show in the
+ * DB or the scrape it came from, without shipping description bodies and URLs
+ * to CloudWatch on every miss. */
+function eventRef(event: EventMessage) {
+  return {
+    source_id: event.source_id,
+    source_event_id: event.source_event_id,
+    title: event.title,
+    venue: event.venue.name,
+    starts_at: event.starts_at,
+  };
+}
+
 function record(result: ImageInfo | BioInfo | TourInfo, at: string): CacheRecord {
   return {
     status: result.status,
@@ -143,6 +156,30 @@ export async function enrichEvent(deps: EnrichDeps, event: EventMessage): Promis
   const runBio = cachedBio === undefined;
   const runTour = cachedTour === undefined;
 
+  // The gate is what keeps this Lambda's API and LLM spend bounded, so a miss
+  // is the number worth watching: one line per event that had to pay for work,
+  // naming what missed and which event paid for it. A cold artist logs a miss
+  // legitimately; the same performer missing every scrape means the cache is
+  // not working (see the AccessDenied warning in enrichment-cache.ts). The
+  // image workflow is absent when the EVENT supplied a picture — that is a skip
+  // the cache was never asked about, and counting it would inflate the rate.
+  const missed: string[] = [];
+  if (!entry?.artist) missed.push('artist');
+  if (runImage) missed.push('image');
+  if (runBio) missed.push('bio');
+  if (runTour) missed.push('tour');
+  if (missed.length > 0) {
+    console.log(
+      JSON.stringify({
+        msg: 'enrichment-cache-miss',
+        performer,
+        entry_found: entry !== null,
+        missed,
+        event: eventRef(event),
+      }),
+    );
+  }
+
   // Everything satisfied from cache AND an artist on file: skip the
   // MusicBrainz call entirely. This is the whole point of the gate.
   if (!runImage && !runBio && !runTour && entry?.artist) {
@@ -173,7 +210,7 @@ export async function enrichEvent(deps: EnrichDeps, event: EventMessage): Promis
     name: artist.display_name,
     disambiguation: artist.disambiguation,
   };
-  const eventRef = { venue: event.venue.name, date: event.starts_at.slice(0, 10) };
+  const tourEvent = { venue: event.venue.name, date: event.starts_at.slice(0, 10) };
 
   const [image, bio, tour] = await Promise.all([
     runImage
@@ -199,7 +236,7 @@ export async function enrichEvent(deps: EnrichDeps, event: EventMessage): Promis
     runTour
       ? withBudget(
           'tour',
-          () => deps.enrichTour(ref, eventRef),
+          () => deps.enrichTour(ref, tourEvent),
           (reason) => ({
             status: 'error' as const,
             reason,

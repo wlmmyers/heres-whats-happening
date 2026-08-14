@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StubEnrichmentCache } from './enrichment-cache.js';
 import { enrichEvent, type EnrichDeps } from './enrichment.js';
 import type { EventMessage } from './schema.js';
@@ -199,5 +199,101 @@ describe('enrichEvent', () => {
     };
     const out = await enrichEvent(deps({ cache }), baseEvent());
     expect(out.title).toBe('La Luz at The Chapel');
+  });
+});
+
+// The cache gate is what keeps this Lambda affordable, so a miss is the number
+// worth watching in CloudWatch: one structured line per event that had to pay
+// for work, naming both what missed and which event paid for it.
+describe('enrichEvent cache-miss logging', () => {
+  function missLogs(): Record<string, unknown>[] {
+    const spy = vi.mocked(console.log);
+    return spy.mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .filter((entry) => entry.msg === 'enrichment-cache-miss');
+  }
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('logs one entry naming every miss when the artist is not cached at all', async () => {
+    await enrichEvent(deps(), baseEvent());
+    const logs = missLogs();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({
+      performer: 'La Luz',
+      entry_found: false,
+      missed: ['artist', 'image', 'bio', 'tour'],
+    });
+  });
+
+  // Without the event, a miss line tells you an artist cost money but not which
+  // scrape to go look at.
+  it('surfaces the event that triggered the miss', async () => {
+    await enrichEvent(deps(), baseEvent());
+    expect(missLogs()[0]?.event).toEqual({
+      source_id: 'ticketmaster',
+      source_event_id: 'tm-aaa',
+      title: 'La Luz at The Chapel',
+      venue: 'The Chapel',
+      starts_at: '2026-09-02T20:00:00Z',
+    });
+  });
+
+  it('names only the workflows that actually missed', async () => {
+    const cache = new StubEnrichmentCache();
+    await cache.write('La Luz', {
+      artist_key: 'la luz',
+      performer: 'La Luz',
+      artist: { performer: 'La Luz', display_name: 'La Luz', mbid: 'mbid-1', status: 'ok' },
+      workflows: {
+        image: {
+          status: 'ok',
+          at: new Date(NOW - 1000).toISOString(),
+          payload: { status: 'ok', url: 'https://cached.jpg' },
+        },
+        bio: {
+          status: 'ok',
+          at: new Date(NOW - 1000).toISOString(),
+          payload: { status: 'ok', bio_md: 'cached bio' },
+        },
+      },
+    });
+    await enrichEvent(deps({ cache }), baseEvent());
+    expect(missLogs()[0]).toMatchObject({ entry_found: true, missed: ['tour'] });
+  });
+
+  // The image workflow is skipped because the EVENT had a picture, not because
+  // the cache failed to answer — counting it would inflate the miss rate.
+  it('does not count the image workflow when the event supplied its own image', async () => {
+    await enrichEvent(deps(), baseEvent({ image_url: 'https://source/provided.jpg' }));
+    expect(missLogs()[0]).toMatchObject({ missed: ['artist', 'bio', 'tour'] });
+  });
+
+  it('logs nothing when every workflow and the artist came from cache', async () => {
+    const cache = new StubEnrichmentCache();
+    const fresh = new Date(NOW - 1000).toISOString();
+    await cache.write('La Luz', {
+      artist_key: 'la luz',
+      performer: 'La Luz',
+      artist: { performer: 'La Luz', display_name: 'La Luz', mbid: 'mbid-1', status: 'ok' },
+      workflows: {
+        image: { status: 'ok', at: fresh, payload: { status: 'ok', url: 'https://cached.jpg' } },
+        bio: { status: 'ok', at: fresh, payload: { status: 'ok', bio_md: 'cached bio' } },
+        tour: { status: 'ok', at: fresh, payload: { status: 'ok', tour_name: 'cached tour' } },
+      },
+    });
+    await enrichEvent(deps({ cache }), baseEvent());
+    expect(missLogs()).toEqual([]);
+  });
+
+  it('logs nothing when there is no performer to look up', async () => {
+    await enrichEvent(deps(), baseEvent({ performers: [] }));
+    expect(missLogs()).toEqual([]);
   });
 });
