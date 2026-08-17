@@ -3,7 +3,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
     // Integration specs (*.integration.test.ts) need the docker-compose stack —
     // ElasticMQ on :9324 — so they are excluded from the default run. This is
     // what lets CI call a bare `pnpm test` instead of maintaining a whitelist of

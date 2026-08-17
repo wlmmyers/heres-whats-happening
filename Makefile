@@ -94,6 +94,7 @@ test:
 # AWS-free shell tests for scripts/ (no DB, no AWS creds needed).
 test-scripts:
 	bash scripts/test/taskdef-edit.test.sh
+	bash scripts/test/taskdef-drift-check.test.sh
 
 # Run every check the pre-commit hook runs (gofmt, go vet, go test, eslint,
 # tsc, prettier, vitest) without making a commit. Invokes the hook script

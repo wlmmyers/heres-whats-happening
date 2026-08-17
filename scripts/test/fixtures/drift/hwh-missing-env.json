@@ -1,0 +1,18 @@
+{
+  "family": "hwh-missing-env",
+  "containerDefinitions": [
+    {
+      "name": "missing-env",
+      "command": ["scrape", "events"],
+      "environment": [
+        { "name": "HTTP_ADDR", "value": ":8080" },
+        { "name": "LOG_LEVEL", "value": "info" }
+      ],
+      "secrets": [
+        { "name": "DB_USER", "valueFrom": "arn:aws:secretsmanager:us-east-1:111111111111:secret:rds!db-aaaa:username::" },
+        { "name": "JWT_SIGNING_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:111111111111:secret:hwh/jwt-signing-key-AbCdEf" }
+      ]
+    }
+  ],
+  "revision": 42
+}

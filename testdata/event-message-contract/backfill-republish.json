@@ -1,0 +1,25 @@
+{
+  "source_id": "ticketmaster",
+  "source_event_id": "vvG1HZ_FCYcCO0",
+  "title": "Of Monsters and Men - The Mouse Parade Tour",
+  "description": "Doors at 7pm. All ages.",
+  "starts_at": "2026-07-29T03:00:00Z",
+  "ends_at": "2026-09-29T03:00:00Z",
+  "time_tbd": false,
+  "venue": {
+    "name": "Paramount Theatre",
+    "address": "911 Pine St",
+    "lat": 47.6135664,
+    "lng": -122.3319103,
+    "website_url": "https://www.ticketmaster.com/paramount-theatre-tickets-seattle/venue/122980"
+  },
+  "performers": [
+    "Of Monsters and Men",
+    "August Ponthier"
+  ],
+  "genres": [
+    "folk"
+  ],
+  "image_url": "https://s1.ticketm.net/dam/a/513/ab5f6d9d-4068-45ba-912e-1423477a0513_EVENT_DETAIL_PAGE_16_9.jpg",
+  "url": "https://www.ticketmaster.com/of-monsters-and-men-the-mouse-seattle-washington-07-28-2026/event/0F006483B0B4E824"
+}

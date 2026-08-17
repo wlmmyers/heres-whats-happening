@@ -91,6 +91,26 @@ phases:
               fi
             done
 
+            # --- Fail on task-def env drift, before anything is deployed -----------------
+            # The loop above copies each family's CURRENT LIVE definition, so it can never
+            # introduce an env var name that is not already there — a new required setting
+            # reaches a family only via a manual `taskdef-edit.sh --set-env`, run once PER
+            # family. Missing the three scheduled families is how commit 983e16f5 killed
+            # every nightly job for ~3 weeks while the api deployed cleanly.
+            #
+            # Runs here, before migrations and before update-service: a failure leaves the
+            # new revisions registered and the old api still serving, which is a safe halt.
+            echo "=== Checking task-def env drift against ${APP_NAME_PREFIX}-api ==="
+            # Explicit `|| exit 1` matching this file's convention (see the migrate checks
+            # below): this block is a single shell command, so without it a mid-block
+            # failure would be shadowed by the exit status of whatever ran last.
+            bash scripts/taskdef-drift-check.sh \
+              --reference "${APP_NAME_PREFIX}-api" \
+              --family "${APP_NAME_PREFIX}-scrape-events-ticketmaster" \
+              --family "${APP_NAME_PREFIX}-scrape-spotify" \
+              --family "${APP_NAME_PREFIX}-match" \
+              || { echo "task-def drift check failed — not deploying"; exit 1; }
+
             # --- Run DB migrations on the new image, before rolling the service ----------
             # RDS is private, so migrations run as a one-off Fargate task inside the VPC,
             # reusing the freshly-registered api revision with its command overridden to

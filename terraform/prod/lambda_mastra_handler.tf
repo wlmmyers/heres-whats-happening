@@ -61,6 +61,16 @@ data "aws_iam_policy_document" "mastra_handler" {
     resources = ["${aws_s3_bucket.posters.arn}/*"]
   }
   statement {
+    # Makes the sidecar GET above answer 404 NoSuchKey on a miss instead of 403
+    # AccessDenied — see ListEnrichmentCache below for the full reasoning. Benign
+    # here today only because processPosterRequest swallows the throw and
+    # re-renders, which is what a miss should do anyway; granted so the two cache
+    # lookups fail the same, diagnosable way.
+    sid       = "ListPosters"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.posters.arn]
+  }
+  statement {
     sid = "ConsumeEventsQueue"
     # The event source mapping polls with the FUNCTION's role, so these three
     # actions are what make the trigger work at all.
@@ -76,6 +86,19 @@ data "aws_iam_policy_document" "mastra_handler" {
     sid       = "ReadWriteEnrichmentCache"
     actions   = ["s3:GetObject", "s3:PutObject"]
     resources = ["${aws_s3_bucket.enrichment_cache.arn}/*"]
+  }
+  statement {
+    # Required for the MISS path, not for listing. Without s3:ListBucket S3
+    # answers a GET for a key that does not exist with 403 AccessDenied instead
+    # of 404 NoSuchKey, so it cannot leak whether the key exists. enrichment-cache.ts
+    # deliberately refuses to treat AccessDenied as a miss (isNoSuchKey), so every
+    # cold artist threw and tripped the enrichment-cache-read-failed alarm — making
+    # the alarm a permanent false positive that could no longer report a REAL
+    # IAM failure. The resource is the bucket ARN; ListBucket is not an
+    # object-level action and does nothing when granted on /*.
+    sid       = "ListEnrichmentCache"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.enrichment_cache.arn]
   }
   statement {
     sid       = "ReadSetlistFmKey"
