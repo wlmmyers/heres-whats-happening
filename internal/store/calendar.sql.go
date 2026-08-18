@@ -283,14 +283,25 @@ WHERE m.user_id = $1
       OR (e.starts_at, e.id) > ($2::timestamptz,
                                 $3::uuid)
   )
+  -- The caller-named lower bound, mutually exclusive with the cursor (the
+  -- handler rejects both at once with a 422). Strict: an event starting exactly
+  -- at the bound is excluded, so passing an event's own starts_at means
+  -- "everything after that event". Unlike the cursor there is no id tiebreak,
+  -- so events tied on the bound instant all drop out together — which is the
+  -- point, since the caller named an instant, not a row.
+  AND (
+      $4::timestamptz IS NULL
+      OR e.starts_at > $4::timestamptz
+  )
 ORDER BY e.starts_at ASC, e.id ASC
-LIMIT $4
+LIMIT $5
 `
 
 type GetUserCalendarPageParams struct {
 	UserID         pgtype.UUID        `json:"user_id"`
 	CursorStartsAt pgtype.Timestamptz `json:"cursor_starts_at"`
 	CursorEventID  pgtype.UUID        `json:"cursor_event_id"`
+	StartsAtAfter  pgtype.Timestamptz `json:"starts_at_after"`
 	PageLimit      int32              `json:"page_limit"`
 }
 
@@ -317,6 +328,7 @@ func (q *Queries) GetUserCalendarPage(ctx context.Context, arg GetUserCalendarPa
 		arg.UserID,
 		arg.CursorStartsAt,
 		arg.CursorEventID,
+		arg.StartsAtAfter,
 		arg.PageLimit,
 	)
 	if err != nil {

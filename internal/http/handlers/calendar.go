@@ -70,6 +70,49 @@ func parseCursor(w http.ResponseWriter, r *http.Request) (startsAt pgtype.Timest
 	return pgtype.Timestamptz{Time: ts, Valid: true}, pgtype.UUID{Bytes: id, Valid: true}, true
 }
 
+// parseStartsAtAfter reads the optional starts_at query param into the page
+// query's lower bound. Absent starts_at yields an invalid pgtype, which pgx
+// sends as NULL — the query reads that as "no bound". RFC 3339 is the only
+// accepted spelling because it is the one the calendar response already emits,
+// so a client filtering on an event it just received can hand that event's
+// starts_at straight back. On bad input it writes the error response and
+// returns ok=false.
+func parseStartsAtAfter(w http.ResponseWriter, r *http.Request) (bound pgtype.Timestamptz, ok bool) {
+	raw := r.URL.Query().Get("starts_at")
+	if raw == "" {
+		return pgtype.Timestamptz{}, true
+	}
+	ts, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		httperr.Write(w, http.StatusBadRequest, "bad_starts_at",
+			"starts_at must be an RFC 3339 timestamp")
+		return pgtype.Timestamptz{}, false
+	}
+	return pgtype.Timestamptz{Time: ts.UTC(), Valid: true}, true
+}
+
+// parsePageStart reads the two mutually exclusive ways of saying where a page
+// begins: the opaque cursor we handed the client, or a starts_at lower bound
+// the client names itself. Both at once is a contradiction we will not guess
+// at — the cursor's position and the bound can disagree, and honouring either
+// one silently returns a page the client did not ask for — so it is a 422
+// (well-formed request, unusable combination) rather than a 400.
+func parsePageStart(w http.ResponseWriter, r *http.Request) (cursorStartsAt pgtype.Timestamptz, cursorEventID pgtype.UUID, startsAtAfter pgtype.Timestamptz, ok bool) {
+	qs := r.URL.Query()
+	if qs.Get("cursor") != "" && qs.Get("starts_at") != "" {
+		httperr.Write(w, http.StatusUnprocessableEntity, "cursor_and_starts_at",
+			"pass either cursor or starts_at, not both")
+		return pgtype.Timestamptz{}, pgtype.UUID{}, pgtype.Timestamptz{}, false
+	}
+	if cursorStartsAt, cursorEventID, ok = parseCursor(w, r); !ok {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, pgtype.Timestamptz{}, false
+	}
+	if startsAtAfter, ok = parseStartsAtAfter(w, r); !ok {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, pgtype.Timestamptz{}, false
+	}
+	return cursorStartsAt, cursorEventID, startsAtAfter, true
+}
+
 // attachArtists batch-loads enrichment for a page of events and hangs it off
 // each one, following the ListEventPerformersBatch pattern: one page query,
 // then one round trip for the whole page rather than N.
@@ -108,9 +151,11 @@ func attachArtists(ctx context.Context, q *store.Queries, evs []calendarEvent, a
 }
 
 // GetMyCalendar returns one page of the authenticated user's matched events,
-// ordered by start time, beginning at the optional cursor. At most
+// ordered by start time, beginning at the optional cursor or the optional
+// starts_at lower bound — one or the other, never both. At most
 // calendarPageSize events come back; next_cursor is present only when more
-// exist.
+// exist, and that cursor carries the whole remaining feed, so a client that
+// began with starts_at pages on with the cursor alone.
 func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid, ok := middleware.UserIDFromContext(r.Context())
@@ -118,7 +163,7 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
 			return
 		}
-		cursorStartsAt, cursorEventID, ok := parseCursor(w, r)
+		cursorStartsAt, cursorEventID, startsAtAfter, ok := parsePageStart(w, r)
 		if !ok {
 			return
 		}
@@ -131,6 +176,7 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 			UserID:         pgtype.UUID{Bytes: uid, Valid: true},
 			CursorStartsAt: cursorStartsAt,
 			CursorEventID:  cursorEventID,
+			StartsAtAfter:  startsAtAfter,
 			PageLimit:      calendarPageSize + 1,
 		})
 		if err != nil {

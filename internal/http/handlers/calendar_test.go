@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -592,6 +593,159 @@ func TestGetMyCalendar_BadCursor_Returns400(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, rec.Body.String(), "bad_cursor")
+}
+
+// callMyCalendar issues one GET /me/calendar?<query> as userID and hands back
+// the raw recorder, so error-status tests can assert on it as well as the
+// success path. query is the bare query string, without the leading "?".
+func callMyCalendar(t *testing.T, q *store.Queries, signer *auth.JWTSigner, userID pgtype.UUID, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	target := "/me/calendar"
+	if query != "" {
+		target += "?" + query
+	}
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	middleware.RequireAuth(signer)(handlers.GetMyCalendar(q)).ServeHTTP(rec, req)
+	return rec
+}
+
+// seedBoundEvents adds n matched events for userID one hour apart from base,
+// titled "Bound 00".."Bound NN" in chronological order. Unlike
+// seedManyMatchedEvents the caller picks base, because the starts_at tests need
+// to name an exact event instant in the query string.
+func seedBoundEvents(t *testing.T, q *store.Queries, ctx context.Context, userID pgtype.UUID, base time.Time, n int) {
+	t.Helper()
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Bound Hall", NormalizedName: "bound hall",
+	})
+	require.NoError(t, err)
+
+	for i := 0; i < n; i++ {
+		eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+			SourceID:      src.ID,
+			SourceEventID: fmt.Sprintf("bound-%03d", i),
+			Title:         fmt.Sprintf("Bound %02d", i),
+			Description:   "seeded",
+			StartsAt:      pgtype.Timestamptz{Time: base.Add(time.Duration(i) * time.Hour), Valid: true},
+			VenueID:       venueID,
+		})
+		require.NoError(t, err)
+		require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+			UserID:         userID,
+			EventID:        eventID,
+			Score:          0.5,
+			ScoreBreakdown: []byte(`{}`),
+			ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		}))
+	}
+}
+
+// titlesOf decodes a calendar response body and returns the event titles in
+// order, which is what the starts_at tests actually assert on.
+func titlesOf(t *testing.T, rec *httptest.ResponseRecorder) []string {
+	t.Helper()
+	var resp pagedCalendarResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	out := make([]string, 0, len(resp.Events))
+	for _, e := range resp.Events {
+		out = append(out, e.Title)
+	}
+	return out
+}
+
+// starts_at is the cursor's plain-language sibling: a lower bound the client
+// names outright, rather than an opaque position we handed it. The bound is
+// strict, so an event starting exactly at the given instant is excluded — that
+// is what makes "everything after this event" work when the client passes back
+// the starts_at it already has for that event.
+func TestGetMyCalendar_StartsAtReturnsOnlyStrictlyLaterEvents(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	// Truncated to the second so the RFC3339 param names the boundary event's
+	// instant exactly: it must be excluded by >, not by a stray microsecond.
+	base := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+	seedBoundEvents(t, q, ctx, userID, base, 4)
+
+	// Bound 01's own instant. The fixture's PB Live sits at +48h, after them all.
+	boundary := base.Add(time.Hour).Format(time.RFC3339)
+	rec := callMyCalendar(t, q, signer, userID, "starts_at="+url.QueryEscape(boundary))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, []string{"Bound 02", "Bound 03", "PB Live"}, titlesOf(t, rec))
+}
+
+// starts_at bounds the feed; the cursor walks it. A filtered feed longer than
+// one page still hands back a cursor, and that cursor alone carries the rest —
+// the client does not (and must not) re-send starts_at with it.
+func TestGetMyCalendar_StartsAtFirstPageReturnsCursorForTheRest(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	base := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+	seedBoundEvents(t, q, ctx, userID, base, 25)
+
+	// Excludes Bound 00 only: 24 Bound events + the fixture's PB Live = 25 left.
+	rec := callMyCalendar(t, q, signer, userID, "starts_at="+url.QueryEscape(base.Format(time.RFC3339)))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var first pagedCalendarResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&first))
+	require.Len(t, first.Events, 20)
+	require.Equal(t, "Bound 01", first.Events[0].Title)
+	require.NotEmpty(t, first.NextCursor)
+
+	second := getMyCalendarPage(t, q, signer, userID, first.NextCursor)
+	require.Len(t, second.Events, 5)
+	require.Empty(t, second.NextCursor)
+}
+
+// Two ways of saying "start here" in one request is a contradiction we refuse
+// to guess at: the cursor's position and the caller's bound can disagree, and
+// silently honouring one would hand back a page the client did not ask for.
+func TestGetMyCalendar_CursorAndStartsAtTogether_Returns422(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	seedManyMatchedEvents(t, q, ctx, userID, 25)
+
+	// A real cursor from a real first page, so the rejection is unambiguously
+	// about the combination and not about an unparseable token.
+	cursor := getMyCalendarPage(t, q, signer, userID, "").NextCursor
+	require.NotEmpty(t, cursor)
+
+	startsAt := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	rec := callMyCalendar(t, q, signer, userID,
+		"cursor="+url.QueryEscape(cursor)+"&starts_at="+url.QueryEscape(startsAt))
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "cursor_and_starts_at")
+}
+
+func TestGetMyCalendar_BadStartsAt_Returns400(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	rec := callMyCalendar(t, q, signer, userID, "starts_at=next+tuesday")
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "bad_starts_at")
 }
 
 // The frontend still sends from/to until it is updated separately. Those params

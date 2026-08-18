@@ -26,6 +26,9 @@ export default function EventCard({
       {event.image_url && (
         <img src={event.image_url} alt="" data-thumbnail className={s.thumbnail} />
       )}
+      {!event.image_url && event.artist?.image?.url && (
+        <img src={event.artist?.image?.url} alt="" data-thumbnail className={s.thumbnail} />
+      )}
       <div className={s.main}>
         <h3 className={s.title}>{event.title}</h3>
         <div className={s.date}>

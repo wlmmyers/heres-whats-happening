@@ -89,6 +89,16 @@ WHERE m.user_id = sqlc.arg(user_id)
       OR (e.starts_at, e.id) > (sqlc.narg(cursor_starts_at)::timestamptz,
                                 sqlc.narg(cursor_event_id)::uuid)
   )
+  -- The caller-named lower bound, mutually exclusive with the cursor (the
+  -- handler rejects both at once with a 422). Strict: an event starting exactly
+  -- at the bound is excluded, so passing an event's own starts_at means
+  -- "everything after that event". Unlike the cursor there is no id tiebreak,
+  -- so events tied on the bound instant all drop out together — which is the
+  -- point, since the caller named an instant, not a row.
+  AND (
+      sqlc.narg(starts_at_after)::timestamptz IS NULL
+      OR e.starts_at > sqlc.narg(starts_at_after)::timestamptz
+  )
 ORDER BY e.starts_at ASC, e.id ASC
 LIMIT sqlc.arg(page_limit);
 
