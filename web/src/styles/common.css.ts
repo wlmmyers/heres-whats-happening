@@ -103,24 +103,6 @@ export const sectionTitle = style({
   fontWeight: fontWeight.medium,
 });
 
-export const hrSectionTitle = style({
-  ...fontSize.sm,
-  display: 'flex',
-  alignItems: 'center',
-  gap: '0.5rem',
-  color: color.gray700,
-  marginTop: '1rem',
-  marginBottom: '1.5rem',
-  fontWeight: fontWeight.medium,
-  textTransform: 'uppercase',
-  letterSpacing: '2px',
-});
-
-export const hrSectionTitleHr = style({
-  flex: 1,
-  borderColor: color.gray300,
-});
-
 export const section = style([card, { padding: '1rem', margin: '1rem 0' }]);
 
 export const errorText = style({ ...fontSize.sm, color: color.red600 });

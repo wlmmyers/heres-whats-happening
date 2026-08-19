@@ -1,6 +1,6 @@
 import RotatingLogo from './RotatingLogo';
+import SectionTitle from './SectionTitle';
 import * as s from './AboutContent.css';
-import * as c from '../styles/common.css';
 
 type Feature = { name: string; description: string };
 type Upcoming = { name: string; description: string };
@@ -76,12 +76,7 @@ export default function AboutContent() {
           </li>
         ))}
       </ul>
-
-      <h3 className={c.hrSectionTitle}>
-        <hr className={c.hrSectionTitleHr} />
-        Coming soon
-        <hr className={c.hrSectionTitleHr} />
-      </h3>
+      <SectionTitle>Coming soon</SectionTitle>
       <ul className={s.list}>
         {COMING_SOON.map((item) => (
           <li key={item.name} className={s.comingRow}>

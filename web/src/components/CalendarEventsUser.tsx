@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { useCalendar } from '../hooks/useCalendar';
 import EventCard from '../components/EventCard';
 import { useMarkNotInterested } from '../hooks/useMarkNotInterested';
@@ -5,6 +6,8 @@ import { SkeletonEventCards } from './SkeletonEventCards';
 import * as s from '../pages/CalendarPage.css';
 import clsx from 'clsx';
 import { LazyList } from './LazyList';
+import SectionTitle from './SectionTitle';
+import { bucketEventsByWeek } from '../utils/weekBuckets';
 
 type Props = {
   gatePending: boolean;
@@ -61,15 +64,26 @@ export const CalendarEventsUser = ({
           [s.listCondensed]: displayStyle === 'Condensed',
         })}
       >
-        {events.map((e) => (
-          <li
-            key={e.id}
-            className={clsx(s.listItem, {
-              [s.listItemCondensed]: displayStyle === 'Condensed',
-            })}
-          >
-            <EventCard event={e} interactive onNotInterested={(id) => notInterested.mutate(id)} />
-          </li>
+        {bucketEventsByWeek(events).map(({ label, events: weekEvents }) => (
+          <Fragment key={label}>
+            <li>
+              <SectionTitle>{label}</SectionTitle>
+            </li>
+            {weekEvents.map((event) => (
+              <li
+                key={event.id}
+                className={clsx(s.listItem, {
+                  [s.listItemCondensed]: displayStyle === 'Condensed',
+                })}
+              >
+                <EventCard
+                  event={event}
+                  interactive
+                  onNotInterested={(id) => notInterested.mutate(id)}
+                />
+              </li>
+            ))}
+          </Fragment>
         ))}
       </ul>
     </LazyList>

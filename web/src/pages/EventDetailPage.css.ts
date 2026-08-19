@@ -70,13 +70,14 @@ export const notFound = style({ color: color.gray700 });
 
 export const setlistTitle = style({
   ...fontSize.sm,
-  margin: '10px 0 5px 0',
+  margin: '20px 0 5px 0',
   fontWeight: fontWeight.medium,
 });
 
 export const setlistInset = style({
   position: 'relative',
   padding: '10px 0 10px 15px',
+  marginBottom: '10px',
   '::after': {
     content: '',
     position: 'absolute',
@@ -96,4 +97,5 @@ export const setlistSongList = style({});
 
 export const setlistObserved = style({
   ...fontSize.xs,
+  marginBottom: '6px',
 });
