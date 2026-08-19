@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import EventDetailPage from './EventDetailPage';
 import * as s from './EventDetailPage.css';
+import type { CalendarEvent } from '../api/calendar';
 
 vi.mock('../api/calendar', () => ({
   getCalendar: vi.fn(),
@@ -149,5 +150,167 @@ describe('EventDetailPage', () => {
     renderAt('/events/c1');
     await waitFor(() => expect(screen.getByText('Citywide Show')).toBeInTheDocument());
     expect(screen.queryByText(/% match/)).not.toBeInTheDocument();
+  });
+});
+
+// Everything below `artist` is `omitempty` on the wire, so these fixtures lean
+// on the API types to stay honest about what the server can leave out.
+type ArtistFixture = NonNullable<CalendarEvent['artist']>;
+
+function renderWithArtist(artist?: ArtistFixture) {
+  (calApi.getEvent as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    id: 'e1',
+    title: 'PB Live',
+    starts_at: '2026-06-15T20:00:00Z',
+    venue: { name: 'The Bowl' },
+    score: 0,
+    matched_because: { performers: [], genres: [] },
+    artist,
+  });
+  const rendered = renderAt('/events/e1');
+  return rendered;
+}
+
+const loaded = () => waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
+
+describe('EventDetailPage artist sections', () => {
+  describe('bio', () => {
+    it('renders the bio text under an "About the artist" heading', async () => {
+      renderWithArtist({ name: 'Phoebe Bridgers', bio: { text: 'Songwriter from LA.' } });
+      await loaded();
+      expect(screen.getByRole('heading', { name: 'About the artist' })).toBeInTheDocument();
+      expect(screen.getByText('Songwriter from LA.')).toBeInTheDocument();
+    });
+
+    it('omits the bio section when the artist has no bio', async () => {
+      renderWithArtist({ name: 'Phoebe Bridgers' });
+      await loaded();
+      expect(screen.queryByRole('heading', { name: 'About the artist' })).toBeNull();
+    });
+
+    it('omits the bio section when the event has no artist', async () => {
+      renderWithArtist(undefined);
+      await loaded();
+      expect(screen.queryByRole('heading', { name: 'About the artist' })).toBeNull();
+    });
+  });
+
+  describe('tour', () => {
+    const tourArtist = (tour: NonNullable<ArtistFixture['tour']>): ArtistFixture => ({
+      name: 'Phoebe Bridgers',
+      tour,
+    });
+
+    it('renders the tour blurb under a "Tour info" heading', async () => {
+      renderWithArtist(tourArtist({ name: 'Reunion Tour', blurb: 'Touring the new record.' }));
+      await loaded();
+      expect(screen.getByRole('heading', { name: 'Tour info' })).toBeInTheDocument();
+      expect(screen.getByText('Touring the new record.')).toBeInTheDocument();
+    });
+
+    it('lists the setlist songs in the order the API returned them', async () => {
+      renderWithArtist(
+        tourArtist({
+          blurb: 'Touring the new record.',
+          songs: [{ name: 'Motion Sickness' }, { name: 'Kyoto' }, { name: 'Scott Street' }],
+        }),
+      );
+      await loaded();
+      expect(screen.getByRole('heading', { name: 'Setlist' })).toBeInTheDocument();
+      expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+        'Motion Sickness',
+        'Kyoto',
+        'Scott Street',
+      ]);
+    });
+
+    it('says where and when the setlist was observed', async () => {
+      renderWithArtist(
+        tourArtist({
+          blurb: 'Touring the new record.',
+          songs: [{ name: 'Kyoto' }],
+          observed: { date: '2026-05-02', venue: 'Red Rocks', city: 'Morrison' },
+        }),
+      );
+      await loaded();
+      expect(
+        screen.getByText('Observed on 2026-05-02 at Red Rocks in Morrison'),
+      ).toBeInTheDocument();
+    });
+
+    it('leaves the city out of the observed line when the API omits it', async () => {
+      renderWithArtist(
+        tourArtist({
+          blurb: 'Touring the new record.',
+          songs: [{ name: 'Kyoto' }],
+          observed: { date: '2026-05-02', venue: 'Red Rocks' },
+        }),
+      );
+      await loaded();
+      expect(screen.getByText('Observed on 2026-05-02 at Red Rocks')).toBeInTheDocument();
+    });
+
+    it('omits the observed line when the tour has no observed setlist', async () => {
+      const { container } = renderWithArtist(
+        tourArtist({ blurb: 'Touring the new record.', songs: [{ name: 'Kyoto' }] }),
+      );
+      await loaded();
+      expect(screen.getByRole('heading', { name: 'Setlist' })).toBeInTheDocument();
+      expect(container.querySelector(`.${s.setlistObserved}`)).toBeNull();
+      expect(screen.queryByText(/Observed on/)).toBeNull();
+    });
+
+    it('links out to setlist.fm', async () => {
+      renderWithArtist(
+        tourArtist({
+          blurb: 'Touring the new record.',
+          setlist_url: 'https://setlist.fm/pb/2026',
+          songs: [{ name: 'Kyoto' }],
+        }),
+      );
+      await loaded();
+      expect(screen.getByRole('link', { name: /view on setlist\.fm/i })).toHaveAttribute(
+        'href',
+        'https://setlist.fm/pb/2026',
+      );
+    });
+
+    it('shows the setlist link for a tour with no songs', async () => {
+      renderWithArtist(
+        tourArtist({
+          blurb: 'Touring the new record.',
+          setlist_url: 'https://setlist.fm/pb/2026',
+          songs: [],
+        }),
+      );
+      await loaded();
+      expect(screen.getByRole('heading', { name: 'Setlist' })).toBeInTheDocument();
+      expect(screen.queryByRole('list')).toBeNull();
+      expect(screen.getByRole('link', { name: /view on setlist\.fm/i })).toBeInTheDocument();
+    });
+
+    it('lists the songs for a tour with no setlist link', async () => {
+      renderWithArtist(
+        tourArtist({ blurb: 'Touring the new record.', songs: [{ name: 'Kyoto' }] }),
+      );
+      await loaded();
+      expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Kyoto']);
+      expect(screen.queryByRole('link', { name: /setlist\.fm/i })).toBeNull();
+    });
+
+    it('omits the setlist when the tour has neither songs nor a setlist link', async () => {
+      renderWithArtist(tourArtist({ blurb: 'Touring the new record.', songs: [] }));
+      await loaded();
+      expect(screen.getByText('Touring the new record.')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Setlist' })).toBeNull();
+      expect(screen.queryByRole('list')).toBeNull();
+      expect(screen.queryByRole('link', { name: /setlist\.fm/i })).toBeNull();
+    });
+
+    it('omits the tour section when the artist has no tour', async () => {
+      renderWithArtist({ name: 'Phoebe Bridgers', bio: { text: 'Songwriter from LA.' } });
+      await loaded();
+      expect(screen.queryByRole('heading', { name: 'Tour info' })).toBeNull();
+    });
   });
 });

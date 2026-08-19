@@ -26,37 +26,36 @@ interface BioSource {
 
 interface ArtistBio {
   text: string;
-  sources: BioSource[];
+  sources?: BioSource[];
 }
 
+// Every field here is `omitempty` in internal/http/handlers/artist.go, so a
+// tour can arrive carrying nothing but a blurb.
 interface ArtistTour {
-  text: string;
-  sources: ArtistTourSources;
+  name?: string;
+  blurb?: string;
+  setlist_url?: string;
+  songs?: Array<{ name: string }>;
+  observed?: TourObserved;
 }
 
 interface TourObserved {
-  date: string;
-  venue: string;
-  city: string;
+  date?: string;
+  venue?: string;
+  city?: string;
 }
 
-interface ArtistTourSources {
-  name: string;
-  blurb: string;
-  setlist_url: string;
-  songs: { name: string }[];
-  observed: TourObserved;
-}
-
-interface ImageCredit {
-  file: string;
-  description_url: string;
-  artist: string;
-  credit: string;
-  license: string;
-  license_short_name: string;
-  license_url: string;
-  usage_terms: string;
+// Every field but attribution_required is `omitempty` on the wire: Commons
+// fills in whatever the uploader supplied and nothing more.
+export interface ImageCredit {
+  file?: string;
+  description_url?: string;
+  artist?: string;
+  credit?: string;
+  license?: string;
+  license_short_name?: string;
+  license_url?: string;
+  usage_terms?: string;
   attribution_required: boolean;
 }
 

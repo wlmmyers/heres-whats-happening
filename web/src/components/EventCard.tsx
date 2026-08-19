@@ -3,6 +3,7 @@ import type { CalendarEvent } from '../api/calendar';
 import { formatEventDate } from '../utils/eventDate';
 import * as s from './EventCard.css';
 import clsx from 'clsx';
+import ArtistImage from './ArtistImage';
 
 export default function EventCard({
   event,
@@ -23,12 +24,7 @@ export default function EventCard({
       className={clsx(s.eventCard, { [s.shorterMinHeight]: shorterMinHeight })}
       onClick={interactive ? () => navigate(`/events/${event.id}`) : undefined}
     >
-      {event.image_url && (
-        <img src={event.image_url} alt="" data-thumbnail className={s.thumbnail} />
-      )}
-      {!event.image_url && event.artist?.image?.url && (
-        <img src={event.artist?.image?.url} alt="" data-thumbnail className={s.thumbnail} />
-      )}
+      <ArtistImage event={event} className={s.thumbnail} />
       <div className={s.main}>
         <h3 className={s.title}>{event.title}</h3>
         <div className={s.date}>

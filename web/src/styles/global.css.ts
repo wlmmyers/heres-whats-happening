@@ -44,7 +44,16 @@ globalStyle('img, svg, video, canvas', {
   height: 'auto',
 });
 
-globalStyle('ol, ul', { listStyle: 'none' });
+globalStyle('ul', { listStyle: 'none' });
+
+globalStyle('ol li', {
+  display: 'listItem',
+  listStylePosition: 'inside',
+});
+
+globalStyle('ol li::marker', {
+  textAlign: 'left',
+});
 
 globalStyle('hr', { height: 0, color: 'inherit', borderTopWidth: '1px' });
 

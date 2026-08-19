@@ -52,28 +52,48 @@ export const date = style({ color: color.gray700, marginTop: '0.25rem' });
 
 export const venue = style({ color: color.gray600, marginTop: '0.25rem' });
 
-export const score = style({
-  ...fontSize.sm,
+export const matched = style({
+  ...fontSize.xs,
   color: color.gray500,
   marginTop: '0.5rem',
 });
 
-export const matched = style({
-  backgroundColor: color.blue50,
-  color: color.blue900,
-  borderRadius: radius.sm,
-  padding: '0.75rem',
-  ...fontSize.sm,
-  marginTop: '1rem',
+export const viewEventSection = style({
+  display: 'flex',
+  justifyContent: 'flex-end',
+  margin: '1rem 0',
 });
 
-export const description = style({
-  color: color.gray800,
-  whiteSpace: 'pre-wrap',
-  marginTop: '1rem',
-  fontSize: fontSize.sm.fontSize,
-});
-
-export const viewEvent = style([buttonPrimary, { display: 'inline-block', marginTop: '1rem' }]);
+export const viewEventLink = style([buttonPrimary, { display: 'block' }]);
 
 export const notFound = style({ color: color.gray700 });
+
+export const setlistTitle = style({
+  ...fontSize.sm,
+  margin: '10px 0 5px 0',
+  fontWeight: fontWeight.medium,
+});
+
+export const setlistInset = style({
+  position: 'relative',
+  padding: '10px 0 10px 15px',
+  '::after': {
+    content: '',
+    position: 'absolute',
+    top: '10px',
+    left: 0,
+    width: '4px',
+    height: 'calc(100% - 20px)',
+    backgroundColor: color.blue100,
+  },
+});
+
+export const setlistLink = style({
+  display: 'block',
+  marginBottom: '6px',
+});
+export const setlistSongList = style({});
+
+export const setlistObserved = style({
+  ...fontSize.xs,
+});

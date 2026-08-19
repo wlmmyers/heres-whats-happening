@@ -70,13 +70,12 @@ export const main = style({
   gridArea: 'main',
 });
 
+// Sizes and places the thumbnail slot; ArtistImage fills it.
 export const thumbnail = style({
   gridArea: 'thumbnail',
   flexShrink: 0,
   width: '7rem',
   height: '7rem',
-  objectFit: 'cover',
-  borderRadius: radius.sm,
   '@media': {
     [phone]: {
       width: '5rem',
