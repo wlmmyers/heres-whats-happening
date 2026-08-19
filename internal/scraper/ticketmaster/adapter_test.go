@@ -63,7 +63,7 @@ func TestAdapter_Fetch_ParsesSamplePage(t *testing.T) {
 	a := New(srv.URL, "test-key", "Brooklyn")
 	events, err := a.Fetch(context.Background())
 	require.NoError(t, err)
-	require.Len(t, events, 2)
+	require.Len(t, events, 3)
 
 	// First event: Phoebe Bridgers
 	require.Equal(t, "ticketmaster", events[0].SourceID)
@@ -77,6 +77,7 @@ func TestAdapter_Fetch_ParsesSamplePage(t *testing.T) {
 	require.ElementsMatch(t, []string{"Phoebe Bridgers", "MUNA"}, events[0].Performers)
 	require.Contains(t, events[0].Genres, "rock")
 	require.Contains(t, events[0].Genres, "indie")
+	require.Equal(t, "music", events[0].Segment)
 	require.Equal(t, "https://example.com/p.jpg", events[0].ImageURL)
 
 	// Second event: Hamilton
@@ -84,6 +85,14 @@ func TestAdapter_Fetch_ParsesSamplePage(t *testing.T) {
 	require.Equal(t, "Hamilton", events[1].Title)
 	require.Contains(t, events[1].Genres, "theater")
 	require.Contains(t, events[1].Genres, "musical")
+	require.Equal(t, "arts-theatre", events[1].Segment)
+
+	// Third event: a ball game. Its genre tags ("Baseball", "MLB") are outside
+	// the genre vocabulary and normalize away entirely, which is exactly why
+	// the segment has to carry the music/non-music signal instead.
+	require.Equal(t, "tm-ccc", events[2].SourceEventID)
+	require.Empty(t, events[2].Genres)
+	require.Equal(t, "sports", events[2].Segment)
 }
 
 func TestAdapter_Fetch_FollowsNextPageLinks(t *testing.T) {
@@ -405,4 +414,90 @@ func TestAdapter_Fetch_HTTPError(t *testing.T) {
 func TestAdapter_Name(t *testing.T) {
 	a := New("http://x", "k", "X")
 	require.Equal(t, "ticketmaster", a.Name())
+}
+
+// ---- segment ---------------------------------------------------------------
+
+func TestToMessage_SegmentFromPrimaryClassification(t *testing.T) {
+	e := decodeEvent(t, `{
+		"id": "tm-seg", "name": "Seattle Sounders FC",
+		"dates": {"start": {"dateTime": "2026-06-15T20:00:00Z"}},
+		"classifications": [
+			{"primary": true, "segment": {"name": "Sports"},
+			 "genre": {"name": "Soccer"}, "subGenre": {"name": "MLS"}}
+		],
+		"_embedded": {"venues": [{"name": "Lumen Field"}]}
+	}`)
+	msg, ok := e.toMessage()
+	require.True(t, ok)
+	require.Equal(t, "sports", msg.Segment)
+}
+
+// 31 of 200 live Seattle events carry more than one classification — one per
+// attraction. The segment must come from the primary entry; taking the last
+// would let a support act's classification decide the whole event.
+func TestToMessage_SegmentPrefersPrimaryOverLaterClassifications(t *testing.T) {
+	e := decodeEvent(t, `{
+		"id": "tm-multi", "name": "Mixed Bill",
+		"dates": {"start": {"dateTime": "2026-06-15T20:00:00Z"}},
+		"classifications": [
+			{"primary": false, "segment": {"name": "Arts & Theatre"},
+			 "genre": {"name": "Comedy"}, "subGenre": {"name": "Comedy"}},
+			{"primary": true, "segment": {"name": "Music"},
+			 "genre": {"name": "Rock"}, "subGenre": {"name": "Indie"}}
+		],
+		"_embedded": {"venues": [{"name": "The Bowl"}]}
+	}`)
+	msg, ok := e.toMessage()
+	require.True(t, ok)
+	require.Equal(t, "music", msg.Segment)
+}
+
+// Genres still union across EVERY classification; only the segment is decided
+// by the primary one. Narrowing genres to the primary would silently drop tags
+// the matcher scores on.
+func TestToMessage_GenresStillUnionAcrossAllClassifications(t *testing.T) {
+	e := decodeEvent(t, `{
+		"id": "tm-multi-genre", "name": "Mixed Bill",
+		"dates": {"start": {"dateTime": "2026-06-15T20:00:00Z"}},
+		"classifications": [
+			{"primary": true, "segment": {"name": "Music"},
+			 "genre": {"name": "Rock"}, "subGenre": {"name": "Indie"}},
+			{"primary": false, "segment": {"name": "Music"},
+			 "genre": {"name": "Jazz"}, "subGenre": {"name": "Blues"}}
+		],
+		"_embedded": {"venues": [{"name": "The Bowl"}]}
+	}`)
+	msg, ok := e.toMessage()
+	require.True(t, ok)
+	require.ElementsMatch(t, []string{"rock", "indie", "jazz", "blues"}, msg.Genres)
+}
+
+// No entry flagged primary: fall back to the first rather than emitting no
+// segment at all.
+func TestToMessage_SegmentFallsBackToFirstClassification(t *testing.T) {
+	e := decodeEvent(t, `{
+		"id": "tm-noprim", "name": "No Primary Flag",
+		"dates": {"start": {"dateTime": "2026-06-15T20:00:00Z"}},
+		"classifications": [
+			{"segment": {"name": "Arts & Theatre"}, "genre": {"name": "Theatre"}}
+		],
+		"_embedded": {"venues": [{"name": "The Bowl"}]}
+	}`)
+	msg, ok := e.toMessage()
+	require.True(t, ok)
+	require.Equal(t, "arts-theatre", msg.Segment)
+}
+
+// An unclassified event keeps an empty segment, which the ingest stores as
+// SQL NULL and the enrichment gate treats as "enrich anyway".
+func TestToMessage_NoClassificationLeavesSegmentEmpty(t *testing.T) {
+	e := decodeEvent(t, `{
+		"id": "tm-nocls", "name": "Unclassified",
+		"dates": {"start": {"dateTime": "2026-06-15T20:00:00Z"}},
+		"_embedded": {"venues": [{"name": "The Bowl"}]}
+	}`)
+	msg, ok := e.toMessage()
+	require.True(t, ok)
+	require.Equal(t, "", msg.Segment)
 }

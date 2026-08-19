@@ -1301,3 +1301,338 @@ func TestGetCityCalendar_NoToken_Returns401(t *testing.T) {
 	cityRouter(q, signer).ServeHTTP(rec, req)
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 }
+
+// ---- segment filter --------------------------------------------------------
+
+// seedSegmentedEvents creates one matched event per entry, titled by its key.
+// A nil segment seeds the NULL case — every event that predates the column, and
+// every event from a source that does not classify.
+func seedSegmentedEvents(t *testing.T, q *store.Queries, ctx context.Context, userID pgtype.UUID, bySegment map[string]*string) {
+	t.Helper()
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Segment Hall", NormalizedName: "segment hall",
+	})
+	require.NoError(t, err)
+
+	i := 0
+	for title, seg := range bySegment {
+		eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+			SourceID:      src.ID,
+			SourceEventID: "seg-" + title,
+			Title:         title,
+			Description:   "seeded",
+			StartsAt:      pgtype.Timestamptz{Time: time.Now().Add(time.Duration(72+i) * time.Hour), Valid: true},
+			VenueID:       venueID,
+			Segment:       seg,
+		})
+		require.NoError(t, err)
+		require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+			UserID:         userID,
+			EventID:        eventID,
+			Score:          0.5,
+			ScoreBreakdown: []byte(`{}`),
+			ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		}))
+		i++
+	}
+}
+
+func ptrTo(s string) *string { return &s }
+
+func segmentFixture() map[string]*string {
+	return map[string]*string{
+		"Seg Music":     ptrTo("music"),
+		"Seg Sports":    ptrTo("sports"),
+		"Seg Theatre":   ptrTo("arts-theatre"),
+		"Seg Unlabeled": nil,
+	}
+}
+
+func TestGetMyCalendar_NoSegmentParamReturnsEverything(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	seedSegmentedEvents(t, q, ctx, userID, segmentFixture())
+
+	got := titlesOf(t, callMyCalendar(t, q, signer, userID, ""))
+	require.Subset(t, got, []string{"Seg Music", "Seg Sports", "Seg Theatre", "Seg Unlabeled"})
+}
+
+// The filter is inclusive of unclassified events by design: NULL means "we do
+// not know", and hiding those would make the filter silently lose every event
+// that predates the column.
+func TestGetMyCalendar_SegmentFilterReturnsMatchingPlusNullSegments(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	seedSegmentedEvents(t, q, ctx, userID, segmentFixture())
+
+	got := titlesOf(t, callMyCalendar(t, q, signer, userID, "segment=music"))
+	require.Contains(t, got, "Seg Music")
+	require.Contains(t, got, "Seg Unlabeled")
+	require.NotContains(t, got, "Seg Sports")
+	require.NotContains(t, got, "Seg Theatre")
+}
+
+func TestGetMyCalendar_SegmentFilterAcceptsEveryValidSlug(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	for _, seg := range []string{"music", "sports", "arts-theatre", "miscellaneous", "undefined"} {
+		rec := callMyCalendar(t, q, signer, userID, "segment="+seg)
+		require.Equal(t, http.StatusOK, rec.Code, "segment=%s must be accepted", seg)
+	}
+}
+
+// A typo must fail loudly. Passing it through would return only the NULL-segment
+// events, which looks like a working filter with few results.
+func TestGetMyCalendar_UnknownSegmentIs400(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	for _, bad := range []string{"musci", "Music", "esports", "'; drop table events;--"} {
+		rec := callMyCalendar(t, q, signer, userID, "segment="+url.QueryEscape(bad))
+		require.Equal(t, http.StatusBadRequest, rec.Code, "segment=%q must be rejected", bad)
+		require.Contains(t, rec.Body.String(), "bad_segment")
+	}
+}
+
+// An empty value is the same as not filtering — a client clearing its dropdown
+// should not have to drop the parameter.
+func TestGetMyCalendar_EmptySegmentParamIsNoFilter(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	seedSegmentedEvents(t, q, ctx, userID, segmentFixture())
+
+	got := titlesOf(t, callMyCalendar(t, q, signer, userID, "segment="))
+	require.Subset(t, got, []string{"Seg Music", "Seg Sports", "Seg Unlabeled"})
+}
+
+func TestGetMyCalendar_ResponseCarriesSegment(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	seedSegmentedEvents(t, q, ctx, userID, segmentFixture())
+
+	rec := callMyCalendar(t, q, signer, userID, "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	var raw struct {
+		Events []map[string]any `json:"events"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+
+	seen := map[string]any{}
+	for _, e := range raw.Events {
+		seen[e["title"].(string)] = e["segment"]
+	}
+	require.Equal(t, "sports", seen["Seg Sports"])
+	// omitempty: an unclassified event carries no segment key at all.
+	require.Nil(t, seen["Seg Unlabeled"])
+}
+
+func TestGetCityCalendar_SegmentFilterReturnsMatchingPlusNullSegments(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+	seedSegmentedEvents(t, q, ctx, userID, segmentFixture())
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	target := "/calendar/" + uuidFromPgCal(city.ID).String() + "?segment=music"
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	got := titlesOf(t, rec)
+	require.Contains(t, got, "Seg Music")
+	require.Contains(t, got, "Seg Unlabeled")
+	require.NotContains(t, got, "Seg Sports")
+}
+
+func TestGetCityCalendar_UnknownSegmentIs400(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	target := "/calendar/" + uuidFromPgCal(city.ID).String() + "?segment=musci"
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "bad_segment")
+}
+
+// The detail endpoint returns the same calendarEvent shape as the list ones, so
+// it must carry segment too — a client that filters a list by segment and then
+// opens one event should not find the field gone.
+func TestGetEventByID_CarriesSegment(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Detail Segment Hall", NormalizedName: "detail segment hall",
+	})
+	require.NoError(t, err)
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:      src.ID,
+		SourceEventID: "detail-segment-1",
+		Title:         "Detail Segment Show",
+		Description:   "seeded",
+		StartsAt:      pgtype.Timestamptz{Time: time.Now().Add(54 * time.Hour), Valid: true},
+		VenueID:       venueID,
+		Segment:       ptrTo("arts-theatre"),
+	})
+	require.NoError(t, err)
+
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	r := chi.NewRouter()
+	r.With(middleware.RequireAuth(signer)).Get("/events/{id}", handlers.GetEventByIDForUser(q))
+
+	req := httptest.NewRequest(http.MethodGet, "/events/"+uuidFromPgCal(eventID).String(), nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	require.Equal(t, "arts-theatre", raw["segment"])
+}
+
+// ---- city calendar starts_at ----------------------------------------------
+
+// callCityCalendar issues one GET /calendar/{cityId}?<query> as userID and
+// hands back the raw recorder, so error-status tests can assert on it too.
+// query is the bare query string, without the leading "?".
+func callCityCalendar(t *testing.T, q *store.Queries, signer *auth.JWTSigner, userID, cityID pgtype.UUID, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	accessTok, _ := signer.SignAccess(uuidFromPgCal(userID), true)
+	target := "/calendar/" + uuidFromPgCal(cityID).String()
+	if query != "" {
+		target += "?" + query
+	}
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Header.Set("Authorization", "Bearer "+accessTok)
+	rec := httptest.NewRecorder()
+	cityRouter(q, signer).ServeHTTP(rec, req)
+	return rec
+}
+
+// web/src/api/calendar.ts sends starts_at to this endpoint on every uncursored
+// page, exactly as it does for /me/calendar. Ignoring it made the city feed
+// start from whatever was still showable rather than from the day the client
+// asked for.
+func TestGetCityCalendar_StartsAtReturnsOnlyStrictlyLaterEvents(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	base := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+	seedBoundEvents(t, q, ctx, userID, base, 4)
+
+	// Bound 01's own instant, which must be excluded by > rather than >=.
+	boundary := base.Add(time.Hour).Format(time.RFC3339)
+	rec := callCityCalendar(t, q, signer, userID, city.ID, "starts_at="+url.QueryEscape(boundary))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, []string{"Bound 02", "Bound 03", "PB Live"}, titlesOf(t, rec))
+}
+
+// The bound applies to the first page only; the cursor carries the rest, so a
+// client that began with starts_at pages on with the cursor alone.
+func TestGetCityCalendar_StartsAtFirstPageReturnsCursorForTheRest(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	base := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+	seedBoundEvents(t, q, ctx, userID, base, 25)
+
+	// Excludes Bound 00 only: 24 Bound events + the fixture's PB Live = 25 left.
+	rec := callCityCalendar(t, q, signer, userID, city.ID,
+		"starts_at="+url.QueryEscape(base.Format(time.RFC3339)))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var first pagedCalendarResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&first))
+	require.Len(t, first.Events, 20)
+	require.Equal(t, "Bound 01", first.Events[0].Title)
+	require.NotEmpty(t, first.NextCursor)
+
+	second := getCityCalendarPage(t, q, signer, userID, city.ID, first.NextCursor)
+	require.Len(t, second.Events, 5)
+	require.Empty(t, second.NextCursor)
+}
+
+// Same contradiction, same refusal as /me/calendar: the cursor's position and
+// the caller's bound can disagree, and honouring either silently returns a page
+// the client did not ask for.
+func TestGetCityCalendar_CursorAndStartsAtTogether_Returns422(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+	seedBoundEvents(t, q, ctx, userID, time.Now().Add(24*time.Hour).UTC().Truncate(time.Second), 25)
+
+	cursor := getCityCalendarPage(t, q, signer, userID, city.ID, "").NextCursor
+	require.NotEmpty(t, cursor)
+
+	startsAt := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	rec := callCityCalendar(t, q, signer, userID, city.ID,
+		"cursor="+url.QueryEscape(cursor)+"&starts_at="+url.QueryEscape(startsAt))
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "cursor_and_starts_at")
+}
+
+func TestGetCityCalendar_BadStartsAt_Returns400(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	rec := callCityCalendar(t, q, signer, userID, city.ID, "starts_at=not-a-timestamp")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "bad_starts_at")
+}

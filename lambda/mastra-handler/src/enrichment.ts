@@ -19,6 +19,26 @@ export const WORKFLOW_BUDGET_MS = Number(process.env.ENRICH_BUDGET_MS ?? 120_000
 /** How many MusicBrainz matches to consider. Mirrors MAX_ARTIST_FALLTHROUGH. */
 const ARTIST_SEARCH_LIMIT = 3;
 
+/**
+ * Source segments whose events are never enriched.
+ *
+ * Every workflow here is built on MusicBrainz, so a ball game or a play has
+ * nothing to gain from them — and something to lose. Roughly half of a
+ * Ticketmaster city is non-music, and the performers that come with it are team
+ * names and show titles. The ones MusicBrainz *does* match are the expensive
+ * case, not the harmless one: "Hamilton" and "Sword" both resolve to real
+ * artists, and the result is a musician's photo and LLM-written biography hung
+ * off a theatre listing for the 90-day lifetime of the cache entry.
+ *
+ * Deliberately a deny-list rather than an allow-list of ['music']. Ticketmaster
+ * files a great many small club shows under "Undefined" — live Seattle data had
+ * The Sword, Red Fang and Diggy Graves there, all at music venues — and those
+ * are exactly the artists this pipeline exists to enrich. Anything unrecognized
+ * therefore enriches: the gate fails open, matching the event-level rule that
+ * enrichment problems never cost us an event.
+ */
+const SKIP_SEGMENTS = new Set(['sports', 'arts-theatre', 'miscellaneous']);
+
 export interface EnrichDeps {
   cache: EnrichmentCache;
   searchArtists(performer: string, opts: { limit: number }): Promise<ArtistMatch[]>;
@@ -133,6 +153,15 @@ export async function enrichEvent(deps: EnrichDeps, event: EventMessage): Promis
   const performer = event.performers?.[0];
   // Nothing to enrich against. Emit the event exactly as it arrived.
   if (!performer) return { ...event };
+
+  // Ahead of the cache read on purpose: a skipped event should cost no S3 round
+  // trip either, which is most of the point of skipping it.
+  if (event.segment && SKIP_SEGMENTS.has(event.segment)) {
+    console.log(
+      JSON.stringify({ msg: 'enrichment-skipped-segment', performer, event: eventRef(event) }),
+    );
+    return { ...event };
+  }
 
   // A cache failure must be loud but non-fatal: a misconfigured bucket should
   // show up in logs, not present as an ingest outage.

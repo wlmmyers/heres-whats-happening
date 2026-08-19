@@ -24,6 +24,10 @@ export const EventMessageSchema = z
     // time. Without it, consumers treat the event as over from 00:00 that day.
     time_tbd: z.boolean().optional(),
     venue: VenueSchema,
+    // The source's top-level category slug ("music", "sports", "arts-theatre").
+    // Absent means the source does not classify its events; enrichment treats
+    // that as music and runs anyway.
+    segment: z.string().optional(),
     performers: z.array(z.string()).optional(),
     genres: z.array(z.string()).optional(),
     image_url: z.string().optional(),

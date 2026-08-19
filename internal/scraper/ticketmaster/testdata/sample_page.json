@@ -11,7 +11,7 @@
           "start": {"dateTime": "2026-06-15T20:00:00Z", "localDate": "2026-06-15"}
         },
         "classifications": [
-          {"genre": {"name": "Rock"}, "subGenre": {"name": "Indie"}}
+          {"primary": true, "segment": {"name": "Music"}, "genre": {"name": "Rock"}, "subGenre": {"name": "Indie"}}
         ],
         "_embedded": {
           "venues": [{
@@ -34,7 +34,7 @@
           "start": {"dateTime": "2026-07-01T19:30:00Z"}
         },
         "classifications": [
-          {"genre": {"name": "Theatre"}, "subGenre": {"name": "Musical"}}
+          {"primary": true, "segment": {"name": "Arts & Theatre"}, "genre": {"name": "Theatre"}, "subGenre": {"name": "Musical"}}
         ],
         "_embedded": {
           "venues": [{
@@ -43,8 +43,28 @@
           }],
           "attractions": [{"name": "Hamilton Cast"}]
         }
+      },
+      {
+        "id": "tm-ccc",
+        "name": "Seattle Mariners vs. Houston Astros",
+        "url": "https://www.ticketmaster.com/event/tm-ccc",
+        "dates": {
+          "start": {"dateTime": "2026-07-04T19:10:00Z"},
+          "timezone": "America/Los_Angeles"
+        },
+        "classifications": [
+          {"primary": true, "segment": {"name": "Sports"}, "genre": {"name": "Baseball"}, "subGenre": {"name": "MLB"}}
+        ],
+        "_embedded": {
+          "venues": [{
+            "name": "T-Mobile Park",
+            "address": {"line1": "1250 1st Ave S"},
+            "timezone": "America/Los_Angeles"
+          }],
+          "attractions": [{"name": "Seattle Mariners"}]
+        }
       }
     ]
   },
-  "page": {"size": 200, "totalElements": 2, "totalPages": 1, "number": 0}
+  "page": {"size": 200, "totalElements": 3, "totalPages": 1, "number": 0}
 }

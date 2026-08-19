@@ -104,6 +104,7 @@ type Event struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	TimeTbd            bool               `json:"time_tbd"`
 	HeadlineArtistID   pgtype.UUID        `json:"headline_artist_id"`
+	Segment            *string            `json:"segment"`
 }
 
 type EventGenre struct {

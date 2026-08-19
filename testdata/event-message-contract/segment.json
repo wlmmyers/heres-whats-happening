@@ -1,0 +1,19 @@
+{
+  "source_id": "ticketmaster",
+  "source_event_id": "tm-segment-contract",
+  "title": "Seattle Mariners vs. Houston Astros",
+  "starts_at": "2026-07-04T19:10:00Z",
+  "time_tbd": false,
+  "venue": {
+    "name": "T-Mobile Park",
+    "address": "1250 1st Ave S",
+    "lat": 47.5914,
+    "lng": -122.3325
+  },
+  "segment": "sports",
+  "performers": [
+    "Seattle Mariners"
+  ],
+  "genres": [],
+  "url": "https://www.ticketmaster.com/event/tm-segment-contract"
+}

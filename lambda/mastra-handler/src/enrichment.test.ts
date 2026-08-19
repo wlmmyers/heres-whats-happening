@@ -297,3 +297,60 @@ describe('enrichEvent cache-miss logging', () => {
     expect(missLogs()).toEqual([]);
   });
 });
+
+describe('enrichEvent segment gate', () => {
+  // Ticketmaster classifies roughly half of a city's events as non-music. Those
+  // performers are teams and show titles, and the ones MusicBrainz *does* match
+  // ("Hamilton", "Sword") are false positives that would hang a musician's
+  // photo and biography off a theatre listing for the 90-day cache lifetime.
+  for (const segment of ['sports', 'arts-theatre', 'miscellaneous']) {
+    it(`skips enrichment entirely for segment "${segment}"`, async () => {
+      const searchArtists = vi.fn(async () => [{ mbid: 'mbid-1', name: 'La Luz', score: 100 }]);
+      const out = await enrichEvent(deps({ searchArtists }), baseEvent({ segment }));
+      expect(out.enrichment).toBeUndefined();
+      expect(searchArtists).not.toHaveBeenCalled();
+    });
+  }
+
+  it('leaves the event otherwise untouched when it skips', async () => {
+    const ev = baseEvent({ segment: 'sports', performers: ['Seattle Mariners'] });
+    const out = await enrichEvent(deps(), ev);
+    expect(out).toEqual(ev);
+  });
+
+  // The skip must precede the cache read: a skipped event should cost no S3
+  // round trip at all, which is most of the point of skipping it.
+  it('does not touch the enrichment cache when it skips', async () => {
+    const cache = new StubEnrichmentCache();
+    const read = vi.spyOn(cache, 'read');
+    const write = vi.spyOn(cache, 'write');
+    await enrichEvent(deps({ cache }), baseEvent({ segment: 'sports' }));
+    expect(read).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('enriches segment "music"', async () => {
+    const out = await enrichEvent(deps(), baseEvent({ segment: 'music' }));
+    expect(out.enrichment?.artist?.status).toBe('ok');
+  });
+
+  // "Undefined" is where Ticketmaster files small club shows — live Seattle data
+  // had The Sword, Red Fang and Diggy Graves under it, all at music venues.
+  // Excluding it would cost real bands their enrichment.
+  it('enriches segment "undefined"', async () => {
+    const out = await enrichEvent(deps(), baseEvent({ segment: 'undefined' }));
+    expect(out.enrichment?.artist?.status).toBe('ok');
+  });
+
+  it('enriches when the event carries no segment at all', async () => {
+    const out = await enrichEvent(deps(), baseEvent());
+    expect(out.enrichment?.artist?.status).toBe('ok');
+  });
+
+  // Fail open. A segment this build has never heard of must not silently stop
+  // enriching music.
+  it('enriches an unrecognized segment', async () => {
+    const out = await enrichEvent(deps(), baseEvent({ segment: 'esports' }));
+    expect(out.enrichment?.artist?.status).toBe('ok');
+  });
+});

@@ -20,6 +20,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.segment,
     e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address
@@ -37,14 +38,32 @@ WHERE v.city_id = $1
       OR (e.starts_at, e.id) > ($2::timestamptz,
                                 $3::uuid)
   )
+  -- The caller-named lower bound, mutually exclusive with the cursor (the
+  -- handler rejects both at once with a 422). Strict, and with no id tiebreak,
+  -- for the same reasons as GetUserCalendarPage -- see the note there.
+  AND (
+      $4::timestamptz IS NULL
+      OR e.starts_at > $4::timestamptz
+  )
+  -- The optional segment filter. NULL-segment events come back under EVERY
+  -- filter value: NULL means the source did not classify the event (or the row
+  -- predates the column), and hiding those would make any filter silently drop
+  -- the entire pre-existing catalogue.
+  AND (
+      $5::text IS NULL
+      OR e.segment IS NULL
+      OR e.segment = $5::text
+  )
 ORDER BY e.starts_at ASC, e.id ASC
-LIMIT $4
+LIMIT $6
 `
 
 type GetCityCalendarPageParams struct {
 	CityID         pgtype.UUID        `json:"city_id"`
 	CursorStartsAt pgtype.Timestamptz `json:"cursor_starts_at"`
 	CursorEventID  pgtype.UUID        `json:"cursor_event_id"`
+	StartsAtAfter  pgtype.Timestamptz `json:"starts_at_after"`
+	Segment        *string            `json:"segment"`
 	PageLimit      int32              `json:"page_limit"`
 }
 
@@ -56,6 +75,7 @@ type GetCityCalendarPageRow struct {
 	EndsAt           pgtype.Timestamptz `json:"ends_at"`
 	ImageUrl         *string            `json:"image_url"`
 	Url              *string            `json:"url"`
+	Segment          *string            `json:"segment"`
 	HeadlineArtistID pgtype.UUID        `json:"headline_artist_id"`
 	VenueName        string             `json:"venue_name"`
 	VenueAddress     *string            `json:"venue_address"`
@@ -63,13 +83,15 @@ type GetCityCalendarPageRow struct {
 
 // One page of every showable event in the city, with no match filtering and
 // (deliberately) no not-interested filtering: this endpoint returns an
-// identical response for every caller. Same ordering and cursor rules as
-// GetUserCalendarPage.
+// identical response for every caller. Same ordering, cursor and starts_at
+// rules as GetUserCalendarPage.
 func (q *Queries) GetCityCalendarPage(ctx context.Context, arg GetCityCalendarPageParams) ([]GetCityCalendarPageRow, error) {
 	rows, err := q.db.Query(ctx, getCityCalendarPage,
 		arg.CityID,
 		arg.CursorStartsAt,
 		arg.CursorEventID,
+		arg.StartsAtAfter,
+		arg.Segment,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -87,6 +109,7 @@ func (q *Queries) GetCityCalendarPage(ctx context.Context, arg GetCityCalendarPa
 			&i.EndsAt,
 			&i.ImageUrl,
 			&i.Url,
+			&i.Segment,
 			&i.HeadlineArtistID,
 			&i.VenueName,
 			&i.VenueAddress,
@@ -110,6 +133,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.segment,
     e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address,
@@ -135,6 +159,7 @@ type GetMatchedEventForUserRow struct {
 	EndsAt           pgtype.Timestamptz `json:"ends_at"`
 	ImageUrl         *string            `json:"image_url"`
 	Url              *string            `json:"url"`
+	Segment          *string            `json:"segment"`
 	HeadlineArtistID pgtype.UUID        `json:"headline_artist_id"`
 	VenueName        string             `json:"venue_name"`
 	VenueAddress     *string            `json:"venue_address"`
@@ -153,6 +178,7 @@ func (q *Queries) GetMatchedEventForUser(ctx context.Context, arg GetMatchedEven
 		&i.EndsAt,
 		&i.ImageUrl,
 		&i.Url,
+		&i.Segment,
 		&i.HeadlineArtistID,
 		&i.VenueName,
 		&i.VenueAddress,
@@ -254,6 +280,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.segment,
     e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address,
@@ -293,8 +320,17 @@ WHERE m.user_id = $1
       $4::timestamptz IS NULL
       OR e.starts_at > $4::timestamptz
   )
+  -- The optional segment filter. NULL-segment events come back under EVERY
+  -- filter value: NULL means the source did not classify the event (or the row
+  -- predates the column), and hiding those would make any filter silently drop
+  -- the entire pre-existing catalogue.
+  AND (
+      $5::text IS NULL
+      OR e.segment IS NULL
+      OR e.segment = $5::text
+  )
 ORDER BY e.starts_at ASC, e.id ASC
-LIMIT $5
+LIMIT $6
 `
 
 type GetUserCalendarPageParams struct {
@@ -302,6 +338,7 @@ type GetUserCalendarPageParams struct {
 	CursorStartsAt pgtype.Timestamptz `json:"cursor_starts_at"`
 	CursorEventID  pgtype.UUID        `json:"cursor_event_id"`
 	StartsAtAfter  pgtype.Timestamptz `json:"starts_at_after"`
+	Segment        *string            `json:"segment"`
 	PageLimit      int32              `json:"page_limit"`
 }
 
@@ -313,6 +350,7 @@ type GetUserCalendarPageRow struct {
 	EndsAt           pgtype.Timestamptz `json:"ends_at"`
 	ImageUrl         *string            `json:"image_url"`
 	Url              *string            `json:"url"`
+	Segment          *string            `json:"segment"`
 	HeadlineArtistID pgtype.UUID        `json:"headline_artist_id"`
 	VenueName        string             `json:"venue_name"`
 	VenueAddress     *string            `json:"venue_address"`
@@ -329,6 +367,7 @@ func (q *Queries) GetUserCalendarPage(ctx context.Context, arg GetUserCalendarPa
 		arg.CursorStartsAt,
 		arg.CursorEventID,
 		arg.StartsAtAfter,
+		arg.Segment,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -346,6 +385,7 @@ func (q *Queries) GetUserCalendarPage(ctx context.Context, arg GetUserCalendarPa
 			&i.EndsAt,
 			&i.ImageUrl,
 			&i.Url,
+			&i.Segment,
 			&i.HeadlineArtistID,
 			&i.VenueName,
 			&i.VenueAddress,

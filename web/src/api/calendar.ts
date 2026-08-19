@@ -75,6 +75,9 @@ export interface CalendarEvent {
   image_url?: string;
   url?: string;
   venue: { name: string; address?: string };
+  // The source's top-level category slug. Absent when the source does not
+  // classify its events, or when the row predates the field.
+  segment?: string;
   score: number;
   matched_because: MatchedBecause;
   artist?: CalendarArtist;
@@ -87,12 +90,17 @@ export interface CalendarResponse {
   next_cursor?: string;
 }
 
+// segment filters to that category. Events the source never classified come back
+// under every value, so filtering never hides the pre-existing catalogue. The
+// cursor carries only (starts_at, id), so segment must be re-sent on every page.
 export async function getCalendar(cursor?: string): Promise<CalendarResponse> {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   const params = cursor
     ? new URLSearchParams({ cursor })
     : new URLSearchParams({ starts_at: now.toISOString() });
+  // Hardcoded for now
+  params.set('segment', 'music');
   const result = await apiFetch<CalendarResponse>(
     `/me/calendar${params ? '?' + params.toString() : ''}`,
   );
@@ -111,6 +119,8 @@ export async function getCityCalendar(cityId: string, cursor?: string): Promise<
   const params = cursor
     ? new URLSearchParams({ cursor })
     : new URLSearchParams({ starts_at: now.toISOString() });
+  // Hardcoded for now
+  params.set('segment', 'music');
   const result = await apiFetch<CalendarResponse>(
     `/calendar/${cityId}${params ? '?' + params.toString() : ''}`,
   );

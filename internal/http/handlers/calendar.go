@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/wmyers/heres-whats-happening/internal/events"
 	"github.com/wmyers/heres-whats-happening/internal/http/httperr"
 	"github.com/wmyers/heres-whats-happening/internal/http/middleware"
 	"github.com/wmyers/heres-whats-happening/internal/store"
@@ -25,6 +26,7 @@ type calendarEvent struct {
 	ImageURL       string          `json:"image_url,omitempty"`
 	URL            string          `json:"url,omitempty"`
 	Venue          calendarVenue   `json:"venue"`
+	Segment        string          `json:"segment,omitempty"`
 	Score          float64         `json:"score"`
 	MatchedBecause calendarMatch   `json:"matched_because"`
 	Artist         *calendarArtist `json:"artist,omitempty"`
@@ -89,6 +91,30 @@ func parseStartsAtAfter(w http.ResponseWriter, r *http.Request) (bound pgtype.Ti
 		return pgtype.Timestamptz{}, false
 	}
 	return pgtype.Timestamptz{Time: ts.UTC(), Valid: true}, true
+}
+
+// parseSegment reads the optional segment query param into the page query's
+// filter. Absent or empty yields nil, which pgx sends as NULL — the query reads
+// that as "no filter", so a client clearing its dropdown need not drop the
+// parameter.
+//
+// The accepted vocabulary is closed, unlike the one the scraper writes: an
+// unrecognized value here is a client mistake, and passing it through would
+// return only the NULL-segment events — a filter that looks like it works and
+// quietly answers the wrong question. Costing a new source category one 400 is
+// the cheaper failure. On bad input it writes the error response and returns
+// ok=false.
+func parseSegment(w http.ResponseWriter, r *http.Request) (segment *string, ok bool) {
+	raw := r.URL.Query().Get("segment")
+	if raw == "" {
+		return nil, true
+	}
+	if !events.ValidSegment(raw) {
+		httperr.Write(w, http.StatusBadRequest, "bad_segment",
+			"segment must be one of: music, sports, arts-theatre, miscellaneous, undefined")
+		return nil, false
+	}
+	return &raw, true
 }
 
 // parsePageStart reads the two mutually exclusive ways of saying where a page
@@ -167,6 +193,10 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		segment, ok := parseSegment(w, r)
+		if !ok {
+			return
+		}
 
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
@@ -177,6 +207,7 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 			CursorStartsAt: cursorStartsAt,
 			CursorEventID:  cursorEventID,
 			StartsAtAfter:  startsAtAfter,
+			Segment:        segment,
 			PageLimit:      calendarPageSize + 1,
 		})
 		if err != nil {
@@ -211,6 +242,7 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 			}
 			ev.ImageURL = textPtrToString(row.ImageUrl)
 			ev.URL = textPtrToString(row.Url)
+			ev.Segment = textPtrToString(row.Segment)
 			out.Events = append(out.Events, ev)
 			if row.HeadlineArtistID.Valid {
 				artistIDs = append(artistIDs, row.HeadlineArtistID)
@@ -226,7 +258,8 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 // included. This is what the calendar page falls back to when the user has no
 // interests to match against, so the response is deliberately identical for
 // every caller: no not-interested filtering, and score/matched_because are
-// always the empty values. Paginated exactly like GetMyCalendar.
+// always the empty values. Paginated exactly like GetMyCalendar, cursor and
+// starts_at included — the web client sends starts_at to both endpoints.
 func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cityUUID, err := uuid.Parse(chi.URLParam(r, "cityId"))
@@ -234,7 +267,11 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 			httperr.Write(w, http.StatusBadRequest, "bad_city_id", "cityId is not a valid uuid")
 			return
 		}
-		cursorStartsAt, cursorEventID, ok := parseCursor(w, r)
+		cursorStartsAt, cursorEventID, startsAtAfter, ok := parsePageStart(w, r)
+		if !ok {
+			return
+		}
+		segment, ok := parseSegment(w, r)
 		if !ok {
 			return
 		}
@@ -246,6 +283,8 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 			CityID:         pgtype.UUID{Bytes: cityUUID, Valid: true},
 			CursorStartsAt: cursorStartsAt,
 			CursorEventID:  cursorEventID,
+			StartsAtAfter:  startsAtAfter,
+			Segment:        segment,
 			PageLimit:      calendarPageSize + 1,
 		})
 		if err != nil {
@@ -280,6 +319,7 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 			}
 			ev.ImageURL = textPtrToString(row.ImageUrl)
 			ev.URL = textPtrToString(row.Url)
+			ev.Segment = textPtrToString(row.Segment)
 			out.Events = append(out.Events, ev)
 			if row.HeadlineArtistID.Valid {
 				artistIDs = append(artistIDs, row.HeadlineArtistID)
@@ -387,6 +427,7 @@ func GetEventByIDForUser(q *store.Queries) http.HandlerFunc {
 		}
 		ev.ImageURL = textPtrToString(row.ImageUrl)
 		ev.URL = textPtrToString(row.Url)
+		ev.Segment = textPtrToString(row.Segment)
 		var ids []pgtype.UUID
 		if row.HeadlineArtistID.Valid {
 			ids = append(ids, row.HeadlineArtistID)

@@ -1,0 +1,13 @@
+-- The source's top-level category for an event: "music", "sports",
+-- "arts-theatre", "miscellaneous", "undefined". This is the axis that separates
+-- a concert from a ball game, and no genre tag carries it -- Ticketmaster files
+-- "Sports / Miscellaneous" and "Music / Other" into genres that normalize to
+-- the same slug, and "Sports / Baseball / MLB" into none at all.
+--
+-- Nullable with no CHECK, deliberately on both counts. NULL is every row that
+-- predates this column plus every event from a source that does not classify
+-- (the email path), and a CHECK would turn a newly invented source category
+-- into an ingest error -- retried, then DLQ'd -- losing a real event over a
+-- label. The API's filter vocabulary is closed instead, in Go, where rejecting
+-- a value costs one 400 rather than an event.
+ALTER TABLE events ADD COLUMN segment TEXT;

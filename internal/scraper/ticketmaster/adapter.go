@@ -189,6 +189,14 @@ type discoveryEvent struct {
 		Timezone string `json:"timezone"`
 	} `json:"dates"`
 	Classifications []struct {
+		// Primary marks the classification that describes the event itself.
+		// Events with several attractions carry one entry each; live Seattle
+		// data had 31 of 200 in that shape, every one of them flagging exactly
+		// one primary.
+		Primary bool `json:"primary"`
+		Segment struct {
+			Name string `json:"name"`
+		} `json:"segment"`
 		Genre struct {
 			Name string `json:"name"`
 		} `json:"genre"`
@@ -260,6 +268,31 @@ func (e *discoveryEvent) endsAt() (time.Time, bool) {
 	return time.Date(y, m, d, 23, 59, 59, 0, day.Location()), true
 }
 
+// segment resolves the event's top-level category from the primary
+// classification, falling back to the first when nothing is flagged primary.
+//
+// Only the segment is decided this way. Genres deliberately union across every
+// classification, because a multi-attraction bill's supporting tags are still
+// tags the matcher scores on -- but its supporting SEGMENT is not what the
+// event is, and letting the last entry win would file a rock show under
+// whatever its opener was classified as.
+//
+// Returns "" when the event carries no classification at all, which the ingest
+// stores as SQL NULL.
+func (e *discoveryEvent) segment() string {
+	if len(e.Classifications) == 0 {
+		return ""
+	}
+	c := e.Classifications[0]
+	for _, cand := range e.Classifications {
+		if cand.Primary {
+			c = cand
+			break
+		}
+	}
+	return events.NormalizeSegment(c.Segment.Name)
+}
+
 func (e *discoveryEvent) toMessage() (events.Message, bool) {
 	timeTBD := false
 	if e.ID == "" || e.Name == "" {
@@ -324,6 +357,7 @@ func (e *discoveryEvent) toMessage() (events.Message, bool) {
 		Description:   e.Info,
 		StartsAt:      startsAt,
 		Venue:         venue,
+		Segment:       e.segment(),
 		Performers:    performers,
 		Genres:        genres,
 		URL:           e.URL,

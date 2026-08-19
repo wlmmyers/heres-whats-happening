@@ -37,6 +37,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.segment,
     e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address,
@@ -60,6 +61,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.segment,
     e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address,
@@ -99,14 +101,23 @@ WHERE m.user_id = sqlc.arg(user_id)
       sqlc.narg(starts_at_after)::timestamptz IS NULL
       OR e.starts_at > sqlc.narg(starts_at_after)::timestamptz
   )
+  -- The optional segment filter. NULL-segment events come back under EVERY
+  -- filter value: NULL means the source did not classify the event (or the row
+  -- predates the column), and hiding those would make any filter silently drop
+  -- the entire pre-existing catalogue.
+  AND (
+      sqlc.narg(segment)::text IS NULL
+      OR e.segment IS NULL
+      OR e.segment = sqlc.narg(segment)::text
+  )
 ORDER BY e.starts_at ASC, e.id ASC
 LIMIT sqlc.arg(page_limit);
 
 -- name: GetCityCalendarPage :many
 -- One page of every showable event in the city, with no match filtering and
 -- (deliberately) no not-interested filtering: this endpoint returns an
--- identical response for every caller. Same ordering and cursor rules as
--- GetUserCalendarPage.
+-- identical response for every caller. Same ordering, cursor and starts_at
+-- rules as GetUserCalendarPage.
 SELECT
     e.id              AS event_id,
     e.title,
@@ -115,6 +126,7 @@ SELECT
     e.ends_at,
     e.image_url,
     e.url,
+    e.segment,
     e.headline_artist_id,
     v.name            AS venue_name,
     v.address         AS venue_address
@@ -131,6 +143,22 @@ WHERE v.city_id = sqlc.arg(city_id)
       sqlc.narg(cursor_starts_at)::timestamptz IS NULL
       OR (e.starts_at, e.id) > (sqlc.narg(cursor_starts_at)::timestamptz,
                                 sqlc.narg(cursor_event_id)::uuid)
+  )
+  -- The caller-named lower bound, mutually exclusive with the cursor (the
+  -- handler rejects both at once with a 422). Strict, and with no id tiebreak,
+  -- for the same reasons as GetUserCalendarPage -- see the note there.
+  AND (
+      sqlc.narg(starts_at_after)::timestamptz IS NULL
+      OR e.starts_at > sqlc.narg(starts_at_after)::timestamptz
+  )
+  -- The optional segment filter. NULL-segment events come back under EVERY
+  -- filter value: NULL means the source did not classify the event (or the row
+  -- predates the column), and hiding those would make any filter silently drop
+  -- the entire pre-existing catalogue.
+  AND (
+      sqlc.narg(segment)::text IS NULL
+      OR e.segment IS NULL
+      OR e.segment = sqlc.narg(segment)::text
   )
 ORDER BY e.starts_at ASC, e.id ASC
 LIMIT sqlc.arg(page_limit);

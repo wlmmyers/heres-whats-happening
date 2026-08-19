@@ -18,8 +18,14 @@ type Message struct {
 	// StartsAt is then local midnight on that date — a placeholder for sorting
 	// and display, not a real start time. Consumers must not treat such an
 	// event as over just because that midnight has passed.
-	TimeTBD    bool     `json:"time_tbd,omitempty"`
-	Venue      Venue    `json:"venue"`
+	TimeTBD bool  `json:"time_tbd,omitempty"`
+	Venue   Venue `json:"venue"`
+	// Segment is the source's top-level category slug ("music", "sports",
+	// "arts-theatre"). Empty means the source does not classify its events —
+	// the email path never sets it — and is stored as SQL NULL. See
+	// events/segments.go for why this vocabulary is open while the API's
+	// filter vocabulary is closed.
+	Segment    string   `json:"segment,omitempty"`
 	Performers []string `json:"performers,omitempty"`
 	Genres     []string `json:"genres,omitempty"`
 	ImageURL   string   `json:"image_url,omitempty"`

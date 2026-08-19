@@ -77,7 +77,7 @@ func (q *Queries) GetEventByID(ctx context.Context, id pgtype.UUID) (GetEventByI
 
 const getEventBySourceKey = `-- name: GetEventBySourceKey :one
 SELECT id, source_id, source_event_id, title, description, starts_at, ends_at,
-       venue_id, image_url, url, headline_artist_id, last_seen_at, archived_at, created_at, updated_at
+       venue_id, image_url, url, headline_artist_id, segment, last_seen_at, archived_at, created_at, updated_at
 FROM events
 WHERE source_id = $1 AND source_event_id = $2
 `
@@ -99,6 +99,7 @@ type GetEventBySourceKeyRow struct {
 	ImageUrl         *string            `json:"image_url"`
 	Url              *string            `json:"url"`
 	HeadlineArtistID pgtype.UUID        `json:"headline_artist_id"`
+	Segment          *string            `json:"segment"`
 	LastSeenAt       pgtype.Timestamptz `json:"last_seen_at"`
 	ArchivedAt       pgtype.Timestamptz `json:"archived_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
@@ -120,6 +121,7 @@ func (q *Queries) GetEventBySourceKey(ctx context.Context, arg GetEventBySourceK
 		&i.ImageUrl,
 		&i.Url,
 		&i.HeadlineArtistID,
+		&i.Segment,
 		&i.LastSeenAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
@@ -266,9 +268,9 @@ func (q *Queries) UpdateEventEmbedding(ctx context.Context, arg UpdateEventEmbed
 const upsertEvent = `-- name: UpsertEvent :one
 INSERT INTO events (
     source_id, source_event_id, title, description, starts_at, ends_at,
-    venue_id, image_url, url, time_tbd, headline_artist_id, last_seen_at
+    venue_id, image_url, url, time_tbd, headline_artist_id, segment, last_seen_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
 ON CONFLICT (source_id, source_event_id)
 DO UPDATE SET
     title         = EXCLUDED.title,
@@ -282,6 +284,12 @@ DO UPDATE SET
     -- COALESCE, not EXCLUDED: a re-scrape whose enrichment happened to fail
     -- sends a NULL here, and assigning it would blank a good link.
     headline_artist_id = COALESCE(EXCLUDED.headline_artist_id, events.headline_artist_id),
+    -- COALESCE for the same reason, a different sender: scripts/backfill.ts
+    -- rebuilds wire messages from DB rows that carry no segment, so every
+    -- backfill republish arrives with this NULL. EXCLUDED would blank the
+    -- column across every event the run touches. A real reclassification still
+    -- lands, because only NULL defers to the stored value.
+    segment       = COALESCE(EXCLUDED.segment, events.segment),
     last_seen_at  = NOW(),
     archived_at   = NULL,
     updated_at    = NOW()
@@ -300,6 +308,7 @@ type UpsertEventParams struct {
 	Url              *string            `json:"url"`
 	TimeTbd          bool               `json:"time_tbd"`
 	HeadlineArtistID pgtype.UUID        `json:"headline_artist_id"`
+	Segment          *string            `json:"segment"`
 }
 
 func (q *Queries) UpsertEvent(ctx context.Context, arg UpsertEventParams) (pgtype.UUID, error) {
@@ -315,6 +324,7 @@ func (q *Queries) UpsertEvent(ctx context.Context, arg UpsertEventParams) (pgtyp
 		arg.Url,
 		arg.TimeTbd,
 		arg.HeadlineArtistID,
+		arg.Segment,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

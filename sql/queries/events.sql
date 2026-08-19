@@ -1,9 +1,9 @@
 -- name: UpsertEvent :one
 INSERT INTO events (
     source_id, source_event_id, title, description, starts_at, ends_at,
-    venue_id, image_url, url, time_tbd, headline_artist_id, last_seen_at
+    venue_id, image_url, url, time_tbd, headline_artist_id, segment, last_seen_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
 ON CONFLICT (source_id, source_event_id)
 DO UPDATE SET
     title         = EXCLUDED.title,
@@ -17,6 +17,12 @@ DO UPDATE SET
     -- COALESCE, not EXCLUDED: a re-scrape whose enrichment happened to fail
     -- sends a NULL here, and assigning it would blank a good link.
     headline_artist_id = COALESCE(EXCLUDED.headline_artist_id, events.headline_artist_id),
+    -- COALESCE for the same reason, a different sender: scripts/backfill.ts
+    -- rebuilds wire messages from DB rows that carry no segment, so every
+    -- backfill republish arrives with this NULL. EXCLUDED would blank the
+    -- column across every event the run touches. A real reclassification still
+    -- lands, because only NULL defers to the stored value.
+    segment       = COALESCE(EXCLUDED.segment, events.segment),
     last_seen_at  = NOW(),
     archived_at   = NULL,
     updated_at    = NOW()
@@ -30,7 +36,7 @@ WHERE id = $1;
 
 -- name: GetEventBySourceKey :one
 SELECT id, source_id, source_event_id, title, description, starts_at, ends_at,
-       venue_id, image_url, url, headline_artist_id, last_seen_at, archived_at, created_at, updated_at
+       venue_id, image_url, url, headline_artist_id, segment, last_seen_at, archived_at, created_at, updated_at
 FROM events
 WHERE source_id = $1 AND source_event_id = $2;
 

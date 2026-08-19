@@ -221,3 +221,90 @@ func TestHandle_DefaultsTimeTBDToFalse(t *testing.T) {
 		srcRow.ID, "tm-aaa").Scan(&timeTBD))
 	require.False(t, timeTBD)
 }
+
+// ---- segment ---------------------------------------------------------------
+
+func eventBySourceKey(t *testing.T, q *store.Queries, sourceEventID string) store.GetEventBySourceKeyRow {
+	t.Helper()
+	ctx := context.Background()
+	srcRow, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
+	ev, err := q.GetEventBySourceKey(ctx, store.GetEventBySourceKeyParams{
+		SourceID:      srcRow.ID,
+		SourceEventID: sourceEventID,
+	})
+	require.NoError(t, err)
+	return ev
+}
+
+func TestHandle_PersistsSegment(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	h := ingest.NewEventHandler(q, defaultCityID(t, q))
+
+	m := sampleMessage()
+	m.Segment = "sports"
+	body, _ := json.Marshal(m)
+	require.NoError(t, h.Handle(context.Background(), body))
+
+	ev := eventBySourceKey(t, q, "tm-aaa")
+	require.NotNil(t, ev.Segment)
+	require.Equal(t, "sports", *ev.Segment)
+}
+
+// The email path never classifies its events, and every row that predates the
+// column is NULL too. Both must stay distinguishable from a real segment.
+func TestHandle_EmptySegmentStoresNull(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	h := ingest.NewEventHandler(q, defaultCityID(t, q))
+
+	body, _ := json.Marshal(sampleMessage()) // Segment unset
+	require.NoError(t, h.Handle(context.Background(), body))
+
+	require.Nil(t, eventBySourceKey(t, q, "tm-aaa").Segment)
+}
+
+// scripts/backfill.ts rebuilds wire messages from DB rows that carry no
+// segment, so a backfill run republishes every event with the field empty.
+// Assigning EXCLUDED directly would blank the column across the whole table.
+func TestHandle_ReUpsertWithoutSegmentKeepsStoredSegment(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	h := ingest.NewEventHandler(q, defaultCityID(t, q))
+	ctx := context.Background()
+
+	classified := sampleMessage()
+	classified.Segment = "music"
+	body, _ := json.Marshal(classified)
+	require.NoError(t, h.Handle(ctx, body))
+
+	backfilled := sampleMessage() // same source key, no segment
+	body, _ = json.Marshal(backfilled)
+	require.NoError(t, h.Handle(ctx, body))
+
+	ev := eventBySourceKey(t, q, "tm-aaa")
+	require.NotNil(t, ev.Segment, "a segment-less re-upsert must not blank the column")
+	require.Equal(t, "music", *ev.Segment)
+}
+
+// A genuine reclassification still lands: COALESCE only guards the NULL case.
+func TestHandle_ReUpsertWithNewSegmentOverwrites(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	h := ingest.NewEventHandler(q, defaultCityID(t, q))
+	ctx := context.Background()
+
+	m := sampleMessage()
+	m.Segment = "miscellaneous"
+	body, _ := json.Marshal(m)
+	require.NoError(t, h.Handle(ctx, body))
+
+	m.Segment = "music"
+	body, _ = json.Marshal(m)
+	require.NoError(t, h.Handle(ctx, body))
+
+	ev := eventBySourceKey(t, q, "tm-aaa")
+	require.NotNil(t, ev.Segment)
+	require.Equal(t, "music", *ev.Segment)
+}

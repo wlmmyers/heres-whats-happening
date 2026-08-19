@@ -88,6 +88,7 @@ func (h *EventHandler) handleMessage(ctx context.Context, m events.EnrichedMessa
 		VenueID:          venueID,
 		ImageUrl:         optString(m.ImageURL),
 		Url:              optString(m.URL),
+		Segment:          optString(m.Segment),
 		HeadlineArtistID: artistID,
 	})
 	if err != nil {
