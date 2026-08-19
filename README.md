@@ -19,7 +19,7 @@ Check out the live app at [hereswhatshappening.app](https://hereswhatshappening.
 
 ## Architecture Diagram
 
-<img width="1264" height="801" alt="image" src="https://github.com/user-attachments/assets/ba035e2f-bb01-49ee-89b9-b61aafcd7ad3" />
+<img width="1200" height="657" alt="image" src="https://github.com/user-attachments/assets/75c28f62-bc6e-4962-ac54-3e8c05abc05c" />
 
 ## Contributing - Prerequisites
 
