@@ -77,3 +77,62 @@ func TestNewPoolWithPassword_ProviderErrorFailsConnection(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "secretsmanager unavailable")
 }
+
+// Connections must rotate on a bounded clock so the pool picks up DNS changes
+// after an RDS failover, rebalances across replicas, and bounds server-side
+// memory growth. pgxpool's default is 1h with NO jitter, which expires every
+// connection in the same second — a reconnect herd that, because BeforeConnect
+// fetches the password from Secrets Manager, lands inside the acquire path.
+func TestNewPool_RotatesConnectionsOnAJitteredClock(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pool, err := NewPool(ctx, testdb.DSN())
+	require.NoError(t, err)
+	defer pool.Close()
+
+	cfg := pool.Config()
+	require.GreaterOrEqual(t, cfg.MaxConnLifetime, 30*time.Minute, "lifetime must be at least 30m")
+	require.LessOrEqual(t, cfg.MaxConnLifetime, 60*time.Minute, "lifetime must be at most 60m")
+	require.Greater(t, cfg.MaxConnLifetimeJitter, time.Duration(0),
+		"zero jitter expires the whole pool at once")
+}
+
+// A warm connection must be ready when work arrives. MinConns alone does not
+// give this: it floors TOTAL connections, so the one connection it guarantees
+// is checked out under any load and the next acquirer still pays a cold connect
+// plus a Secrets Manager round trip. MinIdleConns is the knob that floors IDLE
+// connections (pgxpool/pool.go:562 reconciles them independently).
+func TestNewPool_KeepsAWarmIdleConnection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pool, err := NewPool(ctx, testdb.DSN())
+	require.NoError(t, err)
+	defer pool.Close()
+
+	cfg := pool.Config()
+	require.GreaterOrEqual(t, cfg.MinIdleConns, int32(1), "no idle floor means every quiet period costs a cold connect")
+	require.GreaterOrEqual(t, cfg.MinConns, int32(1))
+}
+
+// pgxpool pings any connection idle for more than a second before handing it
+// out (the default ShouldPing, pgxpool/pool.go:266). With no PingTimeout that
+// ping inherits the caller's entire context, so one black-holed socket — the
+// normal state of a pooled connection after an RDS failover — consumes a whole
+// 5s request budget before Acquire even tries the next connection.
+//
+// The bound also has to stay small enough that Acquire's retry loop (which
+// destroys a failed connection and tries another, up to MaxConns+1 times) can
+// clear several stale connections inside one request budget.
+func TestNewPool_BoundsTheLivenessPing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pool, err := NewPool(ctx, testdb.DSN())
+	require.NoError(t, err)
+	defer pool.Close()
+
+	cfg := pool.Config()
+	require.Greater(t, cfg.PingTimeout, time.Duration(0),
+		"an unbounded ping inherits the caller's whole budget")
+	require.LessOrEqual(t, cfg.PingTimeout, time.Second,
+		"must leave room for Acquire to retry other connections within a 5s handler budget")
+}

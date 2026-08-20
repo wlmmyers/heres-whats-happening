@@ -24,9 +24,21 @@ type MessageHandler interface {
 	Handle(ctx context.Context, body []byte) error
 }
 
+// defaultHandleTimeout bounds one message's processing.
+//
+// It sits under the 30s visibility timeout both consumed queues are configured
+// with (terraform/prod/sqs.tf, terraform/prod/enrichment.tf), leaving headroom
+// for the delete that follows. Past that timeout SQS has already redelivered
+// the message, so a still-running handler is a duplicate of work another worker
+// now owns — and it is pinning one of the pool's connections while it does it.
+const defaultHandleTimeout = 25 * time.Second
+
 // Consumer runs N worker goroutines long-polling one queue and dispatching
 // each received message to the configured Handler.
 type Consumer struct {
+	// HandleTimeout bounds one message's processing. Set before Run.
+	HandleTimeout time.Duration
+
 	q        QueueClient
 	queueURL string
 	h        MessageHandler
@@ -41,7 +53,7 @@ func NewConsumer(q QueueClient, queueURL string, h MessageHandler, workers int, 
 	if name == "" {
 		name = "ingest"
 	}
-	return &Consumer{q: q, queueURL: queueURL, h: h, workers: workers, name: name}
+	return &Consumer{q: q, queueURL: queueURL, h: h, workers: workers, name: name, HandleTimeout: defaultHandleTimeout}
 }
 
 func (c *Consumer) Run(ctx context.Context) error {
@@ -77,7 +89,15 @@ func (c *Consumer) workerLoop(ctx context.Context, id int) {
 	}
 }
 
+// handleOne applies one message under its own deadline. The bound lives here
+// rather than in each handler so it covers every handler, including ones added
+// later — the same reasoning the router uses for its rate-limit groups. Without
+// it a handler inherits the process-lifetime context and can block on the
+// connection pool indefinitely.
 func (c *Consumer) handleOne(ctx context.Context, m queue.Message, workerID int) {
+	ctx, cancel := context.WithTimeout(ctx, c.HandleTimeout)
+	defer cancel()
+
 	if err := c.h.Handle(ctx, m.Body); err != nil {
 		log.Printf("%s worker %d: handle: %v", c.name, workerID, err)
 		return

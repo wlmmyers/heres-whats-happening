@@ -55,3 +55,66 @@ resource "aws_cloudwatch_metric_alarm" "ratelimit" {
   alarm_actions       = [aws_sns_topic.alerts.arn]
   alarm_description   = each.value.description
 }
+
+# Database connection-pool alerting.
+#
+# internal/db's sampler emits one EMF line per minute per task
+# (internal/observability.PoolStats): namespace "HeresWhatsHappening/api",
+# dimension "service" with values "api", "match" and "scrape-spotify".
+# TestPoolMetricContractConstants (internal/observability) pins the metric names
+# and the dimension key these alarms mirror.
+#
+# Only "api" is alarmed. It is the always-on, user-facing task, and it shares
+# ten connections between the HTTP handlers and eight ingest worker goroutines
+# (two consumers x var.ingest_workers), so it is where pool pressure shows up
+# first. The scheduled families emit the same metrics and stay queryable in Logs
+# Insights; they just do not page.
+#
+# Unlike RateLimitRejections these metrics are continuous, not sparse — a gap
+# means the task is not running, which a deploy produces routinely, so missing
+# data is treated as not breaching.
+locals {
+  db_pool_alarms = {
+    pool-canceled-acquires = {
+      metric_name = "DBPoolCanceledAcquires"
+      statistic   = "Sum"
+      threshold   = 3
+      periods     = 1
+      comparison  = "GreaterThanOrEqualToThreshold"
+      description = "Requests gave up waiting for a database connection — their context deadline fired before the pool had one free. User-visible failures; the pool is too small or something is holding connections too long."
+    }
+    pool-wait-time = {
+      metric_name = "DBPoolWaitMillis"
+      statistic   = "Sum"
+      threshold   = 5000
+      periods     = 2
+      comparison  = "GreaterThanOrEqualToThreshold"
+      description = "Sustained time spent blocked on an empty connection pool (5s cumulative per 5-minute period). Rising wait time is the earliest signal that the pool is undersized or a query is holding connections too long."
+    }
+    pool-saturated = {
+      metric_name = "DBPoolInUseConns"
+      statistic   = "Maximum"
+      threshold   = 9
+      periods     = 3
+      comparison  = "GreaterThanOrEqualToThreshold"
+      description = "The api pool has been at or near its ten-connection ceiling for fifteen minutes. Expect queueing next; raise MaxConns in internal/db or shed load."
+    }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "db_pool" {
+  for_each = local.db_pool_alarms
+
+  alarm_name          = "${var.app_name_prefix}-${each.key}"
+  comparison_operator = each.value.comparison
+  evaluation_periods  = each.value.periods
+  metric_name         = each.value.metric_name
+  namespace           = "HeresWhatsHappening/api"
+  period              = 300
+  statistic           = each.value.statistic
+  threshold           = each.value.threshold
+  dimensions          = { service = "api" }
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  alarm_description   = each.value.description
+}

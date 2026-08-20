@@ -25,10 +25,30 @@ import (
 // the job is gone (task restart) and nothing else will ever clear the row.
 const stalePendingAfter = 6 * time.Minute
 
+// defaultGenerateTimeout bounds the call out to the poster Lambda.
+const defaultGenerateTimeout = 6 * time.Minute
+
+// posterDBTimeout bounds the job-status writes. They deliberately do NOT run on
+// the generation context: that budget exists for someone else's network call,
+// and a status UPDATE inheriting it can sit six minutes waiting for a pool slot
+// — or, when generation fails *because* that context expired, be rejected
+// before it reaches the database, leaving the row pending forever.
+const posterDBTimeout = 5 * time.Second
+
+// posterWriteCtx returns a short-lived context for a job-status write, rooted
+// at Background so it outlives both the request and the generation budget.
+func posterWriteCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), posterDBTimeout)
+}
+
 type PosterDeps struct {
 	Queries   *store.Queries
 	Generator poster.Generator
 	Presigner poster.Presigner
+
+	// GenerateTimeout bounds one background generation. Zero means
+	// defaultGenerateTimeout.
+	GenerateTimeout time.Duration
 }
 
 type posterRequest struct {
@@ -100,7 +120,9 @@ func CreatePoster(d PosterDeps) http.HandlerFunc {
 		}
 
 		id := poster.JobID(uid.String(), performer, venue, date)
-		_, err = d.Queries.ClaimPosterJob(r.Context(), store.ClaimPosterJobParams{
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		_, err = d.Queries.ClaimPosterJob(ctx, store.ClaimPosterJobParams{
 			ID: id, UserID: pgtype.UUID{Bytes: uid, Valid: true},
 			Performer: performer, Venue: venue, Date: date,
 			StaleBefore: pgtype.Timestamptz{Time: time.Now().Add(-stalePendingAfter), Valid: true},
@@ -132,20 +154,28 @@ func CreatePoster(d PosterDeps) http.HandlerFunc {
 // generation immediately. The timeout here is the only bound.
 func startGeneration(d PosterDeps, id string, req poster.Request) {
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+		timeout := d.GenerateTimeout
+		if timeout <= 0 {
+			timeout = defaultGenerateTimeout
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
 		res, err := d.Generator.Generate(ctx, req)
 		if err != nil {
 			slog.Error("poster generation failed", "job", id, "error", err)
 			// The upstream detail is logged, never returned to the client.
-			_ = d.Queries.MarkPosterJobFailed(ctx, store.MarkPosterJobFailedParams{
+			wctx, wcancel := posterWriteCtx()
+			defer wcancel()
+			_ = d.Queries.MarkPosterJobFailed(wctx, store.MarkPosterJobFailedParams{
 				ID: id, FailureStage: ptr("svg"), FailureReason: ptr("poster service unavailable"),
 			})
 			return
 		}
 		if res.FailureStage != "" {
-			_ = d.Queries.MarkPosterJobFailed(ctx, store.MarkPosterJobFailedParams{
+			wctx, wcancel := posterWriteCtx()
+			defer wcancel()
+			_ = d.Queries.MarkPosterJobFailed(wctx, store.MarkPosterJobFailedParams{
 				ID: id, FailureStage: &res.FailureStage, FailureReason: &res.FailureReason,
 			})
 			return
@@ -161,12 +191,16 @@ func startGeneration(d PosterDeps, id string, req poster.Request) {
 		// of the source artwork, not a stage of its own.
 		if _, err := poster.ValidateKey(res.PngKey); err != nil {
 			slog.Error("poster returned an unexpected key", "job", id, "error", err)
-			_ = d.Queries.MarkPosterJobFailed(ctx, store.MarkPosterJobFailedParams{
+			wctx, wcancel := posterWriteCtx()
+			defer wcancel()
+			_ = d.Queries.MarkPosterJobFailed(wctx, store.MarkPosterJobFailedParams{
 				ID: id, FailureStage: ptr("svg"), FailureReason: ptr("poster service returned an unexpected artifact"),
 			})
 			return
 		}
-		_ = d.Queries.MarkPosterJobReady(ctx, store.MarkPosterJobReadyParams{
+		wctx, wcancel := posterWriteCtx()
+		defer wcancel()
+		_ = d.Queries.MarkPosterJobReady(wctx, store.MarkPosterJobReadyParams{
 			ID: id, PngKey: &res.PngKey,
 			Artist: res.Artist, Credit: res.Credit,
 		})
@@ -199,7 +233,9 @@ func GetPoster(d PosterDeps) http.HandlerFunc {
 		}
 
 		id := poster.JobID(uid.String(), performer, venue, date)
-		job, err := d.Queries.GetPosterJob(r.Context(), store.GetPosterJobParams{
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		job, err := d.Queries.GetPosterJob(ctx, store.GetPosterJobParams{
 			ID: id, UserID: pgtype.UUID{Bytes: uid, Valid: true},
 		})
 		switch {
@@ -221,7 +257,7 @@ func GetPoster(d PosterDeps) http.HandlerFunc {
 				"failure_reason": job.FailureReason,
 			})
 		case "ready":
-			pngURL, err := d.Presigner.PresignGet(r.Context(), strVal(job.PngKey))
+			pngURL, err := d.Presigner.PresignGet(ctx, strVal(job.PngKey))
 			if err != nil {
 				httperr.WriteErr(w, r, http.StatusInternalServerError, "poster_presign_failed", "could not presign poster artifact", err)
 				return

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -59,4 +60,64 @@ func TestMetricContractConstants(t *testing.T) {
 	require.Equal(t, "HeresWhatsHappening/api", observability.Namespace)
 	require.Equal(t, "RateLimitRejections", observability.MetricRateLimitRejections)
 	require.Equal(t, "endpoint", observability.DimensionEndpoint)
+}
+
+// The pool-stats line is what makes WaitCount/WaitDuration visible in
+// CloudWatch. It carries counter DELTAS (per interval) alongside instantaneous
+// gauges, so a CloudWatch Sum over the counters is meaningful — summing the
+// monotonic since-pool-creation totals pgxpool reports would not be.
+func TestPoolStats_EmitsContractCompliantEMF(t *testing.T) {
+	var buf bytes.Buffer
+	observability.NewEmitter(&buf).PoolStats("api", observability.PoolSample{
+		InUseConns: 8, IdleConns: 2, TotalConns: 10, MaxConns: 10,
+		Acquires: 140, Waits: 12, CanceledAcquires: 3,
+		WaitDuration: 250 * time.Millisecond,
+	})
+
+	out := buf.Bytes()
+	require.Equal(t, 1, bytes.Count(out, []byte("\n")), "exactly one line")
+	trimmed := bytes.TrimSpace(out)
+	require.True(t, json.Valid(trimmed), "EMF line must be valid JSON with no log prefix")
+
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(trimmed, &m))
+
+	require.Equal(t, "api", m["service"], "service is the dimension value")
+	require.EqualValues(t, 8, m["DBPoolInUseConns"])
+	require.EqualValues(t, 2, m["DBPoolIdleConns"])
+	require.EqualValues(t, 10, m["DBPoolTotalConns"])
+	require.EqualValues(t, 10, m["DBPoolMaxConns"])
+	require.EqualValues(t, 140, m["DBPoolAcquires"])
+	require.EqualValues(t, 12, m["DBPoolWaits"])
+	require.EqualValues(t, 3, m["DBPoolCanceledAcquires"])
+	require.EqualValues(t, 250, m["DBPoolWaitMillis"], "duration is emitted in whole milliseconds")
+
+	aws := m["_aws"].(map[string]any)
+	require.NotZero(t, aws["Timestamp"])
+	directive := aws["CloudWatchMetrics"].([]any)[0].(map[string]any)
+	require.Equal(t, "HeresWhatsHappening/api", directive["Namespace"])
+	require.Equal(t, []any{[]any{"service"}}, directive["Dimensions"])
+
+	units := map[string]string{}
+	for _, d := range directive["Metrics"].([]any) {
+		md := d.(map[string]any)
+		units[md["Name"].(string)] = md["Unit"].(string)
+	}
+	require.Equal(t, "Milliseconds", units["DBPoolWaitMillis"], "wait time must not be typed as a Count")
+	require.Equal(t, "Count", units["DBPoolWaits"])
+	require.Len(t, units, 8, "every emitted metric must be declared in the directive")
+}
+
+// These strings are duplicated in terraform/prod/observability.tf. If you
+// change one, update the alarms there or they go blind.
+func TestPoolMetricContractConstants(t *testing.T) {
+	require.Equal(t, "service", observability.DimensionService)
+	require.Equal(t, "DBPoolInUseConns", observability.MetricPoolInUseConns)
+	require.Equal(t, "DBPoolIdleConns", observability.MetricPoolIdleConns)
+	require.Equal(t, "DBPoolTotalConns", observability.MetricPoolTotalConns)
+	require.Equal(t, "DBPoolMaxConns", observability.MetricPoolMaxConns)
+	require.Equal(t, "DBPoolAcquires", observability.MetricPoolAcquires)
+	require.Equal(t, "DBPoolWaits", observability.MetricPoolWaits)
+	require.Equal(t, "DBPoolCanceledAcquires", observability.MetricPoolCanceledAcquires)
+	require.Equal(t, "DBPoolWaitMillis", observability.MetricPoolWaitMillis)
 }

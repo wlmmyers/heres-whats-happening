@@ -965,3 +965,43 @@ func TestGetPoster_RejectsOverlongQueryValues(t *testing.T) {
 	handlers.GetPoster(deps)(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
+
+// deadlineGenerator models the real failure mode of the poster Lambda: it does
+// not return until its context is done, then reports why.
+type deadlineGenerator struct{}
+
+func (deadlineGenerator) Generate(ctx context.Context, _ poster.Request) (poster.Result, error) {
+	<-ctx.Done()
+	return poster.Result{}, ctx.Err()
+}
+
+// When generation exhausts its budget the failure must still be recorded.
+// The status write cannot run on the generation context: that context is
+// exactly what just expired, so the UPDATE is rejected before it reaches the
+// database and the row is left "pending" — a job the client polls forever
+// while nothing will ever resolve it.
+func TestCreatePoster_RecordsFailureWhenGenerationExhaustsItsBudget(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	h := handlers.CreatePoster(handlers.PosterDeps{
+		Queries:         q,
+		Generator:       deadlineGenerator{},
+		Presigner:       stubPresigner{},
+		GenerateTimeout: 100 * time.Millisecond,
+	})
+	uid := posterUser(t, q, "a")
+	performer, venue, date := posterFixture(t)
+
+	rec := httptest.NewRecorder()
+	h(rec, posterPostRequest(uid, performer, venue, date, false))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	id := poster.JobID(uid.String(), performer, venue, date)
+	require.Eventually(t, func() bool {
+		job, err := q.GetPosterJob(context.Background(), store.GetPosterJobParams{
+			ID: id, UserID: pgtype.UUID{Bytes: uid, Valid: true},
+		})
+		return err == nil && job.Status == "failed"
+	}, 5*time.Second, 25*time.Millisecond,
+		"a job whose generation timed out must end up failed, not stuck pending")
+}

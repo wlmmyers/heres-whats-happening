@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -71,6 +72,13 @@ func main() {
 	}
 }
 
+// scheduledRunTimeout caps a scheduled one-shot command. It bounds a hang, not
+// normal runtime: the slowest real runs observed in CloudWatch are ~283s for
+// match (a cold run embedding a backlog) and ~14s for scrape-spotify, so this
+// leaves roughly 6x headroom over the worst of them. Without it a wedged query
+// keeps a Fargate task — and its connections — alive indefinitely.
+const scheduledRunTimeout = 30 * time.Minute
+
 func usage() {
 	fmt.Fprintf(os.Stderr, `usage: app <subcommand>
 
@@ -112,6 +120,8 @@ func serve() error {
 	}
 	defer pool.Close()
 
+	db.StartStatsSampler(ctx, pool, "api")
+
 	q := store.New(pool)
 	city, err := q.GetDefaultCity(ctx)
 	if err != nil {
@@ -130,14 +140,14 @@ func serve() error {
 		}
 	}
 
-	var consumer *ingest.Consumer
+	var eventsConsumer *ingest.Consumer
 	// Reads ENRICHED events. Scrapers still publish to EventsQueueURL; the
 	// mastra-handler Lambda enriches from there onto this queue. A message
 	// without an enrichment block still applies exactly as it used to, which is
 	// what makes this switch reversible.
 	if cfg.EnrichedEventsQueueURL != "" {
 		h := ingest.NewEventHandler(q, city.ID)
-		consumer = ingest.NewConsumer(qClient, cfg.EnrichedEventsQueueURL, h, cfg.IngestWorkers, "events-enriched")
+		eventsConsumer = ingest.NewConsumer(qClient, cfg.EnrichedEventsQueueURL, h, cfg.IngestWorkers, "events-enriched")
 	}
 
 	spClient := spotify.New(cfg.SpotifyClientID, cfg.SpotifyClientSecret, cfg.SpotifyRedirectURI, "")
@@ -196,7 +206,7 @@ func serve() error {
 		JWTSigner:          auth.NewJWTSigner(cfg.JWTSigningKey, cfg.JWTAccessTTL),
 		RefreshTTL:         cfg.RefreshTTL,
 		DefaultCityID:      cityIDString(city.ID),
-		IngestConsumer:     consumer,
+		EventsConsumer:     eventsConsumer,
 		InterestConsumer:   interestConsumer,
 		SpotifyClient:      spClient,
 		SpotifyCipher:      cipher,
@@ -273,12 +283,15 @@ func scrapeSpotify(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, scheduledRunTimeout)
+	defer cancel()
 
 	pool, err := openPool(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("db: %w", err)
 	}
 	defer pool.Close()
+	db.StartStatsSampler(ctx, pool, "scrape-spotify")
 	q := store.New(pool)
 
 	qClient, err := queue.NewClient(ctx, cfg.AWSRegion, cfg.SQSEndpoint)
@@ -341,12 +354,15 @@ func runMatch() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, scheduledRunTimeout)
+	defer cancel()
 
 	pool, err := openPool(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("db: %w", err)
 	}
 	defer pool.Close()
+	db.StartStatsSampler(ctx, pool, "match")
 	q := store.New(pool)
 
 	teiClient := tei.New(cfg.TEIEndpoint)
