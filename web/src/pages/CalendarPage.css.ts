@@ -55,7 +55,12 @@ export const inlineLink = style({
 });
 
 export const list = style({ marginTop: '1rem' });
-export const listCondensed = style({ display: 'flex', flexWrap: 'wrap' });
+export const listCondensed = style({
+  display: 'flex',
+  flexWrap: 'wrap',
+  // Make up for flex styling forcing the sectionTitleListItem to take up more height
+  transform: 'translateY(-24px)',
+});
 
 export const listItem = style({
   marginBottom: '0.75rem',
@@ -77,3 +82,8 @@ export const banner = style([
     ...fontSize.sm,
   },
 ]);
+
+export const sectionTitleListItem = style({
+  width: '100%',
+  flex: 'none',
+});

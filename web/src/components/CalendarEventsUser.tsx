@@ -66,7 +66,7 @@ export const CalendarEventsUser = ({
       >
         {bucketEventsByWeek(events).map(({ label, events: weekEvents }) => (
           <Fragment key={label}>
-            <li>
+            <li className={s.sectionTitleListItem}>
               <SectionTitle>{label}</SectionTitle>
             </li>
             {weekEvents.map((event) => (

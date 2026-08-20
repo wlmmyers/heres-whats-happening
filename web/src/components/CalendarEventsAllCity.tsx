@@ -36,7 +36,7 @@ export const CalendarEventsAllCity = ({ gatePending, displayStyle }: Props) => {
       >
         {bucketEventsByWeek(events).map(({ label, events: weekEvents }) => (
           <Fragment key={label}>
-            <li>
+            <li className={s.sectionTitleListItem}>
               <SectionTitle>{label}</SectionTitle>
             </li>
             {weekEvents.map((e) => (
