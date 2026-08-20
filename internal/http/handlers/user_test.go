@@ -175,3 +175,33 @@ func TestSignup_ReturnsCityID(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 	require.NotEmpty(t, resp.User.CityID)
 }
+
+func TestGetMe_ReturnsShowSetlists(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	cityID := defaultCityID(t, q)
+	access, uid := signupForThreshold(t, q, signer, cityID, "getme-ss@example.com")
+
+	get := func() map[string]any {
+		req := httptest.NewRequest(http.MethodGet, "/me", nil)
+		req.Header.Set("Authorization", "Bearer "+access)
+		rec := httptest.NewRecorder()
+		middleware.RequireAuth(signer)(handlers.GetMe(q)).ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		var out map[string]any
+		require.NoError(t, json.NewDecoder(rec.Body).Decode(&out))
+		return out
+	}
+
+	// The field must be present and false, not omitted — the client cannot tell
+	// an absent key from an opted-out user.
+	out := get()
+	require.Contains(t, out, "show_setlists")
+	require.Equal(t, false, out["show_setlists"])
+
+	require.NoError(t, q.UpdateUserShowSetlists(context.Background(), store.UpdateUserShowSetlistsParams{
+		ID: pgtype.UUID{Bytes: uuidMust(t, uid), Valid: true}, ShowSetlists: true,
+	}))
+	require.Equal(t, true, get()["show_setlists"])
+}

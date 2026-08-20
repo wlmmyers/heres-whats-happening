@@ -181,6 +181,7 @@ type User struct {
 	DeletedAt                  pgtype.Timestamptz `json:"deleted_at"`
 	ScoreThreshold             *float64           `json:"score_threshold"`
 	Confirmed                  bool               `json:"confirmed"`
+	ShowSetlists               bool               `json:"show_setlists"`
 }
 
 type UserEventMatch struct {

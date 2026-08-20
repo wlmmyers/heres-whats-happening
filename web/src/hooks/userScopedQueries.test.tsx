@@ -29,7 +29,13 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
-const user = { id: 'u1', email: 'u@example.com', city_id: 'city-1', confirmed: true };
+const user = {
+  id: 'u1',
+  email: 'u@example.com',
+  city_id: 'city-1',
+  confirmed: true,
+  show_setlists: false,
+};
 const actions = { login: vi.fn(), signup: vi.fn(), logout: vi.fn(), refreshUser: vi.fn() };
 const authLoading = { ...actions, status: 'loading' as const, user: null };
 const authResolved = { ...actions, status: 'authenticated' as const, user };

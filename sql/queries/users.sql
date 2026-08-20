@@ -9,7 +9,7 @@ FROM users
 WHERE email = $1 AND deleted_at IS NULL;
 
 -- name: GetUserByID :one
-SELECT id, email, city_id, confirmed, created_at, score_threshold
+SELECT id, email, city_id, confirmed, created_at, score_threshold, show_setlists
 FROM users
 WHERE id = $1 AND deleted_at IS NULL;
 
@@ -59,4 +59,9 @@ WHERE id = $1 AND deleted_at IS NULL;
 -- name: UpdateUserScoreThreshold :exec
 UPDATE users
 SET score_threshold = $2
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: UpdateUserShowSetlists :exec
+UPDATE users
+SET show_setlists = $2
 WHERE id = $1 AND deleted_at IS NULL;

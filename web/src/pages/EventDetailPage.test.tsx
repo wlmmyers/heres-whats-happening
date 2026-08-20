@@ -11,9 +11,23 @@ vi.mock('../api/calendar', () => ({
   getEvent: vi.fn(),
 }));
 vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
+vi.mock('../api/auth', () => ({ getMe: vi.fn() }));
 
 import * as calApi from '../api/calendar';
+import * as authApi from '../api/auth';
 import { useAuth } from '../auth/useAuth';
+
+// Most setlist assertions below describe what an opted-in user sees; the
+// opted-out rendering has its own describe block.
+function mockMe(showSetlists: boolean) {
+  (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValue({
+    id: 'u1',
+    email: 'a@x',
+    city_id: 'city-1',
+    confirmed: true,
+    show_setlists: showSetlists,
+  });
+}
 
 function renderAt(path: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -32,12 +46,13 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(useAuth).mockReturnValue({
     status: 'authenticated',
-    user: { id: 'u1', email: 'a@x', city_id: 'city-1', confirmed: true },
+    user: { id: 'u1', email: 'a@x', city_id: 'city-1', confirmed: true, show_setlists: false },
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),
     refreshUser: vi.fn(),
   });
+  mockMe(true);
 });
 
 // ICU pads its range patterns with thin and narrow no-break spaces; compare
@@ -311,6 +326,76 @@ describe('EventDetailPage artist sections', () => {
       renderWithArtist({ name: 'Phoebe Bridgers', bio: { text: 'Songwriter from LA.' } });
       await loaded();
       expect(screen.queryByRole('heading', { name: 'Tour info' })).toBeNull();
+    });
+  });
+
+  describe('setlist visibility', () => {
+    const withSongs = {
+      name: 'Phoebe Bridgers',
+      tour: {
+        blurb: 'Touring the new record.',
+        songs: [{ name: 'Motion Sickness' }, { name: 'Kyoto' }],
+      },
+    } as ArtistFixture;
+
+    it('obfuscates the setlist inset when the user has not opted in', async () => {
+      mockMe(false);
+      const { container } = renderWithArtist(withSongs);
+      await loaded();
+      await waitFor(() => expect(container.querySelector(`.${s.setlistHidden}`)).not.toBeNull());
+    });
+
+    it('hides the songs from assistive tech when the user has not opted in', async () => {
+      mockMe(false);
+      renderWithArtist(withSongs);
+      await loaded();
+      await waitFor(() => expect(screen.queryByRole('list')).toBeNull());
+    });
+
+    it('offers a link to settings when the setlist is obfuscated', async () => {
+      mockMe(false);
+      renderWithArtist(withSongs);
+      await loaded();
+      const link = await screen.findByRole('link', { name: /settings/i });
+      expect(link).toHaveAttribute('href', '/settings');
+    });
+
+    it('shows the setlist plainly once the user has opted in', async () => {
+      mockMe(true);
+      const { container } = renderWithArtist(withSongs);
+      await loaded();
+      expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+        'Motion Sickness',
+        'Kyoto',
+      ]);
+      expect(container.querySelector(`.${s.setlistHidden}`)).toBeNull();
+      expect(screen.queryByRole('link', { name: /settings/i })).toBeNull();
+    });
+
+    // Logged-out visitors never reach this page at all (useEvent stays idle
+    // without a user), but an authenticated user can render the event before
+    // /me settles. The setlist must not flash into view in that window.
+    it('obfuscates the setlist while the preference is still loading', async () => {
+      (authApi.getMe as ReturnType<typeof vi.fn>).mockReturnValue(new Promise(() => {}));
+      const { container } = renderWithArtist(withSongs);
+      await loaded();
+      expect(container.querySelector(`.${s.setlistHidden}`)).not.toBeNull();
+      expect(screen.queryByRole('list')).toBeNull();
+    });
+
+    it('does not overlay a tour that has a link but no songs', async () => {
+      mockMe(false);
+      renderWithArtist({
+        name: 'Phoebe Bridgers',
+        tour: {
+          blurb: 'Touring the new record.',
+          setlist_url: 'https://setlist.fm/pb/2026',
+          songs: [],
+        },
+      } as ArtistFixture);
+      await loaded();
+      expect(screen.getByRole('link', { name: /view on setlist\.fm/i })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /settings/i })).toBeNull();
     });
   });
 });

@@ -9,6 +9,7 @@ import { useUpdateMatchThreshold } from '../hooks/useUpdateMatchThreshold';
 import { useCreateIcalToken } from '../hooks/useCreateIcalToken';
 import { useRevokeIcalToken } from '../hooks/useRevokeIcalToken';
 import { useResetNotInterested } from '../hooks/useResetNotInterested';
+import { useUpdateShowSetlists } from '../hooks/useUpdateShowSetlists';
 import * as s from './SettingsPage.css';
 import * as c from '../styles/common.css';
 
@@ -36,6 +37,9 @@ export default function SettingsPage() {
 
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const resetNotInterestedMut = useResetNotInterested();
+
+  const showSetlists = me?.show_setlists ?? false;
+  const saveShowSetlists = useUpdateShowSetlists();
 
   return (
     <div>
@@ -76,6 +80,31 @@ export default function SettingsPage() {
           {saveError && (
             <p role="alert" className={s.error}>
               Could not update your threshold. Please try again.
+            </p>
+          )}
+        </section>
+
+        {/* Setlists */}
+        <section className={c.section}>
+          <h2 className={c.sectionTitle}>Setlists</h2>
+          <p className={s.desc}>
+            Setlists spoil the show for some people, so they stay hidden until you ask for them.
+            Turn this on to see the songs an artist has been playing on tour.
+          </p>
+          <div className={s.toggleRow}>
+            <label className={s.toggleLabel}>
+              <input
+                type="checkbox"
+                checked={showSetlists}
+                disabled={saveShowSetlists.isPending}
+                onChange={(e) => saveShowSetlists.mutate(e.target.checked)}
+              />
+              Show setlists
+            </label>
+          </div>
+          {saveShowSetlists.isError && (
+            <p role="alert" className={s.error}>
+              Could not update your setlist preference. Please try again.
             </p>
           )}
         </section>

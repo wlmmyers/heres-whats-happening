@@ -65,3 +65,18 @@ export const codeBlock = style({
 
 // --- Hidden events section ---
 export const resetButton = style([buttonSecondary, { marginTop: '0.75rem' }]);
+
+// --- Setlists section ---
+export const toggleRow = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+  marginTop: '0.75rem',
+});
+export const toggleLabel = style({
+  ...fontSize.sm,
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+  cursor: 'pointer',
+});

@@ -61,7 +61,13 @@ beforeEach(() => {
   ]);
   vi.mocked(useAuth).mockReturnValue({
     status: 'authenticated',
-    user: { id: 'u1', email: 'u@example.com', city_id: 'city-1', confirmed: true },
+    user: {
+      id: 'u1',
+      email: 'u@example.com',
+      city_id: 'city-1',
+      confirmed: true,
+      show_setlists: false,
+    },
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),

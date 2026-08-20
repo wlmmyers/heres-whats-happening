@@ -15,7 +15,7 @@ function mockAuth(status: 'authenticated' | 'anonymous') {
     status,
     user:
       status === 'authenticated'
-        ? { id: 'u1', email: 'a@x.com', city_id: 'city-1', confirmed: true }
+        ? { id: 'u1', email: 'a@x.com', city_id: 'city-1', confirmed: true, show_setlists: false }
         : null,
     login: vi.fn(),
     signup: vi.fn(),

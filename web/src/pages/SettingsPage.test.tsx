@@ -26,6 +26,9 @@ vi.mock('../api/notInterested', () => ({
   markNotInterested: vi.fn(),
   resetNotInterested: vi.fn(),
 }));
+vi.mock('../api/showSetlists', () => ({
+  updateShowSetlists: vi.fn(),
+}));
 vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
 
 import * as icalApi from '../api/ical';
@@ -33,6 +36,7 @@ import * as spotifyApi from '../api/spotify';
 import * as authApi from '../api/auth';
 import * as matchApi from '../api/match';
 import * as niApi from '../api/notInterested';
+import * as showSetlistsApi from '../api/showSetlists';
 import { useAuth } from '../auth/useAuth';
 
 function renderPage() {
@@ -52,7 +56,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(useAuth).mockReturnValue({
     status: 'authenticated',
-    user: { id: 'u1', email: 'a@x', city_id: 'city-1', confirmed: true },
+    user: { id: 'u1', email: 'a@x', city_id: 'city-1', confirmed: true, show_setlists: false },
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),
@@ -65,6 +69,7 @@ beforeEach(() => {
     id: 'u1',
     email: 'a@x',
     score_threshold: 0.3,
+    show_setlists: false,
   });
 });
 
@@ -151,5 +156,53 @@ describe('SettingsPage', () => {
     // Confirm dialog appears; confirming calls the API with the fraction.
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(matchApi.updateMatchThreshold).toHaveBeenCalledWith(0.45));
+  });
+
+  describe('setlist visibility', () => {
+    it('renders the toggle unchecked when the user has not opted in', async () => {
+      renderPage();
+      const toggle = await screen.findByRole('checkbox', { name: /show setlists/i });
+      expect(toggle).not.toBeChecked();
+    });
+
+    it('renders the toggle checked when the user has opted in', async () => {
+      (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'u1',
+        email: 'a@x',
+        score_threshold: 0.3,
+        show_setlists: true,
+      });
+      renderPage();
+      const toggle = await screen.findByRole('checkbox', { name: /show setlists/i });
+      // The box renders unchecked until /me resolves, so wait for the loaded state.
+      await waitFor(() => expect(toggle).toBeChecked());
+    });
+
+    it('opts in when the toggle is checked', async () => {
+      (showSetlistsApi.updateShowSetlists as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+      renderPage();
+      const toggle = await screen.findByRole('checkbox', { name: /show setlists/i });
+      await userEvent.click(toggle);
+      await waitFor(() => {
+        expect(showSetlistsApi.updateShowSetlists).toHaveBeenCalledWith(true);
+      });
+    });
+
+    it('opts back out when an enabled toggle is unchecked', async () => {
+      (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'u1',
+        email: 'a@x',
+        score_threshold: 0.3,
+        show_setlists: true,
+      });
+      (showSetlistsApi.updateShowSetlists as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+      renderPage();
+      const toggle = await screen.findByRole('checkbox', { name: /show setlists/i });
+      await waitFor(() => expect(toggle).toBeChecked());
+      await userEvent.click(toggle);
+      await waitFor(() => {
+        expect(showSetlistsApi.updateShowSetlists).toHaveBeenCalledWith(false);
+      });
+    });
   });
 });
