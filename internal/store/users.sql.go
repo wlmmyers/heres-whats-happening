@@ -99,7 +99,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, city_id, confirmed, created_at, score_threshold
+SELECT id, email, city_id, confirmed, created_at, score_threshold, show_setlists
 FROM users
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -111,6 +111,7 @@ type GetUserByIDRow struct {
 	Confirmed      bool               `json:"confirmed"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	ScoreThreshold *float64           `json:"score_threshold"`
+	ShowSetlists   bool               `json:"show_setlists"`
 }
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
@@ -123,6 +124,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDR
 		&i.Confirmed,
 		&i.CreatedAt,
 		&i.ScoreThreshold,
+		&i.ShowSetlists,
 	)
 	return i, err
 }
@@ -263,5 +265,21 @@ type UpdateUserScoreThresholdParams struct {
 
 func (q *Queries) UpdateUserScoreThreshold(ctx context.Context, arg UpdateUserScoreThresholdParams) error {
 	_, err := q.db.Exec(ctx, updateUserScoreThreshold, arg.ID, arg.ScoreThreshold)
+	return err
+}
+
+const updateUserShowSetlists = `-- name: UpdateUserShowSetlists :exec
+UPDATE users
+SET show_setlists = $2
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type UpdateUserShowSetlistsParams struct {
+	ID           pgtype.UUID `json:"id"`
+	ShowSetlists bool        `json:"show_setlists"`
+}
+
+func (q *Queries) UpdateUserShowSetlists(ctx context.Context, arg UpdateUserShowSetlistsParams) error {
+	_, err := q.db.Exec(ctx, updateUserShowSetlists, arg.ID, arg.ShowSetlists)
 	return err
 }

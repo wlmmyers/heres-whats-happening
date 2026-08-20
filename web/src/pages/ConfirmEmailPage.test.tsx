@@ -19,7 +19,13 @@ import ConfirmEmailPage from './ConfirmEmailPage';
 function mockAuth(overrides: Partial<ReturnType<typeof useAuth>> = {}) {
   vi.mocked(useAuth).mockReturnValue({
     status: 'authenticated',
-    user: { id: 'u1', email: 'someone@example.com', city_id: 'city-1', confirmed: false },
+    user: {
+      id: 'u1',
+      email: 'someone@example.com',
+      city_id: 'city-1',
+      confirmed: false,
+      show_setlists: false,
+    },
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),

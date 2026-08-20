@@ -6,6 +6,7 @@ export interface User {
   city_id: string;
   confirmed: boolean;
   score_threshold?: number;
+  show_setlists: boolean;
 }
 
 interface AuthSuccess {

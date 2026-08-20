@@ -36,6 +36,9 @@ type userOut struct {
 	CityID         string   `json:"city_id"`
 	Confirmed      bool     `json:"confirmed"`
 	ScoreThreshold *float64 `json:"score_threshold,omitempty"`
+	// No omitempty: `false` is the meaningful default, and omitting the key
+	// would leave the client unable to tell "opted out" from "not sent".
+	ShowSetlists bool `json:"show_setlists"`
 }
 
 // Signup creates a new user, sets the refresh cookie, and returns an access token.

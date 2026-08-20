@@ -44,6 +44,7 @@ func GetMe(q *store.Queries) http.HandlerFunc {
 			CityID:         row.CityID.String(),
 			Confirmed:      row.Confirmed,
 			ScoreThreshold: threshold,
+			ShowSetlists:   row.ShowSetlists,
 		})
 	}
 }

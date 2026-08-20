@@ -1,5 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
 import { useEvent } from '../hooks/useEvent';
+import { useMe } from '../hooks/useMe';
 import * as s from './EventDetailPage.css';
 import * as c from '../styles/common.css';
 import { Skeleton } from '../components/Skeleton';
@@ -15,6 +16,12 @@ const EventContent = ({ event }: { event: CalendarEvent }) => {
   const hasSetlist = !!(
     event.artist?.tour?.setlist_url || (event.artist?.tour?.songs?.length ?? 0) > 0
   );
+  const { data: me } = useMe();
+  // Setlists are spoilers, so they stay hidden unless the user has opted in.
+  // An unresolved /me counts as opted out, so the songs never flash into view
+  // in the window before the preference loads.
+  const songs = event.artist?.tour?.songs ?? [];
+  const hideSetlist = !me?.show_setlists && songs.length > 0;
   return (
     <>
       <div className={c.cardTranslucent}>
@@ -62,13 +69,23 @@ const EventContent = ({ event }: { event: CalendarEvent }) => {
                   {event.artist.tour.observed.city && ` in ${event.artist.tour.observed.city}`}
                 </div>
               )}
-              <div className={s.setlistInset}>
-                {!!event.artist.tour.songs?.length && (
-                  <ol className={s.setlistSongList}>
-                    {event.artist.tour.songs.map((song) => (
-                      <li key={song.name}>{song.name}</li>
-                    ))}
-                  </ol>
+              <div className={hideSetlist ? s.setlistGuard : undefined}>
+                <div className={`${s.setlistInset} ${hideSetlist ? s.setlistHidden : ''}`.trim()}>
+                  {songs.length > 0 && (
+                    <ol className={s.setlistSongList} aria-hidden={hideSetlist || undefined}>
+                      {songs.map((song) => (
+                        <li key={song.name}>{song.name}</li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+                {hideSetlist && (
+                  <div className={s.setlistOverlay}>
+                    <span className={s.setlistOverlayText}>Setlist hidden to avoid spoilers</span>
+                    <Link to="/settings" className={s.setlistOverlayLink}>
+                      Show setlists in Settings
+                    </Link>
+                  </div>
                 )}
               </div>
               {event.artist.tour.setlist_url && (

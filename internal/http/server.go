@@ -183,6 +183,7 @@ func (s *Server) Router() http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RateLimitByUser(authedWriteLimiter, middleware.EndpointAuthedWrite))
 			r.Patch("/me/match-threshold", handlers.UpdateMatchThreshold(s.Queries))
+			r.Patch("/me/show-setlists", handlers.UpdateShowSetlists(s.Queries))
 			r.Post("/me/not-interested", handlers.AddNotInterested(s.Queries))
 			r.Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))
 			r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
