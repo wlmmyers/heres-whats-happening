@@ -8,6 +8,7 @@ import (
 
 func TestNormalizeSegment_TicketmasterVocabulary(t *testing.T) {
 	require.Equal(t, "music", NormalizeSegment("Music"))
+	require.Equal(t, "film", NormalizeSegment("Film"))
 	require.Equal(t, "sports", NormalizeSegment("Sports"))
 	require.Equal(t, "arts-theatre", NormalizeSegment("Arts & Theatre"))
 	require.Equal(t, "miscellaneous", NormalizeSegment("Miscellaneous"))
@@ -36,7 +37,7 @@ func TestNormalizeSegment_EmptyStaysEmpty(t *testing.T) {
 }
 
 func TestValidSegment_ClosedSetForAPIFilter(t *testing.T) {
-	for _, s := range []string{"music", "sports", "arts-theatre", "miscellaneous", "undefined"} {
+	for _, s := range []string{"music", "sports", "arts-theatre", "miscellaneous", "undefined", "film"} {
 		require.True(t, ValidSegment(s), "%q must be an accepted filter value", s)
 	}
 }

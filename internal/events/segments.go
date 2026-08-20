@@ -19,6 +19,7 @@ const (
 	SegmentArtsTheatre   = "arts-theatre"
 	SegmentMiscellaneous = "miscellaneous"
 	SegmentUndefined     = "undefined"
+	SegmentFilm          = "film"
 )
 
 // filterableSegments is the closed set the API accepts as a ?segment= value.
@@ -28,6 +29,7 @@ var filterableSegments = map[string]struct{}{
 	SegmentArtsTheatre:   {},
 	SegmentMiscellaneous: {},
 	SegmentUndefined:     {},
+	SegmentFilm:          {},
 }
 
 // NormalizeSegment slugifies a source's segment name ("Arts & Theatre" ->

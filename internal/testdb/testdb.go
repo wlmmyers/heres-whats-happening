@@ -31,6 +31,12 @@ var defaultTestComponents = dsn.Components{
 // DSN assembles the test DSN from TEST_DB_* env vars, falling back to
 // defaultTestComponents for any field left unset.
 func DSN() string {
+	return components().DSN()
+}
+
+// components resolves TEST_DB_* over the defaults. Split out of DSN so the
+// safety guard can inspect the database name without re-parsing the DSN.
+func components() dsn.Components {
 	c := defaultTestComponents
 	if v := os.Getenv("TEST_DB_USER"); v != "" {
 		c.User = v
@@ -50,7 +56,7 @@ func DSN() string {
 	if v := os.Getenv("TEST_DB_SSLMODE"); v != "" {
 		c.SSLMode = v
 	}
-	return c.DSN()
+	return c
 }
 
 // testDBLockKey is an arbitrary fixed key identifying the whole test database.
@@ -88,6 +94,10 @@ var (
 func MustOpen(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	once.Do(func() {
+		if err := checkTestDatabaseName(components().Name); err != nil {
+			openErr = err
+			return
+		}
 		dsn := DSN()
 		if err := acquireDBLock(dsn); err != nil {
 			openErr = err
@@ -126,6 +136,12 @@ func acquireDBLock(dsn string) error {
 	defer cancel()
 	conn, err := pgx.Connect(ctx, dsn)
 	if err != nil {
+		return err
+	}
+	// Before the lock and before migrations: this is the first contact with the
+	// server, and the last point at which nothing has been written.
+	if err := assertSafeTarget(ctx, conn); err != nil {
+		conn.Close(context.Background())
 		return err
 	}
 	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", testDBLockKey); err != nil {

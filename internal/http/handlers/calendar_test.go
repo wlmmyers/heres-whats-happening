@@ -1387,7 +1387,7 @@ func TestGetMyCalendar_SegmentFilterAcceptsEveryValidSlug(t *testing.T) {
 	ctx := context.Background()
 	userID, _ := seedCalendarFixture(t, q, ctx)
 
-	for _, seg := range []string{"music", "sports", "arts-theatre", "miscellaneous", "undefined"} {
+	for _, seg := range []string{"music", "sports", "arts-theatre", "miscellaneous", "undefined", "film"} {
 		rec := callMyCalendar(t, q, signer, userID, "segment="+seg)
 		require.Equal(t, http.StatusOK, rec.Code, "segment=%s must be accepted", seg)
 	}

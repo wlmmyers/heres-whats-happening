@@ -111,7 +111,7 @@ func parseSegment(w http.ResponseWriter, r *http.Request) (segment *string, ok b
 	}
 	if !events.ValidSegment(raw) {
 		httperr.Write(w, http.StatusBadRequest, "bad_segment",
-			"segment must be one of: music, sports, arts-theatre, miscellaneous, undefined")
+			"segment must be one of: music, sports, arts-theatre, film, miscellaneous, undefined")
 		return nil, false
 	}
 	return &raw, true
