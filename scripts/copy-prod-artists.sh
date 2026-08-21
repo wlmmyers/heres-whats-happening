@@ -11,8 +11,34 @@ cd "$(dirname "$0")"
 
 AWS_PROFILE=${AWS_PROFILE:-servant}
 PROD_REGION=${PROD_REGION:-us-east-1}
-PROD_DB_HOST=${PROD_DB_HOST:-hwh-db.cit46a80uftd.us-east-1.rds.amazonaws.com}
-PROD_SECRET_ARN=${PROD_SECRET_ARN:-arn:aws:secretsmanager:us-east-1:435432261718:secret:rds!db-3de9d050-a50c-413c-86b3-2094c93564ca-0NRjfx}
+
+# PROD_DB_HOST and PROD_SECRET_ARN name prod infrastructure, so they stay out of
+# this file and live in .env (gitignored) — the same place the Makefile's bastion
+# targets read them from. Read here explicitly because this script runs directly
+# rather than through make, so it never inherits make's `include .env`.
+#
+# Only these two keys are pulled in; .env is NOT sourced wholesale. It also
+# carries AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY=local for ElasticMQ, and
+# exporting those static dummies would take precedence over AWS_PROFILE and fail
+# every aws call below. Anything already exported by the caller wins.
+if [ -f ../.env ]; then
+    # Spelled out as nested ifs, not `[ ... ] && ...` one-liners: under `set -e` a
+    # trailing AND-list whose test fails takes the whole script down with it, and
+    # a failing test is the normal path here.
+    for key in PROD_DB_HOST PROD_SECRET_ARN; do
+        if [ -z "${!key:-}" ]; then
+            val=$(sed -n "s/^[[:space:]]*${key}=//p" ../.env | tail -1)
+            if [ -n "$val" ]; then
+                export "$key=$val"
+            fi
+        fi
+    done
+fi
+: "${PROD_DB_HOST:?not set — add it to .env (see the bastion section of the Makefile)}"
+: "${PROD_SECRET_ARN:?not set — add it to .env (see the bastion section of the Makefile)}"
+
+# Unlike the two above, the bastion's Name tag is not sensitive and is already
+# the default in the Makefile; keep the two in sync.
 BASTION_NAME=${BASTION_NAME:-hwh-bastion}
 TUNNEL_PORT=${TUNNEL_PORT:-5433}
 export AWS_PROFILE
