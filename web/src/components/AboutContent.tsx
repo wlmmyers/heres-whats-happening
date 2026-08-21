@@ -41,12 +41,12 @@ const COMING_SOON: Upcoming[] = [
       'Design an at-a-glance layout and render it to an always-on screen on your desk or widget on your desktop.',
   },
   {
-    name: 'More cities',
-    description: 'Planned support for New York, San Francisco, and more.',
+    name: 'Sports, theater, and comedy events',
+    description: 'Event coverage for more than just music, including sports, theater, and comedy.',
   },
   {
-    name: 'Better live sports coverage',
-    description: 'Event coverage for more sports and leagues.',
+    name: 'More cities',
+    description: 'Planned support for New York, San Francisco, and more.',
   },
 ];
 

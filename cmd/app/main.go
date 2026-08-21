@@ -106,6 +106,16 @@ func openPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	return db.NewPoolWithPassword(ctx, cfg.DatabaseURL, provider)
 }
 
+// startStatsSampler starts pool sampling unless DB_STATS_LOGGING turns it off,
+// as local dev does: the EMF lines have no CloudWatch to reach there and only
+// clutter the terminal.
+func startStatsSampler(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, service string) {
+	if !cfg.DBStatsLogging {
+		return
+	}
+	db.StartStatsSampler(ctx, pool, service)
+}
+
 func serve() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -120,7 +130,7 @@ func serve() error {
 	}
 	defer pool.Close()
 
-	db.StartStatsSampler(ctx, pool, "api")
+	startStatsSampler(ctx, cfg, pool, "api")
 
 	q := store.New(pool)
 	city, err := q.GetDefaultCity(ctx)
@@ -291,7 +301,7 @@ func scrapeSpotify(args []string) error {
 		return fmt.Errorf("db: %w", err)
 	}
 	defer pool.Close()
-	db.StartStatsSampler(ctx, pool, "scrape-spotify")
+	startStatsSampler(ctx, cfg, pool, "scrape-spotify")
 	q := store.New(pool)
 
 	qClient, err := queue.NewClient(ctx, cfg.AWSRegion, cfg.SQSEndpoint)
@@ -362,7 +372,7 @@ func runMatch() error {
 		return fmt.Errorf("db: %w", err)
 	}
 	defer pool.Close()
-	db.StartStatsSampler(ctx, pool, "match")
+	startStatsSampler(ctx, cfg, pool, "match")
 	q := store.New(pool)
 
 	teiClient := tei.New(cfg.TEIEndpoint)

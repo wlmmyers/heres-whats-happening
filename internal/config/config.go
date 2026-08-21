@@ -62,6 +62,13 @@ type Config struct {
 	// Poster proxy additions
 	PosterFunctionURL string
 	PostersBucket     string
+
+	// DBStatsLogging controls the connection-pool stats sampler. Defaults to
+	// true: the EMF lines it writes are what the CloudWatch pool alarms read,
+	// so a deployed task that never sets DB_STATS_LOGGING must keep emitting.
+	// Local dev sets it false — nothing ingests an EMF line there, so the
+	// sampler is only terminal noise.
+	DBStatsLogging bool
 }
 
 func Load() (*Config, error) {
@@ -128,6 +135,16 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid TRUST_PROXY=%q: %w", v, err)
 		}
 		trustProxy = b
+	}
+
+	// Defaults to true — see the field comment: unset must mean "keep emitting".
+	dbStatsLogging := true
+	if v := os.Getenv("DB_STATS_LOGGING"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid DB_STATS_LOGGING=%q: %w", v, err)
+		}
+		dbStatsLogging = b
 	}
 
 	emailSender := os.Getenv("EMAIL_SENDER")
@@ -227,6 +244,8 @@ func Load() (*Config, error) {
 
 		PosterFunctionURL: posterFunctionURL,
 		PostersBucket:     postersBucket,
+
+		DBStatsLogging: dbStatsLogging,
 	}
 	return cfg, nil
 }

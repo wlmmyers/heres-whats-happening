@@ -197,6 +197,25 @@ func TestLoad_TrustProxy(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestLoad_DBStatsLogging(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "test-key-test-key-test-key-32xx")
+
+	t.Setenv("DB_STATS_LOGGING", "")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.DBStatsLogging, "must default to true so deployed tasks keep feeding the pool alarms")
+
+	t.Setenv("DB_STATS_LOGGING", "false")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.False(t, cfg.DBStatsLogging)
+
+	t.Setenv("DB_STATS_LOGGING", "banana")
+	_, err = Load()
+	require.Error(t, err)
+}
+
 // setRequiredDB sets the DB_* component vars plus the mail and poster vars
 // every Load() call now needs. Email confirmation is unconditional and the
 // poster proxy has no disabled mode, so a Load() without either group is an
