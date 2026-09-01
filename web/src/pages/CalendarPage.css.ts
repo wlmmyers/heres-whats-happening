@@ -77,7 +77,7 @@ export const banner = style([
   {
     display: 'flex',
     padding: '1rem',
-    marginTop: '1rem',
+    margin: '1rem 0',
     color: color.gray600,
     backgroundColor: color.yellow100,
     ...fontSize.sm,
@@ -121,6 +121,7 @@ export const sidebarColumn = style({
   position: 'sticky',
   top: '6rem',
   flex: '0 0 17rem',
+  marginTop: '1.25rem',
   '@media': {
     [phone]: {
       display: 'none',
