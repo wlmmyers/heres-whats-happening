@@ -177,6 +177,11 @@ func (s *Server) Router() http.Handler {
 		// authed net; no dedicated limiter.
 		r.Get("/calendar/{cityId}", handlers.GetCityCalendar(s.Queries))
 		r.Get("/events/{id}", handlers.GetEventByIDForUser(s.Queries))
+		r.Get("/me/event-going", handlers.ListGoing(s.Queries))
+		// The same going list as full event rows, for rendering it. The bare-id
+		// route above stays: EventCard only needs ids to colour its toggle.
+		r.Get("/me/event-going/events", handlers.ListGoingEvents(s.Queries))
+		r.Get("/me/not-interested", handlers.ListNotInterested(s.Queries))
 
 		// Writes. A nested group states the limiter once; chi composes it with
 		// the outer net, so these routes pass through both.
@@ -186,6 +191,8 @@ func (s *Server) Router() http.Handler {
 			r.Patch("/me/show-setlists", handlers.UpdateShowSetlists(s.Queries))
 			r.Post("/me/not-interested", handlers.AddNotInterested(s.Queries))
 			r.Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))
+			r.Post("/me/event-going", handlers.AddGoing(s.Queries))
+			r.Delete("/me/event-going", handlers.ResetGoing(s.Queries))
 			r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
 			r.Delete("/me/ical-token", handlers.DeleteIcalToken(s.Queries))
 		})

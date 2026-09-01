@@ -38,6 +38,7 @@ export const logo = style({
   width: '280px',
   height: '45px',
   transform: 'translateY(2px)',
+  cursor: 'pointer',
   '@media': {
     [phone]: {
       backgroundImage: `url('/titleGraphicMobile.png')`,
@@ -56,6 +57,10 @@ export const main = style({
   marginTop: '4rem',
   paddingInline: '1rem',
   paddingBlock: '1.5rem',
+});
+
+export const mainWide = style({
+  maxWidth: '80rem',
 });
 
 export const mainLoggedOut = style([

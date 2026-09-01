@@ -11,9 +11,14 @@ function renderLayout() {
   return render(
     <MemoryRouter initialEntries={['/calendar/seattle']}>
       <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route path="calendar/seattle" element={<div>cal</div>} />
-        </Route>
+        <Route
+          path="/calendar/seattle"
+          element={
+            <Layout>
+              <div>cal</div>
+            </Layout>
+          }
+        />
       </Routes>
     </MemoryRouter>,
   );

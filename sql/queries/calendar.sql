@@ -22,10 +22,6 @@ WHERE m.user_id = $1
   -- one until it ends. Filtering on starts_at alone would drop an event that
   -- has begun but is not over — and drop date-only events from 00:00 onward.
   AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
-  AND NOT EXISTS (
-      SELECT 1 FROM user_event_not_interested ni
-      WHERE ni.user_id = m.user_id AND ni.event_id = e.id
-  )
 ORDER BY e.starts_at ASC;
 
 -- name: GetMatchedEventForUser :one
@@ -76,10 +72,6 @@ WHERE m.user_id = sqlc.arg(user_id)
   -- one until it ends. With the from/to window gone this is also the feed's
   -- lower bound — there is no upper bound.
   AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
-  AND NOT EXISTS (
-      SELECT 1 FROM user_event_not_interested ni
-      WHERE ni.user_id = m.user_id AND ni.event_id = e.id
-  )
   -- A NULL cursor means "first page": the guard short-circuits and every row
   -- qualifies. Otherwise this is a strict row-comparison keyset seek.
   -- cursor_starts_at and cursor_event_id are all-or-nothing: passing one

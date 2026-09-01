@@ -74,3 +74,25 @@ func ResetNotInterested(q *store.Queries) http.HandlerFunc {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+
+func ListNotInterested(q *store.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid, ok := middleware.UserIDFromContext(r.Context())
+		if !ok {
+			httperr.Write(w, http.StatusUnauthorized, "no_user", "user not in context")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		rows, err := q.ListNotInterested(ctx, pgtype.UUID{Bytes: uid, Valid: true})
+		if err != nil {
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error", "could not list not-interested", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(rows); err != nil {
+			httperr.WriteErr(w, r, http.StatusInternalServerError, "json_error", "could not encode response", err)
+			return
+		}
+	}
+}

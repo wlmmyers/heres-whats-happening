@@ -3,6 +3,7 @@ import { type CalendarResponse, type PageParam } from '../api/calendar';
 import { markNotInterested } from '../api/notInterested';
 import { useAuth } from '../auth/useAuth';
 import { calendarQueryKey } from './useCalendar';
+import { listNotInterestedQueryKey } from './useListNotInterested';
 
 // The calendar is an infinite query, so its cache entry is pages of
 // CalendarResponse rather than a flat event list. The dismissed event has to be
@@ -37,6 +38,7 @@ export function useMarkNotInterested() {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['calendar'] });
+      qc.invalidateQueries({ queryKey: listNotInterestedQueryKey(user?.id) });
     },
   });
 }

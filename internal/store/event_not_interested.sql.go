@@ -36,3 +36,34 @@ func (q *Queries) ClearNotInterested(ctx context.Context, userID pgtype.UUID) er
 	_, err := q.db.Exec(ctx, clearNotInterested, userID)
 	return err
 }
+
+const listNotInterested = `-- name: ListNotInterested :many
+SELECT ni.event_id
+FROM user_event_not_interested ni
+JOIN events e ON e.id = ni.event_id
+WHERE ni.user_id = $1
+  -- Only events that have not happened yet. Uses the same "still showable"
+  -- predicate as the calendar queries: a date-only event runs until its local
+  -- day is out, a timed one until it ends.
+  AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
+`
+
+func (q *Queries) ListNotInterested(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listNotInterested, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var event_id pgtype.UUID
+		if err := rows.Scan(&event_id); err != nil {
+			return nil, err
+		}
+		items = append(items, event_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

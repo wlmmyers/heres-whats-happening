@@ -28,10 +28,22 @@ function renderLayoutAt(entry: string) {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<div>home</div>} />
-          <Route path="login" element={<div>login</div>} />
-        </Route>
+        <Route
+          path="/"
+          element={
+            <Layout>
+              <div>home</div>
+            </Layout>
+          }
+        />
+        <Route
+          path="/login"
+          element={
+            <Layout>
+              <div>login</div>
+            </Layout>
+          }
+        />
       </Routes>
     </MemoryRouter>,
   );

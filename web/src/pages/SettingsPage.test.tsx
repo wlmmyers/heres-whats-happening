@@ -126,13 +126,11 @@ describe('SettingsPage', () => {
     expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
   });
 
-  it('resets the not-interested list after confirming', async () => {
+  it('resets the hidden events list after confirming', async () => {
     (niApi.resetNotInterested as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
     renderPage();
 
-    await userEvent.click(
-      await screen.findByRole('button', { name: /reset not-interested list/i }),
-    );
+    await userEvent.click(await screen.findByRole('button', { name: /reset hidden events/i }));
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => expect(niApi.resetNotInterested).toHaveBeenCalled());

@@ -1,0 +1,123 @@
+import { style } from '@vanilla-extract/css';
+import { cardTranslucent } from '../styles/common.css';
+import { color, fontSize, fontWeight, textStroke, transition } from '../styles/theme';
+import { phone } from '../styles/breakpoints.css';
+
+export const goingWentList = style({
+  alignSelf: 'flex-start',
+  '@media': {
+    [phone]: {
+      position: 'static',
+      maxHeight: 'none',
+    },
+  },
+});
+
+export const innerContainer = style([
+  cardTranslucent,
+  {
+    marginTop: '1rem',
+    maxHeight: 'calc(100vh - 12rem)',
+    overflowY: 'auto',
+  },
+]);
+
+export const heading = style({
+  display: 'flex',
+  alignItems: 'baseline',
+  justifyContent: 'space-between',
+  gap: '0.5rem',
+  marginBottom: '0.75rem',
+  ...textStroke('6px'),
+});
+
+export const count = style({
+  ...fontSize.xs,
+  color: color.gray500,
+  ...textStroke('4px'),
+});
+
+export const item = style({
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: '0.5rem',
+  padding: '0.625rem',
+  cursor: 'pointer',
+  ...transition,
+  selectors: {
+    // Separators between rows only, so the list does not open on a rule that
+    // would double up with the heading's spacing.
+    '& + &': { borderTop: `1px solid ${color.gray200}` },
+    '&:hover': { backgroundColor: color.gray50 },
+  },
+});
+
+export const itemMain = style({
+  // Without this a long title stretches the flex item and pushes the remove
+  // button out of the panel instead of wrapping.
+  minWidth: 0,
+  flex: 1,
+});
+
+export const itemDate = style({
+  ...fontSize.xs,
+  color: color.gray500,
+  fontWeight: fontWeight.medium,
+});
+
+export const itemTitle = style({
+  ...fontSize.sm,
+  fontWeight: fontWeight.semibold,
+  color: color.gray900,
+  marginTop: '0.125rem',
+});
+
+export const itemVenue = style({
+  ...fontSize.xs,
+  color: color.gray600,
+  marginTop: '0.125rem',
+});
+
+export const removeButton = style({
+  flexShrink: 0,
+  ...fontSize.xs,
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  color: color.gray500,
+  cursor: 'pointer',
+  // Hidden until the row is hovered or the button is keyboard-focused, so the
+  // list reads as shows rather than as a column of controls.
+  opacity: 0,
+  ...transition,
+  selectors: {
+    [`${item}:hover &`]: { opacity: 1 },
+    '&:focus-visible': { opacity: 1 },
+    '&:hover': { color: color.red600 },
+  },
+});
+
+export const emptyText = style({
+  ...fontSize.sm,
+  padding: '0.625rem',
+  color: color.gray600,
+});
+
+export const helperText = style({
+  display: 'block',
+  marginTop: '0.5rem',
+  color: color.gray500,
+  ...fontSize.xs,
+});
+
+export const errorText = style({
+  ...fontSize.sm,
+  padding: '0.625rem',
+  color: color.red600,
+});
+
+export const skeletonRow = style({
+  height: '3.25rem',
+  backgroundColor: color.gray100,
+  marginBottom: '0.5rem',
+});

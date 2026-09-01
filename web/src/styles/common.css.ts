@@ -1,5 +1,14 @@
 import { style } from '@vanilla-extract/css';
-import { color, radius, shadow, fontSize, fontWeight, border, textStroke } from './theme';
+import {
+  color,
+  radius,
+  shadow,
+  fontSize,
+  fontWeight,
+  border,
+  textStroke,
+  transition,
+} from './theme';
 import { phone } from './breakpoints.css';
 
 export const card = style({
@@ -146,4 +155,32 @@ export const linkButton = style({
   selectors: {
     '&:hover': { color: color.gray700 },
   },
+});
+
+export const actionButton = style({
+  fontWeight: fontWeight.medium,
+  border: '1px solid',
+  borderColor: color.gray200,
+  borderRadius: radius.sm,
+  paddingInline: '0.5rem',
+  paddingBlock: '0.25rem',
+  backgroundColor: color.white,
+  ...transition,
+  ...fontSize.xs,
+  color: color.gray500,
+  selectors: {
+    '&:hover:not(:disabled)': { color: color.red600, borderColor: color.red600 },
+    '&:disabled': { cursor: 'not-allowed', opacity: 0.5 },
+  },
+});
+
+export const goingButton = style({
+  selectors: {
+    '&:hover:not(:disabled)': { color: color.green600, borderColor: color.green600 },
+  },
+});
+
+export const isGoing = style({
+  color: color.green600,
+  borderColor: color.green600,
 });

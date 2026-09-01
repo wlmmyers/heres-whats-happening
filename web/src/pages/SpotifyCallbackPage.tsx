@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { exchangeSpotifyCode } from '../api/spotify';
 import * as s from './SpotifyCallbackPage.css';
 import * as c from '../styles/common.css';
+import Layout from '../components/Layout';
 
 type Status = 'exchanging' | 'success' | 'error';
 
@@ -49,33 +50,39 @@ export default function SpotifyCallbackPage() {
 
   if (status === 'error') {
     return (
-      <div className={c.pageHeader}>
-        <h1 className={s.title}>Spotify connection failed</h1>
-        <p className={s.message}>{errorMsg}</p>
-        <button
-          type="button"
-          onClick={() => navigate('/settings', { replace: true })}
-          className={s.backButton}
-        >
-          Back to settings
-        </button>
-      </div>
+      <Layout>
+        <div className={c.pageHeader}>
+          <h1 className={s.title}>Spotify connection failed</h1>
+          <p className={s.message}>{errorMsg}</p>
+          <button
+            type="button"
+            onClick={() => navigate('/settings', { replace: true })}
+            className={s.backButton}
+          >
+            Back to settings
+          </button>
+        </div>
+      </Layout>
     );
   }
 
   if (status === 'success') {
     return (
-      <div className={c.pageHeader}>
-        <h1 className={s.title}>Spotify connected ✓</h1>
-        <p className={s.message}>Redirecting you to your calendar…</p>
-      </div>
+      <Layout>
+        <div className={c.pageHeader}>
+          <h1 className={s.title}>Spotify connected ✓</h1>
+          <p className={s.message}>Redirecting you to your calendar…</p>
+        </div>
+      </Layout>
     );
   }
 
   return (
-    <div className={c.pageHeader}>
-      <h1 className={s.title}>Connecting Spotify…</h1>
-      <p className={s.message}>And creating your matches! Hang on a sec.</p>
-    </div>
+    <Layout>
+      <div className={c.pageHeader}>
+        <h1 className={s.title}>Connecting Spotify…</h1>
+        <p className={s.message}>And creating your matches! Hang on a sec.</p>
+      </div>
+    </Layout>
   );
 }

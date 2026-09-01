@@ -8,6 +8,7 @@ import clsx from 'clsx';
 import { LazyList } from './LazyList';
 import SectionTitle from './SectionTitle';
 import { bucketEventsByWeek } from '../utils/weekBuckets';
+import { useListNotInterested } from '../hooks/useListNotInterested';
 
 type Props = {
   gatePending: boolean;
@@ -23,7 +24,8 @@ export const CalendarEventsUser = ({
   onSpotifyConnect,
 }: Props) => {
   const { data, fetchNextPage, hasNextPage, isLoading, isError } = useCalendar();
-  const notInterested = useMarkNotInterested();
+  const notInterestedQ = useListNotInterested();
+  const markNotInterested = useMarkNotInterested();
   const events = data?.pages.map((p) => p.events).flat() || [];
   const loading = gatePending || isLoading;
   const errored = isError;
@@ -64,11 +66,13 @@ export const CalendarEventsUser = ({
           [s.listCondensed]: displayStyle === 'Condensed',
         })}
       >
-        {bucketEventsByWeek(events).map(({ label, events: weekEvents }) => (
+        {bucketEventsByWeek(events, notInterestedQ.data).map(({ label, events: weekEvents }) => (
           <Fragment key={label}>
-            <li className={s.sectionTitleListItem}>
-              <SectionTitle>{label}</SectionTitle>
-            </li>
+            {weekEvents.length > 0 && (
+              <li className={s.sectionTitleListItem}>
+                <SectionTitle>{label}</SectionTitle>
+              </li>
+            )}
             {weekEvents.map((event) => (
               <li
                 key={event.id}
@@ -79,7 +83,7 @@ export const CalendarEventsUser = ({
                 <EventCard
                   event={event}
                   interactive
-                  onNotInterested={(id) => notInterested.mutate(id)}
+                  onNotInterested={(id) => markNotInterested.mutate(id)}
                 />
               </li>
             ))}

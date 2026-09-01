@@ -10,3 +10,7 @@ export async function markNotInterested(eventId: string): Promise<void> {
 export async function resetNotInterested(): Promise<void> {
   await apiFetch<void>('/me/not-interested', { method: 'DELETE' });
 }
+
+export async function listNotInterested(): Promise<string[]> {
+  return apiFetch<string[]>('/me/not-interested', { method: 'GET' });
+}

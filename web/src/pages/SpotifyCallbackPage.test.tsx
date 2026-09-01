@@ -6,8 +6,11 @@ import SpotifyCallbackPage from './SpotifyCallbackPage';
 vi.mock('../api/spotify', () => ({
   exchangeSpotifyCode: vi.fn(),
 }));
+// The page renders Layout itself, and Layout reads the auth context.
+vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
 
 import * as spotifyApi from '../api/spotify';
+import { useAuth } from '../auth/useAuth';
 
 function renderAt(url: string) {
   return render(
@@ -23,6 +26,14 @@ function renderAt(url: string) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(useAuth).mockReturnValue({
+    status: 'authenticated',
+    user: { id: 'u1', email: 'a@x', city_id: 'city-1', confirmed: true, show_setlists: false },
+    login: vi.fn(),
+    signup: vi.fn(),
+    logout: vi.fn(),
+    refreshUser: vi.fn(),
+  });
 });
 
 describe('SpotifyCallbackPage', () => {

@@ -4,6 +4,7 @@ import { useAuth } from '../auth/useAuth';
 import { resendConfirmation } from '../api/auth';
 import * as s from './ConfirmEmailPage.css';
 import * as c from '../styles/common.css';
+import Layout from '../components/Layout';
 
 type ResendState = 'idle' | 'sending' | 'sent' | 'rate-limited' | 'failed';
 
@@ -40,33 +41,35 @@ export default function ConfirmEmailPage() {
   }
 
   return (
-    <div className={s.card}>
-      <h1 className={s.title}>Check your inbox</h1>
-      <p className={s.body}>
-        We sent a confirmation link to <span className={s.address}>{user?.email}</span>. Open it to
-        finish setting up your account. The link expires in 24 hours.
-      </p>
+    <Layout>
+      <div className={s.card}>
+        <h1 className={s.title}>Check your inbox</h1>
+        <p className={s.body}>
+          We sent a confirmation link to <span className={s.address}>{user?.email}</span>. Open it
+          to finish setting up your account. The link expires in 24 hours.
+        </p>
 
-      <div className={s.actions}>
-        <button
-          type="button"
-          onClick={onResend}
-          disabled={resend === 'sending'}
-          className={c.buttonPrimary}
-        >
-          {resend === 'sending' ? 'Sending…' : 'Resend the link'}
-        </button>
+        <div className={s.actions}>
+          <button
+            type="button"
+            onClick={onResend}
+            disabled={resend === 'sending'}
+            className={c.buttonPrimary}
+          >
+            {resend === 'sending' ? 'Sending…' : 'Resend the link'}
+          </button>
 
-        <div className={s.status} role="status">
-          {resend === 'sent' && 'Sent — check your inbox again.'}
-          {resend === 'rate-limited' && 'Too many requests. Try again in an hour.'}
-          {resend === 'failed' && "We couldn't send that. Please try again."}
+          <div className={s.status} role="status">
+            {resend === 'sent' && 'Sent — check your inbox again.'}
+            {resend === 'rate-limited' && 'Too many requests. Try again in an hour.'}
+            {resend === 'failed' && "We couldn't send that. Please try again."}
+          </div>
+
+          <button type="button" onClick={() => void logout()} className={s.linkButton}>
+            Sign out
+          </button>
         </div>
-
-        <button type="button" onClick={() => void logout()} className={s.linkButton}>
-          Sign out
-        </button>
       </div>
-    </div>
+    </Layout>
   );
 }

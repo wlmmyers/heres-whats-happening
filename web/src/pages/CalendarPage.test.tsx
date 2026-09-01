@@ -13,6 +13,16 @@ vi.mock('../api/calendar', () => ({
 vi.mock('../api/notInterested', () => ({
   markNotInterested: vi.fn(),
   resetNotInterested: vi.fn(),
+  listNotInterested: vi.fn(),
+}));
+
+// Every card reads the going list to colour its toggle, and the sidebar reads
+// it again as whole events. Unmocked, both reach for the network.
+vi.mock('../api/eventGoing', () => ({
+  listGoing: vi.fn(),
+  listGoingEvents: vi.fn(),
+  markEventGoing: vi.fn(),
+  resetEventGoing: vi.fn(),
 }));
 
 vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
@@ -28,6 +38,7 @@ vi.mock('../api/manualInterests', () => ({
 
 import * as calApi from '../api/calendar';
 import * as niApi from '../api/notInterested';
+import { listGoing, listGoingEvents } from '../api/eventGoing';
 import { useAuth } from '../auth/useAuth';
 import { getSpotifyStatus } from '../api/spotify';
 import { listManualInterests } from '../api/manualInterests';
@@ -49,6 +60,11 @@ function renderPage(
 beforeEach(() => {
   vi.resetAllMocks();
   localStorage.clear();
+  // resetAllMocks drops the factory's implementations, so the empty going list
+  // is restored here — a queryFn resolving to undefined is a react-query error.
+  vi.mocked(listGoing).mockResolvedValue([]);
+  vi.mocked(listGoingEvents).mockResolvedValue([]);
+  vi.mocked(niApi.listNotInterested).mockResolvedValue([]);
   vi.mocked(getSpotifyStatus).mockResolvedValue({ connected: true });
   vi.mocked(listManualInterests).mockResolvedValue([
     {
@@ -96,33 +112,35 @@ describe('CalendarPage', () => {
     expect(screen.getByText(/Phoebe Bridgers, indie/)).toBeInTheDocument();
   });
 
-  it('persists the selected display style across remounts via localStorage', async () => {
-    (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValue({ events: [] });
-
-    const first = renderPage();
-    // Defaults to Full when nothing has been persisted yet.
-    expect(screen.getByRole('button', { name: 'Full' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Condensed' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Condensed' }));
-    expect(screen.getByRole('button', { name: 'Condensed' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-
-    first.unmount();
-
-    // A fresh mount should remember the choice from localStorage.
-    renderPage();
-    expect(screen.getByRole('button', { name: 'Condensed' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(screen.getByRole('button', { name: 'Full' })).toHaveAttribute('aria-pressed', 'false');
-  });
+  // The Full | Condensed display-style toggle is commented out in
+  // CalendarPage for now, so there are no buttons for this to press.
+  // it('persists the selected display style across remounts via localStorage', async () => {
+  //   (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValue({ events: [] });
+  //
+  //   const first = renderPage();
+  //   // Defaults to Full when nothing has been persisted yet.
+  //   expect(screen.getByRole('button', { name: 'Full' })).toHaveAttribute('aria-pressed', 'true');
+  //   expect(screen.getByRole('button', { name: 'Condensed' })).toHaveAttribute(
+  //     'aria-pressed',
+  //     'false',
+  //   );
+  //
+  //   fireEvent.click(screen.getByRole('button', { name: 'Condensed' }));
+  //   expect(screen.getByRole('button', { name: 'Condensed' })).toHaveAttribute(
+  //     'aria-pressed',
+  //     'true',
+  //   );
+  //
+  //   first.unmount();
+  //
+  //   // A fresh mount should remember the choice from localStorage.
+  //   renderPage();
+  //   expect(screen.getByRole('button', { name: 'Condensed' })).toHaveAttribute(
+  //     'aria-pressed',
+  //     'true',
+  //   );
+  //   expect(screen.getByRole('button', { name: 'Full' })).toHaveAttribute('aria-pressed', 'false');
+  // });
 
   it('shows empty state when there are no matches', async () => {
     (calApi.getCalendar as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ events: [] });
@@ -139,28 +157,32 @@ describe('CalendarPage', () => {
     expect(getCal).toHaveBeenCalledWith(undefined);
   });
 
-  it('removes a card and calls the API when Not interested is clicked', async () => {
-    (calApi.getCalendar as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({
-        events: [
-          {
-            id: 'e1',
-            title: 'PB Live',
-            starts_at: '2026-06-15T20:00:00Z',
-            venue: { name: 'The Bowl' },
-            score: 0.82,
-            matched_because: { performers: [], genres: [] },
-          },
-        ],
-      })
-      // refetch after dismissal returns the server-filtered list
-      .mockResolvedValue({ events: [] });
-    (niApi.markNotInterested as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+  // The calendar endpoint no longer filters dismissals out server-side, so the
+  // card has to stay gone on the strength of the not-interested list alone —
+  // hence a refetch here that keeps returning the event.
+  it('removes a card and calls the API when Hide is clicked', async () => {
+    let hidden: string[] = [];
+    vi.mocked(niApi.listNotInterested).mockImplementation(async () => hidden);
+    vi.mocked(niApi.markNotInterested).mockImplementation(async (id: string) => {
+      hidden = [id];
+    });
+    vi.mocked(calApi.getCalendar).mockResolvedValue({
+      events: [
+        {
+          id: 'e1',
+          title: 'PB Live',
+          starts_at: '2026-06-15T20:00:00Z',
+          venue: { name: 'The Bowl' },
+          score: 0.82,
+          matched_because: { performers: [], genres: [] },
+        },
+      ],
+    });
 
     renderPage();
     await waitFor(() => expect(screen.getByText('PB Live')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: /not interested/i }));
+    fireEvent.click(screen.getByRole('button', { name: /hide/i }));
 
     await waitFor(() => expect(niApi.markNotInterested).toHaveBeenCalledWith('e1'));
     await waitFor(() => expect(screen.queryByText('PB Live')).not.toBeInTheDocument());
@@ -193,7 +215,7 @@ describe('CalendarPage city fallback', () => {
     expect(calApi.getCityCalendar).toHaveBeenCalledWith('city-1', undefined);
     expect(screen.getByText("What's happening in Seattle")).toBeInTheDocument();
     expect(screen.getByText(/Showing all events in Seattle/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Not interested' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hide' })).not.toBeInTheDocument();
     expect(screen.queryByText(/% match/)).not.toBeInTheDocument();
   });
 
