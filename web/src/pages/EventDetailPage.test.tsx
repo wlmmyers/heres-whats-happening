@@ -12,9 +12,18 @@ vi.mock('../api/calendar', () => ({
 }));
 vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
 vi.mock('../api/auth', () => ({ getMe: vi.fn() }));
+// The "I'm going" toggle reads the going list on every render of the page.
+// Unmocked, it reaches for the network.
+vi.mock('../api/eventGoing', () => ({
+  listGoing: vi.fn(),
+  listGoingEvents: vi.fn(),
+  markEventGoing: vi.fn(),
+  resetEventGoing: vi.fn(),
+}));
 
 import * as calApi from '../api/calendar';
 import * as authApi from '../api/auth';
+import { listGoing } from '../api/eventGoing';
 import { useAuth } from '../auth/useAuth';
 
 // Most setlist assertions below describe what an opted-in user sees; the
@@ -44,6 +53,9 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // resetAllMocks drops the factory's implementations, so the empty going list
+  // is restored here -- a queryFn resolving to undefined is a react-query error.
+  vi.mocked(listGoing).mockResolvedValue([]);
   vi.mocked(useAuth).mockReturnValue({
     status: 'authenticated',
     user: { id: 'u1', email: 'a@x', city_id: 'city-1', confirmed: true, show_setlists: false },
@@ -356,7 +368,7 @@ describe('EventDetailPage artist sections', () => {
       mockMe(false);
       renderWithArtist(withSongs);
       await loaded();
-      const link = await screen.findByRole('link', { name: /settings/i });
+      const link = await screen.findByRole('link', { name: /show setlists in settings/i });
       expect(link).toHaveAttribute('href', '/settings');
     });
 
@@ -369,7 +381,7 @@ describe('EventDetailPage artist sections', () => {
         'Kyoto',
       ]);
       expect(container.querySelector(`.${s.setlistHidden}`)).toBeNull();
-      expect(screen.queryByRole('link', { name: /settings/i })).toBeNull();
+      expect(screen.queryByRole('link', { name: /show setlists in settings/i })).toBeNull();
     });
 
     // Logged-out visitors never reach this page at all (useEvent stays idle
@@ -395,7 +407,7 @@ describe('EventDetailPage artist sections', () => {
       } as ArtistFixture);
       await loaded();
       expect(screen.getByRole('link', { name: /view on setlist\.fm/i })).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: /settings/i })).toBeNull();
+      expect(screen.queryByRole('link', { name: /show setlists in settings/i })).toBeNull();
     });
   });
 });

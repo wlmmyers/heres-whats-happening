@@ -9,8 +9,32 @@ import { formatEventDate } from '../utils/eventDate';
 import ArtistImage from '../components/ArtistImage';
 import ExternalLink from '../components/ExternalLink';
 import CollapsableSection from '../components/CollapsableSection';
+import Layout from '../components/Layout';
+import { useListGoing } from '../hooks/useListGoing';
+import { useState } from 'react';
+import { useMarkGoing } from '../hooks/useMarkGoing';
+import { useMarkNotGoing } from '../hooks/useMarkNotGoing';
+import clsx from 'clsx';
 
 const EventContent = ({ event }: { event: CalendarEvent }) => {
+  const isGoingEventList = useListGoing();
+  const [isGoing, setIsGoing] = useState(false);
+  if (isGoingEventList.isSuccess) {
+    const dbIsGoing = isGoingEventList.data?.includes(event.id);
+    if (isGoing !== dbIsGoing) {
+      setIsGoing(dbIsGoing);
+    }
+  }
+  const { mutate: markEventGoing } = useMarkGoing();
+  const { mutate: markNotGoing } = useMarkNotGoing();
+  const handleGoingClick = () => {
+    if (!isGoing) {
+      markEventGoing(event.id);
+    } else {
+      markNotGoing(event.id);
+    }
+    setIsGoing(!isGoing);
+  };
   const dateLabel = formatEventDate(event, 'long');
   const matchedBits = [...event.matched_because.performers, ...event.matched_because.genres];
   const hasSetlist = !!(
@@ -46,6 +70,18 @@ const EventContent = ({ event }: { event: CalendarEvent }) => {
       </div>
       {event.url && (
         <div className={s.viewEventSection}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleGoingClick();
+            }}
+            className={clsx(c.actionButton, c.goingButton, s.goingButton, {
+              [c.isGoing]: isGoing,
+            })}
+          >
+            {isGoing ? 'Going' : "I'm going!"}
+          </button>
           <a href={event.url} target="_blank" rel="noreferrer" className={s.viewEventLink}>
             Buy tickets
           </a>
@@ -111,21 +147,23 @@ export default function EventDetailPage() {
   const { data, isError } = useEvent(id);
 
   return (
-    <article>
-      <Link to="/calendar/seattle" className={s.backLink}>
-        {`< Calendar`}
-      </Link>
-      {data ? (
-        <EventContent event={data} />
-      ) : isError ? (
-        <div>Event Not Found</div>
-      ) : (
-        <div className={c.cardTranslucent}>
-          <div className={s.detail}>
-            <Skeleton />
+    <Layout>
+      <article>
+        <Link to="/calendar/seattle" className={s.backLink}>
+          {`< Calendar`}
+        </Link>
+        {data ? (
+          <EventContent event={data} />
+        ) : isError ? (
+          <div>Event Not Found</div>
+        ) : (
+          <div className={c.cardTranslucent}>
+            <div className={s.detail}>
+              <Skeleton />
+            </div>
           </div>
-        </div>
-      )}
-    </article>
+        )}
+      </article>
+    </Layout>
   );
 }

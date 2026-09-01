@@ -7,15 +7,24 @@ import * as st from './SectionTitle.css';
 import type { CalendarEvent } from '../api/calendar';
 
 vi.mock('../api/calendar', () => ({ getCityCalendar: vi.fn() }));
+// EventCard reads the going list to colour its toggle; unmocked, every card
+// rendered here reaches for the network.
+vi.mock('../api/eventGoing', () => ({
+  listGoing: vi.fn(),
+  markEventGoing: vi.fn(),
+  resetEventGoing: vi.fn(),
+}));
+
 vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }));
 
 import { getCityCalendar } from '../api/calendar';
+import { listGoing } from '../api/eventGoing';
 import { useAuth } from '../auth/useAuth';
 
 // Wednesday, June 17 2026, in the zone vitest.config.ts pins. The week it lands
-// in starts Sunday June 14; the two after start June 21 and June 28.
+// in starts Sunday June 14; the week after that starts June 21 ("Next week"),
+// and the one after that June 28 — the first labelled by its own date.
 const NOW = new Date('2026-06-17T12:00:00-07:00');
-const NEXT_WEEK_START = new Date(2026, 5, 21);
 const WEEK_AFTER_START = new Date(2026, 5, 28);
 
 // Later weeks are labelled with toLocaleDateString(), which follows the
@@ -80,6 +89,9 @@ function listOutline(container: HTMLElement) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // resetAllMocks drops the factory's implementation, and a queryFn that
+  // resolves to undefined is a react-query error.
+  vi.mocked(listGoing).mockResolvedValue([]);
   vi.setSystemTime(NOW);
   MockIntersectionObserver.instances = [];
   vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
@@ -116,7 +128,7 @@ describe('CalendarEventsAllCity week section titles', () => {
     expect(screen.getByRole('heading', { name: 'This week' })).toBeInTheDocument();
   });
 
-  it('titles later sections with the date their week starts on', async () => {
+  it('titles the following week "Next week" and later ones by their start date', async () => {
     vi.mocked(getCityCalendar).mockResolvedValue({
       events: [
         event('c1', 'Next Week Show', '2026-06-23T19:00:00-07:00'),
@@ -127,7 +139,7 @@ describe('CalendarEventsAllCity week section titles', () => {
     renderList();
 
     await waitFor(() => expect(screen.getByText('Next Week Show')).toBeInTheDocument());
-    expect(screen.getByRole('heading', { name: label(NEXT_WEEK_START) })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Next week' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: label(WEEK_AFTER_START) })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'This week' })).not.toBeInTheDocument();
   });
@@ -148,7 +160,7 @@ describe('CalendarEventsAllCity week section titles', () => {
       'section: This week',
       'event: Wednesday Show',
       'event: Saturday Show',
-      `section: ${label(NEXT_WEEK_START)}`,
+      'section: Next week',
       'event: Next Week Show',
     ]);
   });
@@ -194,7 +206,7 @@ describe('CalendarEventsAllCity week section titles', () => {
       'section: This week',
       'event: Wednesday Show',
       'event: Saturday Show',
-      `section: ${label(NEXT_WEEK_START)}`,
+      'section: Next week',
       'event: Next Week Show',
     ]);
   });

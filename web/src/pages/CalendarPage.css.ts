@@ -34,6 +34,7 @@ export const rangeButton = style({
 // the active text), so only the inactive colour is set here.
 export const rangeButtonInactive = style({
   color: color.gray600,
+  ...textStroke('4px'),
   ':hover': { color: color.gray900 },
 });
 
@@ -86,4 +87,43 @@ export const banner = style([
 export const sectionTitleListItem = style({
   width: '100%',
   flex: 'none',
+});
+
+export const notInterestedMessage = style([
+  controlLabel,
+  {
+    marginTop: '1rem',
+  },
+]);
+
+// The calendar list and the going sidebar side by side. Sidebar hidden on phones for now.
+export const calendarWithSidebar = style({
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: '3rem',
+  '@media': {
+    [phone]: {
+      gap: 0,
+    },
+  },
+});
+
+// min-width: 0 or the calendar refuses to shrink below its cards' intrinsic
+// width and pushes the sidebar off the page instead of reflowing.
+export const calendarColumn = style({
+  flex: 1,
+  minWidth: 0,
+});
+
+export const sidebarColumn = style({
+  // The calendar list beside this is many screens tall, so the panel rides
+  // along rather than scrolling away at the top of it.
+  position: 'sticky',
+  top: '6rem',
+  flex: '0 0 17rem',
+  '@media': {
+    [phone]: {
+      display: 'none',
+    },
+  },
 });

@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import clsx from 'clsx';
 import { useAuth } from '../auth/useAuth';
 import HorizontalSelector from './HorizontalSelector';
@@ -24,9 +25,15 @@ const navItems = [
 const isActivePath = (pathname: string, to: string) =>
   pathname === to || pathname.startsWith(to + '/');
 
-export default function Layout() {
+/**
+ * Renders page background, header, nav, footer and the confirmation modals.
+ *
+ * Each routed page renders this itself as its outermost element.
+ */
+export default function Layout({ children, wide }: { children?: ReactNode; wide?: boolean }) {
   const { status } = useAuth();
   const authed = status === 'authenticated';
+  const navigate = useNavigate();
 
   // Which nav item the sliding border should hug, derived from the URL (mirroring
   // NavLink's matching) so it stays independent of NavLink's rendered output.
@@ -58,7 +65,7 @@ export default function Layout() {
     <div className={s.page}>
       <div className={s.background} />
       <header className={clsx(s.header, { [s.hiddenOnPhone]: !authed })}>
-        <div className={s.logo} />
+        <div className={s.logo} onClick={() => navigate('/')} />
         {authed && (
           <>
             <HorizontalSelector
@@ -71,8 +78,8 @@ export default function Layout() {
           </>
         )}
       </header>
-      <main className={clsx(s.main, { [s.mainLoggedOut]: !authed })}>
-        <Outlet />
+      <main className={clsx(s.main, { [s.mainLoggedOut]: !authed, [s.mainWide]: wide })}>
+        {children}
         <div className={s.footer}>
           <p>&copy; 2026 Here's What's Happening. All rights reserved.</p>
         </div>

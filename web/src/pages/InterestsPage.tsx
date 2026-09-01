@@ -10,6 +10,7 @@ import { useCreateManualInterest } from '../hooks/useCreateManualInterest';
 import { useDeleteManualInterest } from '../hooks/useDeleteManualInterest';
 import * as s from './InterestsPage.css';
 import * as c from '../styles/common.css';
+import Layout from '../components/Layout';
 
 const COLLAPSE_AT = 20;
 
@@ -46,111 +47,113 @@ export default function InterestsPage() {
   const spotifyUniqueGenres = new Set(spotifyGenreInterests.map((i) => i.value));
 
   return (
-    <div>
-      <div className={c.pageHeader}>
-        <h1 className={c.pageTitle}>Your interests</h1>
-      </div>
+    <Layout>
+      <div>
+        <div className={c.pageHeader}>
+          <h1 className={c.pageTitle}>Your interests</h1>
+        </div>
 
-      <section className={c.section}>
-        <h2 className={s.sectionHeading}>Tell us what you're into</h2>
-        <p className={s.lead}>Add genres and artists you like</p>
-        <TagInput
-          values={values}
-          onAdd={(v) => addMut.mutate(v)}
-          onRemove={(v) => removeMut.mutate(v)}
-          placeholder="Add an interest and press Enter"
-        />
-        {addMut.isError && (
-          <div className={s.error}>Couldn't save that tag. Did you already add it?</div>
-        )}
-      </section>
-
-      {showSpotifyInterests ? (
         <section className={c.section}>
-          <h2 className={s.sectionHeading}>From your Spotify</h2>
-          {spotifyGroupsPending ? null : spotifyGroups.length === 0 ? (
-            <p className={s.emptyNote}>
-              We haven't pulled your listening history yet. Check back soon.
-            </p>
-          ) : (
-            <div>
-              <section className={c.bodySection}>
-                <p className={s.lead}>
-                  Spotify-derived artists from your top artists, top tracks, and liked songs
-                </p>
-                <TagList
-                  values={
-                    spotifyInterestsExpanded
-                      ? Array.from(spotifyUniqueArtists)
-                      : Array.from(spotifyUniqueArtists).slice(0, COLLAPSE_AT)
-                  }
-                />
-                {spotifyUniqueArtists.size > COLLAPSE_AT && (
-                  <button
-                    type="button"
-                    className={s.showAllButton}
-                    onClick={() => {
-                      setSpotifyInterestsExpanded((prev) => !prev);
-                    }}
-                  >
-                    {spotifyInterestsExpanded
-                      ? 'Show fewer'
-                      : `Show all (${spotifyUniqueArtists.size})`}
-                  </button>
-                )}
-              </section>
-              <section className={c.bodySection}>
-                <p className={s.lead}>Spotify-derived genre interests</p>
-                <TagList
-                  values={
-                    spotifyGenresExpanded
-                      ? Array.from(spotifyUniqueGenres)
-                      : Array.from(spotifyUniqueGenres).slice(0, COLLAPSE_AT)
-                  }
-                />
-                {spotifyUniqueGenres.size > COLLAPSE_AT && (
-                  <button
-                    type="button"
-                    className={s.showAllButton}
-                    onClick={() => {
-                      setSpotifyGenresExpanded((prev) => !prev);
-                    }}
-                  >
-                    {spotifyGenresExpanded
-                      ? 'Show fewer'
-                      : `Show all (${spotifyUniqueGenres.size})`}
-                  </button>
-                )}
-              </section>
-            </div>
+          <h2 className={s.sectionHeading}>Tell us what you're into</h2>
+          <p className={s.lead}>Add genres and artists you like</p>
+          <TagInput
+            values={values}
+            onAdd={(v) => addMut.mutate(v)}
+            onRemove={(v) => removeMut.mutate(v)}
+            placeholder="Add an interest and press Enter"
+          />
+          {addMut.isError && (
+            <div className={s.error}>Couldn't save that tag. Did you already add it?</div>
           )}
         </section>
-      ) : (
-        spotifyStatus?.connected !== true && (
-          <section className={c.section}>
-            <h2 className={c.sectionTitle}>Spotify</h2>
-            <p className={s.lead}>Connect Spotify to see your Spotify-derived interests.</p>
 
-            <button
-              type="button"
-              onClick={() => connectSpotifyMut.mutate()}
-              disabled={connectSpotifyMut.isPending}
-              className={s.connectButton}
-            >
-              Connect Spotify
-            </button>
+        {showSpotifyInterests ? (
+          <section className={c.section}>
+            <h2 className={s.sectionHeading}>From your Spotify</h2>
+            {spotifyGroupsPending ? null : spotifyGroups.length === 0 ? (
+              <p className={s.emptyNote}>
+                We haven't pulled your listening history yet. Check back soon.
+              </p>
+            ) : (
+              <div>
+                <section className={c.bodySection}>
+                  <p className={s.lead}>
+                    Spotify-derived artists from your top artists, top tracks, and liked songs
+                  </p>
+                  <TagList
+                    values={
+                      spotifyInterestsExpanded
+                        ? Array.from(spotifyUniqueArtists)
+                        : Array.from(spotifyUniqueArtists).slice(0, COLLAPSE_AT)
+                    }
+                  />
+                  {spotifyUniqueArtists.size > COLLAPSE_AT && (
+                    <button
+                      type="button"
+                      className={s.showAllButton}
+                      onClick={() => {
+                        setSpotifyInterestsExpanded((prev) => !prev);
+                      }}
+                    >
+                      {spotifyInterestsExpanded
+                        ? 'Show fewer'
+                        : `Show all (${spotifyUniqueArtists.size})`}
+                    </button>
+                  )}
+                </section>
+                <section className={c.bodySection}>
+                  <p className={s.lead}>Spotify-derived genre interests</p>
+                  <TagList
+                    values={
+                      spotifyGenresExpanded
+                        ? Array.from(spotifyUniqueGenres)
+                        : Array.from(spotifyUniqueGenres).slice(0, COLLAPSE_AT)
+                    }
+                  />
+                  {spotifyUniqueGenres.size > COLLAPSE_AT && (
+                    <button
+                      type="button"
+                      className={s.showAllButton}
+                      onClick={() => {
+                        setSpotifyGenresExpanded((prev) => !prev);
+                      }}
+                    >
+                      {spotifyGenresExpanded
+                        ? 'Show fewer'
+                        : `Show all (${spotifyUniqueGenres.size})`}
+                    </button>
+                  )}
+                </section>
+              </div>
+            )}
           </section>
-        )
-      )}
-      <p className={s.continueSection}>
-        <button
-          type="button"
-          onClick={() => navigate('/calendar/seattle')}
-          className={s.continueButton}
-        >
-          Go to Calendar
-        </button>
-      </p>
-    </div>
+        ) : (
+          spotifyStatus?.connected !== true && (
+            <section className={c.section}>
+              <h2 className={c.sectionTitle}>Spotify</h2>
+              <p className={s.lead}>Connect Spotify to see your Spotify-derived interests.</p>
+
+              <button
+                type="button"
+                onClick={() => connectSpotifyMut.mutate()}
+                disabled={connectSpotifyMut.isPending}
+                className={s.connectButton}
+              >
+                Connect Spotify
+              </button>
+            </section>
+          )
+        )}
+        <p className={s.continueSection}>
+          <button
+            type="button"
+            onClick={() => navigate('/calendar/seattle')}
+            className={s.continueButton}
+          >
+            Go to Calendar
+          </button>
+        </p>
+      </div>
+    </Layout>
   );
 }

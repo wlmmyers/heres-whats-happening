@@ -141,3 +141,9 @@ export const setlistOverlayLink = style({
   fontWeight: fontWeight.medium,
   ':hover': { textDecorationLine: 'underline' },
 });
+
+export const goingButton = style({
+  ...fontSize.base,
+  fontWeight: fontWeight.light,
+  marginRight: '1rem',
+});

@@ -184,6 +184,12 @@ type User struct {
 	ShowSetlists               bool               `json:"show_setlists"`
 }
 
+type UserEventGoing struct {
+	UserID    pgtype.UUID        `json:"user_id"`
+	EventID   pgtype.UUID        `json:"event_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type UserEventMatch struct {
 	UserID         pgtype.UUID        `json:"user_id"`
 	EventID        pgtype.UUID        `json:"event_id"`

@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { clickableCard } from '../styles/common.css';
-import { color, fontSize, fontWeight, radius, transition } from '../styles/theme';
+import { color, fontSize, fontWeight, transition } from '../styles/theme';
 import { phone } from '../styles/breakpoints.css';
 
 const cardStylesCondensed = {
@@ -8,7 +8,7 @@ const cardStylesCondensed = {
   gridTemplateRows: 'auto',
   gridTemplateAreas: `
     'thumbnail main main'
-    'matchScore matchScore notInterested'
+    'matchScore matchScore actions'
   `,
   selectors: {
     '&:not(:has([data-thumbnail]))': {
@@ -32,7 +32,7 @@ export const eventCard = style([
     gridTemplateRows: 'auto',
     gridTemplateAreas: `
       'thumbnail main matchScore'
-      'thumbnail main notInterested'
+      'thumbnail main actions'
     `,
     padding: '1rem',
     ...transition,
@@ -45,7 +45,8 @@ export const eventCard = style([
     '@container': {
       ['calendarListItem (width < 500px)']: {
         ...cardStylesCondensed,
-        minHeight: '220px',
+        // minHeight: '220px', this bungles the layout when the screen is small with the Going list shown
+        // Need to rethink it if re-implementing the condensed event card option
       },
     },
     '@media': {
@@ -131,25 +132,11 @@ export const matched = style({
   ...fontSize.xs,
 });
 
-export const notInterested = style({
-  gridArea: 'notInterested',
+export const actions = style({
+  gridArea: 'actions',
   display: 'flex',
   alignItems: 'flex-end',
   justifyContent: 'flex-end',
   marginTop: '0.75rem',
-});
-
-export const notInterestedButton = style({
-  gridArea: 'notInterestedButton',
-  fontWeight: fontWeight.medium,
-  border: '1px solid',
-  borderColor: color.gray200,
-  borderRadius: radius.sm,
-  paddingInline: '0.5rem',
-  paddingBlock: '0.25rem',
-  backgroundColor: color.white,
-  ...transition,
-  ...fontSize.xs,
-  color: color.gray500,
-  ':hover': { color: color.red600, borderColor: color.red600 },
+  gap: '0.5rem',
 });

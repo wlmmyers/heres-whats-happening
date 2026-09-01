@@ -5,6 +5,14 @@ import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthContext';
 import LandingPage from './LandingPage';
 
+// EventCard reads the going list to colour its toggle; unmocked, every card
+// rendered here reaches for the network.
+vi.mock('../api/eventGoing', () => ({
+  listGoing: vi.fn(),
+  markEventGoing: vi.fn(),
+  resetEventGoing: vi.fn(),
+}));
+
 vi.mock('../api/auth', () => ({
   getMe: vi.fn(),
   login: vi.fn(),
@@ -13,12 +21,15 @@ vi.mock('../api/auth', () => ({
 }));
 
 import * as authApi from '../api/auth';
+import { listGoing } from '../api/eventGoing';
 import LoginDialog from '../components/LoginDialog';
 import SignupDialog from '../components/SignupDialog';
 import userEvent from '@testing-library/user-event';
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // A successful login renders cards, which read the going list.
+  vi.mocked(listGoing).mockResolvedValue([]);
   // AuthProvider's mount call rejects → the landing page boots anonymous.
   (authApi.getMe as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('401'));
 });

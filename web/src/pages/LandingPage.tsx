@@ -6,6 +6,7 @@ import type { CalendarEvent } from '../api/calendar';
 import { useAuth } from '../auth/useAuth';
 import { Navigate, useLocation } from 'react-router-dom';
 import SkeletonCard from '../components/SkeletonCard';
+import Layout from '../components/Layout';
 import { useLayoutEffect, useState } from 'react';
 import {
   LANDING_PAGE_KILL_ANIMATION,
@@ -108,30 +109,32 @@ export default function LandingPage({ children }: { children?: React.ReactNode }
   }
 
   return (
-    <div>
-      <div className={c.pageHeader}>
-        <h1 className={c.pageTitle}>Your Seattle calendar</h1>
+    <Layout>
+      <div>
+        <div className={c.pageHeader}>
+          <h1 className={c.pageTitle}>Your Seattle calendar</h1>
+        </div>
+        {status === 'loading' ? (
+          <ul className={s.list}>
+            {Array.from({ length: 5 }, (_, i) => ({ id: `loading-${i}` })).map((e) => (
+              <li key={e.id} className={s.listItem}>
+                <SkeletonCard height={150} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <ul className={s.list}>
+            <div style={{ height: spacerHeight }} /> {/* Spacer */}
+            {[...data.events, ...data.events].map((e, i) => (
+              <li key={`${e.id}-${i}`} className={s.listItem}>
+                <EventCard event={e} interactive={false} onNotInterested={() => {}} />
+              </li>
+            ))}
+          </ul>
+        )}
+        {/* Modals: either Login or Signup */}
+        <div className={c.screen}>{children}</div>
       </div>
-      {status === 'loading' ? (
-        <ul className={s.list}>
-          {Array.from({ length: 5 }, (_, i) => ({ id: `loading-${i}` })).map((e) => (
-            <li key={e.id} className={s.listItem}>
-              <SkeletonCard height={150} />
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <ul className={s.list}>
-          <div style={{ height: spacerHeight }} /> {/* Spacer */}
-          {[...data.events, ...data.events].map((e, i) => (
-            <li key={`${e.id}-${i}`} className={s.listItem}>
-              <EventCard event={e} interactive={false} onNotInterested={() => {}} />
-            </li>
-          ))}
-        </ul>
-      )}
-      {/* Modals: either Login or Signup */}
-      <div className={c.screen}>{children}</div>
-    </div>
+    </Layout>
   );
 }

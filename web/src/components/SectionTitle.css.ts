@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { color, fontSize, fontWeight } from '../styles/theme';
+import { color, fontSize, fontWeight, textStroke } from '../styles/theme';
 
 export const title = style({
   ...fontSize.xs,
@@ -12,6 +12,7 @@ export const title = style({
   fontWeight: fontWeight.medium,
   textTransform: 'uppercase',
   letterSpacing: '2px',
+  ...textStroke('4px'),
 });
 
 export const rule = style({

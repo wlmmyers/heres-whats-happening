@@ -177,6 +177,7 @@ func runMigrations(dsn string) error {
 var truncateTables = []string{
 	"poster_jobs",
 	"user_event_not_interested",
+	"user_event_going",
 	"user_event_match",
 	"event_genres",
 	"event_performers",
