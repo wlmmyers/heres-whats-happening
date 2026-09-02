@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import pluralize from 'pluralize';
 import { MIN_THRESHOLD, MAX_THRESHOLD } from '../api/match';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useSpotifyStatus } from '../hooks/useSpotifyStatus';
@@ -13,11 +14,13 @@ import { useUpdateShowSetlists } from '../hooks/useUpdateShowSetlists';
 import * as s from './SettingsPage.css';
 import * as c from '../styles/common.css';
 import Layout from '../components/Layout';
+import { useListNotInterested } from '../hooks/useListNotInterested';
 
 export default function SettingsPage() {
   const { data: spotifyStatus, isLoading: spotifyStatusLoading } = useSpotifyStatus();
   const connectSpotifyMut = useConnectSpotify();
   const disconnectSpotifyMut = useDisconnectSpotify();
+  const hiddenList = useListNotInterested();
 
   const { data: me } = useMe();
   const loadedPercent = Math.round((me?.score_threshold ?? 0.3) * 100);
@@ -177,8 +180,10 @@ export default function SettingsPage() {
           <section className={c.section}>
             <h2 className={c.sectionTitle}>Hidden events</h2>
             <p className={s.desc}>
-              Reset events that you've hidden via the "Hide" button. They may reappear in your
-              calendar.
+              Reset events that you've hidden via the "Hide" button.{' '}
+              {hiddenList.data?.length
+                ? `You've hidden ${hiddenList.data.length} ${pluralize('event', hiddenList.data.length)}.`
+                : ''}
             </p>
             <button
               type="button"
@@ -211,8 +216,8 @@ export default function SettingsPage() {
           />
           <ConfirmDialog
             open={resetConfirmOpen}
-            title="Reset not-interested list?"
-            message="This clears every event you've marked 'not interested'. They may reappear in your calendar. Continue?"
+            title="Reset hidden events?"
+            message={`This clears every event you've hidden via the "Hide" button. They will reappear in your calendar if they're still upcoming. Continue?`}
             onConfirm={() =>
               resetNotInterestedMut.mutate(undefined, {
                 onSuccess: () => setResetConfirmOpen(false),
