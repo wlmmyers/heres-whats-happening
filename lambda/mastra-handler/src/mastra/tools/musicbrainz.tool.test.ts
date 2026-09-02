@@ -26,6 +26,67 @@ const LA_LUZ = {
   ],
 };
 
+// Verbatim from the real response for artist:"Pond" (verified 2026-09-01), the
+// search behind the prod bug where a Pond show got a Bardo Pond biography.
+// MusicBrainz ranks the SUPERSET name above the exact one: 'Bardo Pond' 100,
+// 'Pond' 99. Four of these six are exactly "Pond".
+const POND = {
+  count: 74,
+  artists: [
+    {
+      id: '2ad8bce1-8e55-48db-82ed-d98b52a3a13f',
+      name: 'Bardo Pond',
+      score: 100,
+      disambiguation: 'psychedelic rock group',
+      type: 'Group',
+      country: 'US',
+      'life-span': { begin: '1991' },
+    },
+    {
+      id: '69ac44f7-c80d-47b4-9bc8-fcc758d209e6',
+      name: 'Pond',
+      score: 99,
+      disambiguation: 'rock band from Perth, Australia',
+      type: 'Group',
+      country: 'AU',
+      'life-span': { begin: '2008' },
+    },
+    {
+      id: 'd4a9be59-13e5-481b-8c68-833c5c1fd458',
+      name: 'matt pond PA',
+      score: 92,
+      type: 'Group',
+      country: 'US',
+      'life-span': { begin: '1998' },
+    },
+    {
+      id: '8154377a-42a4-4fe2-a367-689a86ff07f7',
+      name: 'POND',
+      score: 92,
+      disambiguation: 'German band specializing in electronic music',
+      type: 'Group',
+      country: 'DE',
+      'life-span': { begin: '1978' },
+    },
+    {
+      id: '1ef504e7-2f2d-41a5-9536-64f161f54174',
+      name: 'Pond',
+      score: 90,
+      disambiguation: '90s Portland alternative rock band',
+      type: 'Group',
+      country: 'US',
+      'life-span': { begin: '1991' },
+    },
+    {
+      id: '11e37ff3-6e53-48d7-8c67-1c9f64cd48fb',
+      name: 'Pond',
+      score: 84,
+      disambiguation: 'instrumental hip-hop artist',
+      type: 'Person',
+    },
+  ],
+};
+
 function client(f: ReturnType<typeof stubFetch>) {
   return createMusicBrainzClient({ baseUrl: 'https://mb.test', fetchFn: f, minIntervalMs: 0 });
 }
@@ -65,7 +126,14 @@ describe('searchArtists', () => {
     const url = new URL(f.calls[0].url);
     expect(url.searchParams.get('query')).toBe('artist:"la luz"');
     expect(url.searchParams.get('fmt')).toBe('json');
-    expect(url.searchParams.get('limit')).toBe('3');
+    // The wire limit is the ranking pool, not the caller's 3 — see 'search pool'.
+    expect(url.searchParams.get('limit')).toBe('25');
+  });
+
+  it('honours a caller limit larger than the pool', async () => {
+    const f = stubFetch([{ match: /\/ws\/2\/artist\?/, json: LA_LUZ }]);
+    await client(f).searchArtists('la luz', { limit: 50 });
+    expect(new URL(f.calls[0].url).searchParams.get('limit')).toBe('50');
   });
 
   it('escapes quotes and backslashes so the query cannot be broken', async () => {
@@ -123,6 +191,75 @@ describe('searchArtists', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// Regression: prod enriched a "Pond" show at The Showbox with a Bardo Pond
+// biography. MusicBrainz's score ranks names that merely CONTAIN the performer
+// at or above the exact name, so the top hit is not the best answer.
+describe('exact-name preference', () => {
+  it('puts the exact name first even when MusicBrainz scores a superset higher', async () => {
+    const f = stubFetch([{ match: /\/ws\/2\/artist\?/, json: POND }]);
+    const out = await client(f).searchArtists('Pond', { limit: 3 });
+
+    expect(out[0].name).toBe('Pond');
+    expect(out[0].mbid).toBe('69ac44f7-c80d-47b4-9bc8-fcc758d209e6');
+    expect(out[0].disambiguation).toBe('rock band from Perth, Australia');
+  });
+
+  it('orders exact matches among themselves by MusicBrainz score', async () => {
+    const f = stubFetch([{ match: /\/ws\/2\/artist\?/, json: POND }]);
+    const out = await client(f).searchArtists('Pond', { limit: 4 });
+
+    // All four exact "Pond" artists outrank the two superset names, and keep
+    // MusicBrainz's relative order (99, 92, 90, 84) inside that group.
+    expect(out.map((a) => a.score)).toEqual([99, 92, 90, 84]);
+    expect(out.map((a) => a.name)).toEqual(['Pond', 'POND', 'Pond', 'Pond']);
+  });
+
+  it('demotes superset names below every exact match', async () => {
+    const f = stubFetch([{ match: /\/ws\/2\/artist\?/, json: POND }]);
+    const out = await client(f).searchArtists('Pond', { limit: 6 });
+    expect(out.slice(4).map((a) => a.name)).toEqual(['Bardo Pond', 'matt pond PA']);
+  });
+
+  it('matches names case- and accent-insensitively, as artistKey does', async () => {
+    const f = stubFetch([{ match: /\/ws\/2\/artist\?/, json: POND }]);
+    const out = await client(f).searchArtists('POND', { limit: 1 });
+    expect(out[0].name).toBe('Pond');
+    expect(out[0].country).toBe('AU');
+  });
+
+  // The fuzzy path is untouched: with nothing to prefer, MusicBrainz's own
+  // ranking still decides, so misspellings and abbreviations resolve as before.
+  it('leaves MusicBrainz order alone when no candidate matches exactly', async () => {
+    const f = stubFetch([{ match: /\/ws\/2\/artist\?/, json: POND }]);
+    const out = await client(f).searchArtists('Ponnd', { limit: 3 });
+    expect(out.map((a) => a.name)).toEqual(['Bardo Pond', 'Pond', 'matt pond PA']);
+  });
+});
+
+// The caller's limit is a cap on the ANSWER, not on the pool we rank. Searching
+// only the caller's 3 would have hidden two of the four exact "Pond" artists,
+// and for "Girls" the exact match is not in MusicBrainz's top 3 at all. A wider
+// pool is the same single request — `limit` is just a query parameter.
+describe('search pool', () => {
+  it('asks MusicBrainz for a deeper pool than the caller requested', async () => {
+    const f = stubFetch([{ match: /\/ws\/2\/artist\?/, json: POND }]);
+    await client(f).searchArtists('Pond', { limit: 3 });
+    const url = new URL(f.calls[0].url);
+    expect(Number(url.searchParams.get('limit'))).toBeGreaterThanOrEqual(25);
+  });
+
+  it('still returns no more than the caller asked for', async () => {
+    const f = stubFetch([{ match: /\/ws\/2\/artist\?/, json: POND }]);
+    expect(await client(f).searchArtists('Pond', { limit: 2 })).toHaveLength(2);
+  });
+
+  it('takes one request to do it', async () => {
+    const f = stubFetch([{ match: /\/ws\/2\/artist\?/, json: POND }]);
+    await client(f).searchArtists('Pond', { limit: 3 });
+    expect(f.calls).toHaveLength(1);
   });
 });
 

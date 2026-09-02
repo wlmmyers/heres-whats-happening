@@ -1,11 +1,19 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
+import { artistKey } from '../../artist-key.js';
 import { ArtistMatchSchema, USER_AGENT, type ArtistMatch } from './band-image.js';
 
 const DEFAULT_BASE_URL = 'https://musicbrainz.org';
 const MIN_INTERVAL_MS = 1000; // MusicBrainz allows ~1 req/sec
 const TIMEOUT_MS = 15_000;
 const DEFAULT_LIMIT = 3;
+// How many hits to pull from MusicBrainz before re-ranking, regardless of what
+// the caller asked for. The caller's limit caps the ANSWER; it must not cap the
+// pool we rank, or the exact match can be truncated away before we ever see it:
+// "Pond" has four exactly-named artists and the top 3 hold only two of them,
+// and for "Girls" the exact match is outside MusicBrainz's top 3 entirely.
+// Costs nothing extra — `limit` is a query parameter on the same one request.
+const SEARCH_POOL = 25;
 // Upstream error bodies reach the client: they flow into the step's `reason`,
 // through the workflow output, and out as the 422 body's `error`. An unbounded
 // HTML error page has no business in an API response.
@@ -51,6 +59,34 @@ function toArtistMatch(a: MbArtist): ArtistMatch {
     country: a.country || undefined,
     beginYear: a['life-span']?.begin?.slice(0, 4) || undefined,
   };
+}
+
+/**
+ * Move artists actually NAMED `performer` ahead of the rest, keeping
+ * MusicBrainz's order within each group.
+ *
+ * MusicBrainz's `score` is Lucene relevance, not name equality, and it reliably
+ * ranks a longer name that merely CONTAINS the query at or above the exact one:
+ * `artist:"Pond"` returns Bardo Pond (100) above Pond (99), `artist:"Bush"`
+ * returns Kate Bush (100) above Bush (95). Callers that take the top hit
+ * therefore enrich a show with the wrong band — which is how a Pond gig at The
+ * Showbox ended up with a Bardo Pond biography.
+ *
+ * Comparison is artistKey()'s, the same normalization the DB keys artists on,
+ * so 'POND' and 'Pond' are one name and 'Björk'/'Bjork' agree. Nothing beyond
+ * equality: 'The Sword' and 'Sword' are two different real bands, so stripping
+ * articles here would trade this bug for its mirror image.
+ *
+ * A stable partition, not a filter. When nothing matches exactly the order is
+ * unchanged, so the fuzzy path — misspellings, "Beyoncé" for "Beyonce Knowles"
+ * — still resolves on MusicBrainz's ranking exactly as before.
+ */
+export function preferExactName(performer: string, matches: ArtistMatch[]): ArtistMatch[] {
+  const want = artistKey(performer);
+  const exact: ArtistMatch[] = [];
+  const rest: ArtistMatch[] = [];
+  for (const m of matches) (artistKey(m.name) === want ? exact : rest).push(m);
+  return [...exact, ...rest];
 }
 
 export function createMusicBrainzClient(options: MusicBrainzOptions = {}): MusicBrainzClient {
@@ -99,10 +135,11 @@ export function createMusicBrainzClient(options: MusicBrainzOptions = {}): Music
       const q = new URLSearchParams({
         query: `artist:"${esc}"`,
         fmt: 'json',
-        limit: String(limit),
+        limit: String(Math.max(limit, SEARCH_POOL)),
       });
       const payload = (await getJson(`/ws/2/artist?${q.toString()}`)) as { artists?: MbArtist[] };
-      return (payload.artists ?? []).map(toArtistMatch);
+      const matches = (payload.artists ?? []).map(toArtistMatch);
+      return preferExactName(performer, matches).slice(0, limit);
     },
   };
 }

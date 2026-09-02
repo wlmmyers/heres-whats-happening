@@ -206,11 +206,11 @@ bastion-start:
 bastion-tunnel:
 	@ID=$$($(BASTION_LOOKUP)); \
 	test -n "$$ID" || { echo "No EC2 instance tagged Name=$(BASTION_NAME)"; exit 1; }; \
-	echo "Opening port-forward to $(PROD_DB_HOST):5432 on localhost:5432 (leave this running)..."; \
+	echo "Opening port-forward to $(PROD_DB_HOST):5432 on localhost:5433 (leave this running)..."; \
 	aws ssm start-session --profile $(AWS_PROFILE) --region $(PROD_REGION) \
 	    --target $$ID \
 	    --document-name AWS-StartPortForwardingSessionToRemoteHost \
-	    --parameters '{"host":["$(PROD_DB_HOST)"],"portNumber":["5432"],"localPortNumber":["5432"]}'
+	    --parameters '{"host":["$(PROD_DB_HOST)"],"portNumber":["5432"],"localPortNumber":["5433"]}'
 
 bastion-creds:
 	@aws secretsmanager get-secret-value --profile $(AWS_PROFILE) --region $(PROD_REGION) \

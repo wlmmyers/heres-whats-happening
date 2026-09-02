@@ -11,13 +11,25 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"github.com/wmyers/heres-whats-happening/internal/events"
 )
 
 const defaultBaseURL = "https://musicbrainz.org"
+
+// searchPool is how many hits SearchArtist ranks before choosing. It must be
+// more than 1: MusicBrainz's score is Lucene relevance, not name equality, and
+// it ranks a longer name that merely CONTAINS the query at or above the exact
+// one — artist:"Pond" returns Bardo Pond (100) above Pond (99), artist:"Bush"
+// returns Kate Bush (100) above Bush (95). At limit=1 the exact match is
+// truncated away before we can prefer it. A wider pool is the same one request;
+// only the limit query parameter changes.
+const searchPool = 25
 
 // Genre is one crowd-tagged genre for an artist, with its vote count.
 type Genre struct {
@@ -76,16 +88,23 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 
 // SearchArtist returns the MBID of the best-matching artist for name, or ""
 // when there is no match.
+//
+// "Best" is the highest-scoring artist actually NAMED name, falling back to
+// MusicBrainz's own top hit when nothing matches exactly — see searchPool for
+// why the raw ranking cannot be trusted on its own. Mirrors preferExactName in
+// lambda/mastra-handler/src/mastra/tools/musicbrainz.tool.ts, which fixes the
+// same bug on the enrichment side.
 func (c *Client) SearchArtist(ctx context.Context, name string) (string, error) {
 	q := url.Values{}
 	esc := strings.ReplaceAll(name, `\`, `\\`)
 	esc = strings.ReplaceAll(esc, `"`, `\"`)
 	q.Set("query", `artist:"`+esc+`"`)
 	q.Set("fmt", "json")
-	q.Set("limit", "1")
+	q.Set("limit", strconv.Itoa(searchPool))
 	var payload struct {
 		Artists []struct {
-			ID string `json:"id"`
+			ID   string `json:"id"`
+			Name string `json:"name"`
 		} `json:"artists"`
 	}
 	if err := c.get(ctx, "/ws/2/artist?"+q.Encode(), &payload); err != nil {
@@ -93,6 +112,15 @@ func (c *Client) SearchArtist(ctx context.Context, name string) (string, error) 
 	}
 	if len(payload.Artists) == 0 {
 		return "", nil
+	}
+	// events.NormalizeString is the comparison the DB keys artists on, and the
+	// one testdata/artist-key-contract pins against the Lambda's artistKey().
+	// Equality only: "The Sword" and "Sword" are two different real bands.
+	want := events.NormalizeString(name)
+	for _, a := range payload.Artists {
+		if events.NormalizeString(a.Name) == want {
+			return a.ID, nil
+		}
 	}
 	return payload.Artists[0].ID, nil
 }

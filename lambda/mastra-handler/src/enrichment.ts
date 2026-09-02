@@ -16,7 +16,8 @@ import type { EventMessage } from './schema.js';
  * starve the other two. */
 export const WORKFLOW_BUDGET_MS = Number(process.env.ENRICH_BUDGET_MS ?? 120_000);
 
-/** How many MusicBrainz matches to consider. Mirrors MAX_ARTIST_FALLTHROUGH. */
+/** How many MusicBrainz matches to consider. Mirrors MAX_ARTIST_FALLTHROUGH.
+ * Caps the answer only — searchArtists ranks a deeper pool behind this. */
 const ARTIST_SEARCH_LIMIT = 3;
 
 /**
@@ -41,6 +42,9 @@ const SKIP_SEGMENTS = new Set(['sports', 'arts-theatre', 'miscellaneous']);
 
 export interface EnrichDeps {
   cache: EnrichmentCache;
+  /** Best match FIRST. musicbrainz.tool.ts guarantees this by ranking artists
+   * named exactly `performer` ahead of MusicBrainz's raw relevance order; a
+   * stub that returns unranked hits will reproduce the Bardo Pond bug. */
   searchArtists(performer: string, opts: { limit: number }): Promise<ArtistMatch[]>;
   enrichImage(artist: ArtistRef): Promise<ImageInfo>;
   enrichBio(artist: ArtistRef): Promise<BioInfo>;
@@ -60,6 +64,11 @@ function message(e: unknown): string {
  * would let the bio describe "La Luz, US rock band" beside a photo of "La Luz,
  * Belgium based house group" — the disambiguation field exists because those
  * collide.
+ *
+ * `matches[0]` is only the right artist because searchArtists ranks exact names
+ * first (preferExactName). Against MusicBrainz's own order it is not: the API
+ * returns Bardo Pond above Pond, and this method shipped a Bardo Pond biography
+ * to a Pond show at The Showbox on that basis.
  */
 export async function pickArtist(
   performer: string,
