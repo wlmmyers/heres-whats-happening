@@ -126,7 +126,7 @@ function cachedPayload<T>(
   now: number,
 ): T | undefined {
   const rec = entry?.workflows?.[name];
-  if (!rec || !isFresh(rec, now)) return undefined;
+  if (!rec || !isFresh(rec, name, now)) return undefined;
   return rec.payload as T | undefined;
 }
 

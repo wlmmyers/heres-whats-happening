@@ -17,14 +17,26 @@ import {
 export type WorkflowName = 'image' | 'bio' | 'tour';
 export type CacheStatus = 'ok' | 'none' | 'error';
 
-/** How long an attempt with a given outcome suppresses a retry. Mirrors the
- * shape of internal/scraper/spotify/genres.go:17-19 so the two artist caches
- * behave alike. */
+/** How long an attempt with a given outcome suppresses a retry, for a workflow
+ * whose result does not go stale on its own. Mirrors the shape of
+ * internal/scraper/spotify/genres.go:17-19 so the two artist caches behave
+ * alike. Workflows that DO decay override this in WORKFLOW_TTL_MS. */
 export const CACHE_TTL_MS: Record<CacheStatus, number> = {
   ok: 90 * 24 * 3600_000,
   none: 14 * 24 * 3600_000,
   error: 6 * 3600_000,
 };
+
+/** Per-workflow TTL overrides, merged over CACHE_TTL_MS by status.
+ * Overriding because new setlists get added frequently as a band is touring. */
+const WORKFLOW_TTL_MS: Partial<Record<WorkflowName, Partial<Record<CacheStatus, number>>>> = {
+  tour: { ok: 5 * 24 * 3600_000, none: 5 * 24 * 3600_000 },
+};
+
+/** How long a record from `name` with `status` stays usable. */
+export function ttlMs(name: WorkflowName, status: CacheStatus): number {
+  return WORKFLOW_TTL_MS[name]?.[status] ?? CACHE_TTL_MS[status];
+}
 
 export interface CacheRecord {
   status: CacheStatus;
@@ -85,10 +97,13 @@ function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-export function isFresh(record: CacheRecord, now = Date.now()): boolean {
+/** `name` is required, not defaulted: the TTL depends on which workflow wrote
+ * the record, and a caller that omitted it would silently hand a tour setlist
+ * the 90-day default this split exists to avoid. */
+export function isFresh(record: CacheRecord, name: WorkflowName, now = Date.now()): boolean {
   const at = Date.parse(record.at);
   if (Number.isNaN(at)) return false; // unparseable -> re-run, never cache forever
-  return now - at < CACHE_TTL_MS[record.status];
+  return now - at < ttlMs(name, record.status);
 }
 
 export class S3EnrichmentCache implements EnrichmentCache {

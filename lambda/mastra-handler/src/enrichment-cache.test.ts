@@ -6,58 +6,95 @@ import {
   StubEnrichmentCache,
   cacheObjectKey,
   isFresh,
+  ttlMs,
   type CacheEntry,
 } from './enrichment-cache.js';
 
 const NOW = Date.parse('2026-08-12T00:00:00Z');
 
+const days = (n: number) => n * 24 * 3600_000;
+const ago = (ms: number) => new Date(NOW - ms).toISOString();
+
 describe('isFresh', () => {
   it('keeps an ok record for 90 days', () => {
-    const at = new Date(NOW - 89 * 24 * 3600_000).toISOString();
-    expect(isFresh({ status: 'ok', at }, NOW)).toBe(true);
+    expect(isFresh({ status: 'ok', at: ago(days(89)) }, 'bio', NOW)).toBe(true);
   });
 
   it('expires an ok record after 90 days', () => {
-    const at = new Date(NOW - 91 * 24 * 3600_000).toISOString();
-    expect(isFresh({ status: 'ok', at }, NOW)).toBe(false);
+    expect(isFresh({ status: 'ok', at: ago(days(91)) }, 'bio', NOW)).toBe(false);
   });
 
   it('retries an error record after 6 hours', () => {
-    expect(isFresh({ status: 'error', at: new Date(NOW - 5 * 3600_000).toISOString() }, NOW)).toBe(
-      true,
-    );
-    expect(isFresh({ status: 'error', at: new Date(NOW - 7 * 3600_000).toISOString() }, NOW)).toBe(
-      false,
-    );
+    expect(isFresh({ status: 'error', at: ago(5 * 3600_000) }, 'bio', NOW)).toBe(true);
+    expect(isFresh({ status: 'error', at: ago(7 * 3600_000) }, 'bio', NOW)).toBe(false);
   });
 
   it('retries a none record after 14 days', () => {
-    expect(
-      isFresh({ status: 'none', at: new Date(NOW - 13 * 24 * 3600_000).toISOString() }, NOW),
-    ).toBe(true);
-    expect(
-      isFresh({ status: 'none', at: new Date(NOW - 15 * 24 * 3600_000).toISOString() }, NOW),
-    ).toBe(false);
+    expect(isFresh({ status: 'none', at: ago(days(13)) }, 'bio', NOW)).toBe(true);
+    expect(isFresh({ status: 'none', at: ago(days(15)) }, 'bio', NOW)).toBe(false);
   });
 
   it('treats an unparseable timestamp as stale rather than fresh-forever', () => {
-    expect(isFresh({ status: 'ok', at: 'not-a-date' }, NOW)).toBe(false);
+    expect(isFresh({ status: 'ok', at: 'not-a-date' }, 'bio', NOW)).toBe(false);
   });
 
   it('is stale exactly at the TTL boundary (strict comparison)', () => {
-    const at = new Date(NOW - CACHE_TTL_MS.ok).toISOString();
-    expect(isFresh({ status: 'ok', at }, NOW)).toBe(false);
+    expect(isFresh({ status: 'ok', at: ago(CACHE_TTL_MS.ok) }, 'bio', NOW)).toBe(false);
   });
 
   it('is fresh one millisecond inside the TTL boundary', () => {
-    const at = new Date(NOW - CACHE_TTL_MS.ok + 1).toISOString();
-    expect(isFresh({ status: 'ok', at }, NOW)).toBe(true);
+    expect(isFresh({ status: 'ok', at: ago(CACHE_TTL_MS.ok - 1) }, 'bio', NOW)).toBe(true);
   });
 
   it('has the TTLs the spec fixed', () => {
-    expect(CACHE_TTL_MS.ok).toBe(90 * 24 * 3600_000);
-    expect(CACHE_TTL_MS.none).toBe(14 * 24 * 3600_000);
+    expect(CACHE_TTL_MS.ok).toBe(days(90));
+    expect(CACHE_TTL_MS.none).toBe(days(14));
     expect(CACHE_TTL_MS.error).toBe(6 * 3600_000);
+  });
+});
+
+// The tour workflow caches setlist.fm's most recent observed setlist, which is
+// stale the moment the band plays again — so its ok records expire far sooner
+// than the shared table's, while every other status and workflow is unchanged.
+describe('isFresh for the tour workflow', () => {
+  it('keeps an ok tour record for 5 days', () => {
+    expect(isFresh({ status: 'ok', at: ago(days(4)) }, 'tour', NOW)).toBe(true);
+  });
+
+  it('expires an ok tour record after 5 days', () => {
+    expect(isFresh({ status: 'ok', at: ago(days(6)) }, 'tour', NOW)).toBe(false);
+  });
+
+  it('expires a tour record that bio and image would still consider fresh', () => {
+    const at = ago(days(30));
+    expect(isFresh({ status: 'ok', at }, 'tour', NOW)).toBe(false);
+    expect(isFresh({ status: 'ok', at }, 'bio', NOW)).toBe(true);
+    expect(isFresh({ status: 'ok', at }, 'image', NOW)).toBe(true);
+  });
+
+  it('expires a none tour record after 5 days too, not the shared 14', () => {
+    expect(isFresh({ status: 'none', at: ago(days(4)) }, 'tour', NOW)).toBe(true);
+    expect(isFresh({ status: 'none', at: ago(days(6)) }, 'tour', NOW)).toBe(false);
+    // The shared table still holds 14 days for everyone else.
+    expect(isFresh({ status: 'none', at: ago(days(6)) }, 'bio', NOW)).toBe(true);
+  });
+
+  it('leaves tour error on the shared 6-hour retry', () => {
+    expect(isFresh({ status: 'error', at: ago(5 * 3600_000) }, 'tour', NOW)).toBe(true);
+    expect(isFresh({ status: 'error', at: ago(7 * 3600_000) }, 'tour', NOW)).toBe(false);
+  });
+});
+
+describe('ttlMs', () => {
+  it('overrides tour ok and none, falling back to the shared table otherwise', () => {
+    expect(ttlMs('tour', 'ok')).toBe(days(5));
+    expect(ttlMs('tour', 'none')).toBe(days(5));
+    expect(ttlMs('tour', 'error')).toBe(CACHE_TTL_MS.error);
+    for (const name of ['bio', 'image'] as const) {
+      for (const status of ['ok', 'none', 'error'] as const) {
+        expect(ttlMs(name, status)).toBe(CACHE_TTL_MS[status]);
+      }
+    }
   });
 });
 
