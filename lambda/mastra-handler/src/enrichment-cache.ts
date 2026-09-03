@@ -30,7 +30,7 @@ export const CACHE_TTL_MS: Record<CacheStatus, number> = {
 /** Per-workflow TTL overrides, merged over CACHE_TTL_MS by status.
  * Overriding because new setlists get added frequently as a band is touring. */
 const WORKFLOW_TTL_MS: Partial<Record<WorkflowName, Partial<Record<CacheStatus, number>>>> = {
-  tour: { ok: 5 * 24 * 3600_000, none: 5 * 24 * 3600_000 },
+  tour: { ok: 7 * 24 * 3600_000, none: 7 * 24 * 3600_000 },
 };
 
 /** How long a record from `name` with `status` stays usable. */
