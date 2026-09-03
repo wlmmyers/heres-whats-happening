@@ -192,18 +192,19 @@ const getUserCalendarInRange = `-- name: GetUserCalendarInRange :many
 SELECT
     e.id              AS event_id,
     e.title,
-    e.description,
     e.starts_at,
     e.ends_at,
     e.image_url,
     e.url,
     v.name            AS venue_name,
     v.address         AS venue_address,
+    b.bio_md,
     m.score,
     m.score_breakdown
 FROM user_event_match m
 JOIN events e ON e.id = m.event_id
 JOIN venues v ON v.id = e.venue_id
+LEFT JOIN artist_bios b ON b.artist_id = e.headline_artist_id
 WHERE m.user_id = $1
   AND e.archived_at IS NULL
   AND e.starts_at >= $2
@@ -224,17 +225,20 @@ type GetUserCalendarInRangeParams struct {
 type GetUserCalendarInRangeRow struct {
 	EventID        pgtype.UUID        `json:"event_id"`
 	Title          string             `json:"title"`
-	Description    string             `json:"description"`
 	StartsAt       pgtype.Timestamptz `json:"starts_at"`
 	EndsAt         pgtype.Timestamptz `json:"ends_at"`
 	ImageUrl       *string            `json:"image_url"`
 	Url            *string            `json:"url"`
 	VenueName      string             `json:"venue_name"`
 	VenueAddress   *string            `json:"venue_address"`
+	BioMd          *string            `json:"bio_md"`
 	Score          float64            `json:"score"`
 	ScoreBreakdown []byte             `json:"score_breakdown"`
 }
 
+// No e.description: the iCal feed describes an event with the headline
+// artist's bio instead. LEFT JOIN so an event with no headline artist, or an
+// artist whose bio has not been generated yet, still appears in the feed.
 func (q *Queries) GetUserCalendarInRange(ctx context.Context, arg GetUserCalendarInRangeParams) ([]GetUserCalendarInRangeRow, error) {
 	rows, err := q.db.Query(ctx, getUserCalendarInRange, arg.UserID, arg.StartsAt, arg.StartsAt_2)
 	if err != nil {
@@ -247,13 +251,13 @@ func (q *Queries) GetUserCalendarInRange(ctx context.Context, arg GetUserCalenda
 		if err := rows.Scan(
 			&i.EventID,
 			&i.Title,
-			&i.Description,
 			&i.StartsAt,
 			&i.EndsAt,
 			&i.ImageUrl,
 			&i.Url,
 			&i.VenueName,
 			&i.VenueAddress,
+			&i.BioMd,
 			&i.Score,
 			&i.ScoreBreakdown,
 		); err != nil {

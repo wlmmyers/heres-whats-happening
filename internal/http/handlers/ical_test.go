@@ -294,3 +294,62 @@ func TestGetIcalFeed_UnknownToken_404(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+// DESCRIPTION carries the headline artist's bio, never the event's own
+// description. seedCalendarFixture's "PB Live" (description "Indie rock", no
+// headline artist) rides along as the control: its event description must not
+// reach the feed either, and with no artist it gets the match line alone.
+func TestGetIcalFeed_DescribesEventWithArtistBio(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+
+	artistID, err := q.UpsertArtist(ctx, store.UpsertArtistParams{
+		NameKey: "la-luz-ical-bio", DisplayName: "La Luz", Status: "ok",
+	})
+	require.NoError(t, err)
+	bio := "La Luz formed in Seattle in 2012."
+	require.NoError(t, q.UpsertArtistBio(ctx, store.UpsertArtistBioParams{
+		ArtistID: artistID, Status: "ok", BioMd: &bio, Sources: []byte(`[]`),
+	}))
+
+	city, _ := q.GetDefaultCity(ctx)
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Tractor Tavern", NormalizedName: "tractor tavern",
+	})
+	require.NoError(t, err)
+	eventID, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:         src.ID,
+		SourceEventID:    "ical-bio-1",
+		Title:            "La Luz Live",
+		Description:      "scraper blurb that must not ship",
+		StartsAt:         pgtype.Timestamptz{Time: time.Now().Add(36 * time.Hour), Valid: true},
+		VenueID:          venueID,
+		HeadlineArtistID: artistID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertUserEventMatch(ctx, store.UpsertUserEventMatchParams{
+		UserID: userID, EventID: eventID, Score: 0.77,
+		ScoreBreakdown: []byte(`{"matched_genres":["surf"]}`),
+		ComputedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	}))
+
+	rawToken := "ical-bio-token-not-random-but-fine"
+	require.NoError(t, q.UpsertIcalToken(ctx, store.UpsertIcalTokenParams{
+		UserID: userID, TokenHash: auth.HashRefresh(rawToken),
+	}))
+
+	r := chi.NewRouter()
+	r.Get("/ical/{token}", handlers.GetIcalFeed(q))
+	req := httptest.NewRequest(http.MethodGet, "/ical/"+rawToken+".ics", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	require.Contains(t, body, `DESCRIPTION:Matched because: surf\n\nLa Luz formed in Seattle in 2012.`)
+	require.NotContains(t, body, "scraper blurb that must not ship")
+	require.NotContains(t, body, "Indie rock")
+}

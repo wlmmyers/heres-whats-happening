@@ -1,19 +1,23 @@
 -- name: GetUserCalendarInRange :many
+-- No e.description: the iCal feed describes an event with the headline
+-- artist's bio instead. LEFT JOIN so an event with no headline artist, or an
+-- artist whose bio has not been generated yet, still appears in the feed.
 SELECT
     e.id              AS event_id,
     e.title,
-    e.description,
     e.starts_at,
     e.ends_at,
     e.image_url,
     e.url,
     v.name            AS venue_name,
     v.address         AS venue_address,
+    b.bio_md,
     m.score,
     m.score_breakdown
 FROM user_event_match m
 JOIN events e ON e.id = m.event_id
 JOIN venues v ON v.id = e.venue_id
+LEFT JOIN artist_bios b ON b.artist_id = e.headline_artist_id
 WHERE m.user_id = $1
   AND e.archived_at IS NULL
   AND e.starts_at >= $2

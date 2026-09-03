@@ -5,14 +5,11 @@ import { useMarkNotGoing } from '../hooks/useMarkNotGoing';
 import { formatEventDate } from '../utils/eventDate';
 import * as c from '../styles/common.css';
 import * as s from './GoingWentList.css';
+import { Skeleton } from './Skeleton';
 
 // The endpoint returns the whole going list, past shows included, so the
 // upcoming half is picked out here. An event with an end time counts as
 // upcoming until it is over; one without, until its start passes.
-//
-// "Now" is read in here rather than in the component: a clock read during
-// render is impure, and this mirrors bucketEventsByWeek, which the calendar
-// list beside this one calls the same way.
 function upcomingEvents(events: CalendarEvent[]): CalendarEvent[] {
   const now = Date.now();
   return events.filter((event) => {
@@ -40,11 +37,11 @@ export default function GoingList() {
         )}
       </div>
       <div className={s.innerContainer}>
-        {goingEventsQ.isLoading ? (
+        {!goingEventsQ.isFetched ? (
           <>
-            <div className={s.skeletonRow} />
-            <div className={s.skeletonRow} />
-            <div className={s.skeletonRow} />
+            <Skeleton className={s.skeletonRow} />
+            <Skeleton className={s.skeletonRow} />
+            <Skeleton className={s.skeletonRow} />
           </>
         ) : goingEventsQ.isError ? (
           <div className={s.errorText}>Couldn't load your going list.</div>

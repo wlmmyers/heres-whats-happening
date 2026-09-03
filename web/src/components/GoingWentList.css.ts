@@ -117,7 +117,12 @@ export const errorText = style({
 });
 
 export const skeletonRow = style({
+  position: 'static',
   height: '3.25rem',
   backgroundColor: color.gray100,
-  marginBottom: '0.5rem',
+  selectors: {
+    '&:not(:last-child)': {
+      marginBottom: '0.5rem',
+    },
+  },
 });

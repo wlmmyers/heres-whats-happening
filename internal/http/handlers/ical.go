@@ -130,7 +130,7 @@ func GetIcalFeed(q *store.Queries) http.HandlerFunc {
 			if e.EndsAt.Valid {
 				ev.EndsAt = e.EndsAt.Time
 			}
-			ev.Description = buildIcalDescription(e.ScoreBreakdown, e.Description)
+			ev.Description = buildIcalDescription(e.ScoreBreakdown, textPtrToString(e.BioMd))
 			evs = append(evs, ev)
 		}
 		body := ical.FormatCalendar("Your Matched Events", now, evs)
@@ -142,7 +142,9 @@ func GetIcalFeed(q *store.Queries) http.HandlerFunc {
 	}
 }
 
-func buildIcalDescription(breakdown []byte, eventDescription string) string {
+// The event's own description is deliberately not part of the feed — the
+// headline artist's bio is what fills out a calendar entry.
+func buildIcalDescription(breakdown []byte, artistBio string) string {
 	var because string
 	if len(breakdown) > 0 {
 		var raw struct {
@@ -158,13 +160,13 @@ func buildIcalDescription(breakdown []byte, eventDescription string) string {
 		}
 	}
 	switch {
-	case because == "" && eventDescription == "":
+	case because == "" && artistBio == "":
 		return ""
 	case because == "":
-		return eventDescription
-	case eventDescription == "":
+		return artistBio
+	case artistBio == "":
 		return because
 	default:
-		return because + "\n\n" + eventDescription
+		return because + "\n\n" + artistBio
 	}
 }
