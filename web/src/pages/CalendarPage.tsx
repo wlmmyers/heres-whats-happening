@@ -10,8 +10,9 @@ import { CalendarEventsAllCity } from '../components/CalendarEventsAllCity';
 import { CalendarEventsUser } from '../components/CalendarEventsUser';
 import GoingWentList from '../components/GoingWentList';
 import { InfoIcon } from '../components/InfoIcon';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import Layout from '../components/Layout';
+import { useLocalStorageState } from '../hooks/useLocalStorageState';
 
 // const DISPLAY_OPTIONS = ['Full', 'Condensed'] as const;
 // type DisplayStyle = (typeof DISPLAY_OPTIONS)[number];
@@ -26,8 +27,9 @@ export default function CalendarPage() {
   const connectSpotifyMut = useConnectSpotify();
   const spotifyQ = useSpotifyStatus();
   const interestsQ = useManualInterests();
-  const [userToggledAllCityCalendar, setUserToggledAllCityCalendar] = useState(false);
-
+  const { state: toggledAllCity, actions: toggledAllCityActions } = useLocalStorageState<
+    'true' | 'false'
+  >('calendar.toggledAllCity');
   // Pending, not `data === undefined`: a failed gate query never gets data, and
   // waiting on data would leave the page spinning forever. Optional chaining
   // then keeps a failed gate on the matched calendar rather than the city list.
@@ -37,7 +39,7 @@ export default function CalendarPage() {
     spotifyQ.data?.connected === false &&
     interestsQ.data?.length === 0 &&
     !!user?.city_id;
-  const isShowingAllCityCalendar = noInterestsKnown || userToggledAllCityCalendar;
+  const isShowingAllCityCalendar = noInterestsKnown || toggledAllCity === 'true';
 
   // const displayItems = DISPLAY_OPTIONS.map((opt) => ({
   //   key: opt,
@@ -53,14 +55,14 @@ export default function CalendarPage() {
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
       if (e.key === 'c') {
-        setUserToggledAllCityCalendar((userToggledAllCityCalendar) => !userToggledAllCityCalendar);
+        toggledAllCityActions.setValue(toggledAllCity === 'true' ? 'false' : 'true');
       }
     };
     window.addEventListener('keypress', listener);
     return () => {
       window.removeEventListener('keypress', listener);
     };
-  }, []);
+  }, [toggledAllCity, toggledAllCityActions]);
 
   return (
     <Layout wide>

@@ -22,6 +22,10 @@ export const innerContainer = style([
   },
 ]);
 
+export const noBorder = style({
+  border: 'none',
+});
+
 export const heading = style({
   display: 'flex',
   alignItems: 'baseline',
@@ -50,6 +54,34 @@ export const item = style({
     '& + &': { borderTop: `1px solid ${color.gray200}` },
     '&:hover': { backgroundColor: color.gray50 },
   },
+});
+
+// A hand-added row has no detail page to open, so it must not offer the
+// pointer or the hover lift that promise one.
+export const itemStatic = style({
+  cursor: 'default',
+  position: 'relative',
+  paddingLeft: '1.25rem',
+  selectors: {
+    '&:hover': { backgroundColor: 'transparent' },
+    '&::before': {
+      position: 'absolute',
+      content: '',
+      left: '0.5rem',
+      width: '4px',
+      height: 'calc(100% - 1rem)',
+      backgroundColor: color.blue200,
+      marginRight: '0.5rem',
+    },
+  },
+});
+
+export const manualLabel = style({
+  ...fontSize.xs,
+  display: 'inline-block',
+  color: color.blue300,
+  fontWeight: fontWeight.light,
+  marginLeft: '0.5rem',
 });
 
 export const itemMain = style({
@@ -124,5 +156,45 @@ export const skeletonRow = style({
     '&:not(:last-child)': {
       marginBottom: '0.5rem',
     },
+  },
+});
+
+export const wentToggle = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+});
+
+export const wentHeading = style({
+  marginTop: '1.25rem',
+});
+
+export const wentSectionTitle = style({});
+
+// Placement only; the caret's size and colour come from RotatingCaret.
+export const wentCaret = style({
+  // Pushed to the far edge, where a disclosure caret is looked for.
+  marginLeft: 'auto',
+});
+
+// Clips the past rows while their height animates between 0 and auto.
+export const wentBody = style({
+  overflow: 'hidden',
+});
+
+// Sits at the far edge of the Past Shows heading, opposite the title. The
+// toggle beside it is a button too, so this one is a sibling rather than a
+// child.
+export const addButton = style({
+  flexShrink: 0,
+  marginLeft: 'auto',
+  padding: '0 0.25rem',
+  ...fontSize.sm,
+  lineHeight: 1,
+  color: color.gray500,
+  cursor: 'pointer',
+  ...transition,
+  selectors: {
+    '&:hover': { color: color.gray900 },
   },
 });

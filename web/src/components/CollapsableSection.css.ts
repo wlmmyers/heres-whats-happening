@@ -17,11 +17,8 @@ export const header = style({
   fontWeight: 'inherit',
 });
 
+// Placement only; the caret's size and colour come from RotatingCaret.
 export const caret = style({
-  display: 'block',
-  width: '0.75rem',
-  height: '0.75rem',
-  color: color.gray500,
   marginLeft: '5px',
 });
 

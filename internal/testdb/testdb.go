@@ -178,6 +178,7 @@ var truncateTables = []string{
 	"poster_jobs",
 	"user_event_not_interested",
 	"user_event_going",
+	"user_manual_added_going_events",
 	"user_event_match",
 	"event_genres",
 	"event_performers",

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { formatEventDate } from './eventDate';
+import { endOfLocalDay, formatEventDate, formatManualEventDate, parseLocalDate } from './eventDate';
 
 // Tests run pinned to America/Los_Angeles (see vitest.config.ts), so the UTC
 // instants below are 1:00 PM / 4:30 PM / 1:00 AM local.
@@ -73,5 +73,55 @@ describe('formatEventDate', () => {
 
   it('falls back to the start alone when the end equals the start', () => {
     expect(label({ starts_at: start, ends_at: start }, 'short')).toBe('Mon, Jun 15, 1:00 PM');
+  });
+});
+
+describe('parseLocalDate', () => {
+  // `new Date('2026-03-10')` is UTC midnight, which is March 9th at 4pm in the
+  // pinned zone. Every manual event would render, sort and split a day early.
+  it('reads a date-only string as local midnight, not UTC midnight', () => {
+    const parsed = parseLocalDate('2026-03-10');
+    expect(parsed.getFullYear()).toBe(2026);
+    expect(parsed.getMonth()).toBe(2);
+    expect(parsed.getDate()).toBe(10);
+    expect(parsed.getHours()).toBe(0);
+  });
+
+  it('returns an invalid date for a string that is not a calendar day', () => {
+    expect(Number.isNaN(parseLocalDate('sometime last spring').getTime())).toBe(true);
+    expect(Number.isNaN(parseLocalDate('2026-13-45').getTime())).toBe(true);
+    expect(Number.isNaN(parseLocalDate('').getTime())).toBe(true);
+  });
+
+  // Postgres hands back 2026-02-30 as nothing, but a hand-typed form field can
+  // still offer a day that does not exist in that month.
+  it('rejects a day that overflows its month rather than rolling into the next', () => {
+    expect(Number.isNaN(parseLocalDate('2026-02-30').getTime())).toBe(true);
+  });
+});
+
+describe('endOfLocalDay', () => {
+  // A show tonight belongs under Upcoming until the day is actually over.
+  it('lands on the last instant of the given day', () => {
+    const end = endOfLocalDay(parseLocalDate('2026-03-10'));
+    expect(end.getDate()).toBe(10);
+    expect(end.getHours()).toBe(23);
+    expect(end.getMinutes()).toBe(59);
+  });
+});
+
+describe('formatManualEventDate', () => {
+  it('renders the day without a time', () => {
+    vi.setSystemTime(new Date('2026-01-01T12:00:00Z'));
+    expect(formatManualEventDate('2026-03-10')).toBe('Tue, Mar 10');
+  });
+
+  it('adds the year for a day outside the current year', () => {
+    vi.setSystemTime(new Date('2026-01-01T12:00:00Z'));
+    expect(formatManualEventDate('2019-08-03')).toBe('Sat, Aug 3, 2019');
+  });
+
+  it('degrades to the raw string when the day is unparseable', () => {
+    expect(formatManualEventDate('not a date')).toBe('not a date');
   });
 });

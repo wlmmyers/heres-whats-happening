@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import * as s from './CollapsableSection.css';
 import * as c from '../styles/common.css';
+import RotatingCaret from './RotatingCaret';
 
 /**
  * A card section whose body collapses to just its title row when the header
@@ -34,22 +35,7 @@ export default function CollapsableSection({
           onClick={() => setOpen((wasOpen) => !wasOpen)}
         >
           {title}
-          <motion.svg
-            className={s.caret}
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-            // Without this the caret spins in from 0deg on every mount.
-            initial={false}
-            animate={{ rotate: open ? 180 : 0 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-          >
-            <path d="M3 6l5 5 5-5" />
-          </motion.svg>
+          <RotatingCaret open={open} className={s.caret} />
         </button>
       </h2>
       {/* The id stays mounted so `aria-controls` always resolves, collapsed or not. */}

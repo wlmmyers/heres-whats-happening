@@ -182,6 +182,10 @@ func (s *Server) Router() http.Handler {
 		// route above stays: EventCard only needs ids to colour its toggle.
 		r.Get("/me/event-going/events", handlers.ListGoingEvents(s.Queries))
 		r.Get("/me/not-interested", handlers.ListNotInterested(s.Queries))
+		// Hand-entered shows. Kept out of the event routes above on purpose:
+		// these rows reference no events row and are merged with the going
+		// list by the client, not by the database.
+		r.Get("/me/manual-added-going-events", handlers.ListManualAddedGoingEvents(s.Queries))
 
 		// Writes. A nested group states the limiter once; chi composes it with
 		// the outer net, so these routes pass through both.
@@ -193,6 +197,12 @@ func (s *Server) Router() http.Handler {
 			r.Delete("/me/not-interested", handlers.ResetNotInterested(s.Queries))
 			r.Post("/me/event-going", handlers.AddGoing(s.Queries))
 			r.Delete("/me/event-going", handlers.ResetGoing(s.Queries))
+			// No dedicated limiter: unlike manual-interests, these writes
+			// publish nothing and cost no downstream compute, so the shared
+			// authed-write budget is the right ceiling.
+			r.Post("/me/manual-added-going-events", handlers.CreateManualAddedGoingEvent(s.Queries))
+			r.Put("/me/manual-added-going-events/{id}", handlers.UpdateManualAddedGoingEvent(s.Queries))
+			r.Delete("/me/manual-added-going-events/{id}", handlers.DeleteManualAddedGoingEvent(s.Queries))
 			r.Delete("/integrations/spotify", handlers.SpotifyDisconnect(s.Queries))
 			r.Delete("/me/ical-token", handlers.DeleteIcalToken(s.Queries))
 		})
