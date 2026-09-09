@@ -1,7 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ConfirmDialog from './ConfirmDialog';
+import { DIALOG_ROOT_ID } from './Layout';
+
+function addDialogRoot() {
+  const root = document.createElement('div');
+  root.id = DIALOG_ROOT_ID;
+  document.body.appendChild(root);
+  return root;
+}
+
+afterEach(() => {
+  document.getElementById(DIALOG_ROOT_ID)?.remove();
+});
 
 describe('ConfirmDialog', () => {
   it('renders nothing when closed', () => {
@@ -37,5 +49,42 @@ describe('ConfirmDialog', () => {
     render(<ConfirmDialog open message="Are you sure?" onConfirm={() => {}} onCancel={onCancel} />);
     await userEvent.click(screen.getByText('Are you sure?'));
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  // The backdrop is position: fixed, which resolves against the nearest
+  // transformed ancestor rather than the viewport. Callers sit inside such
+  // ancestors (the calendar sidebar under CalendarPage's translateY), so the
+  // dialog has to leave the tree it was rendered from.
+  it('renders into the app dialog root when one exists', () => {
+    const root = addDialogRoot();
+    render(<ConfirmDialog open message="Are you sure?" onConfirm={() => {}} onCancel={() => {}} />);
+
+    expect(root).toHaveTextContent('Are you sure?');
+  });
+
+  // A dialog that mounts closed with the page renders before Layout's root is
+  // in the DOM, so resolving the host once on mount would pin it to the body
+  // for good. It has to be resolved when the dialog actually opens.
+  it('lands in the dialog root even when mounted closed before the root exists', () => {
+    const { rerender } = render(
+      <ConfirmDialog
+        open={false}
+        message="Are you sure?"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    const root = addDialogRoot();
+    rerender(
+      <ConfirmDialog open message="Are you sure?" onConfirm={() => {}} onCancel={() => {}} />,
+    );
+
+    expect(root).toHaveTextContent('Are you sure?');
+  });
+
+  it('falls back to the document body when there is no dialog root', () => {
+    render(<ConfirmDialog open message="Are you sure?" onConfirm={() => {}} onCancel={() => {}} />);
+
+    expect(screen.getByText('Are you sure?')).toBeInTheDocument();
   });
 });

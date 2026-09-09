@@ -43,6 +43,16 @@ export const clickableCard = style([
   },
 ]);
 
+export const backdrop = style({
+  position: 'fixed',
+  inset: 0,
+  zIndex: 50,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: color.blackA40,
+});
+
 export const buttonPrimary = style({
   backgroundColor: color.blue600,
   color: color.white,
@@ -87,6 +97,28 @@ export const textInput = style({
   borderRadius: radius.sm,
   paddingInline: '0.5rem',
   paddingBlock: '0.375rem',
+});
+
+export const field = style({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '0.25rem',
+});
+
+export const fieldLabel = style({
+  ...fontSize.xs,
+  fontWeight: fontWeight.medium,
+  color: color.gray700,
+});
+
+export const fieldError = style({
+  ...fontSize.xs,
+  color: color.red600,
+});
+
+export const formError = style({
+  ...fontSize.sm,
+  color: color.red600,
 });
 
 export const pageTitle = style({
@@ -191,4 +223,20 @@ export const goingButton = style({
 export const isGoing = style({
   color: color.green600,
   borderColor: color.green600,
+});
+
+export const dialog = style([
+  cardNoShadow,
+  {
+    width: '400px',
+    maxWidth: '90%',
+    padding: '1.5rem',
+  },
+]);
+
+export const dialogActions = style({
+  marginTop: '1rem',
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: '0.75rem',
 });

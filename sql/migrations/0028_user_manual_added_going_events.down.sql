@@ -1,0 +1,1 @@
+DROP TABLE user_manual_added_going_events;

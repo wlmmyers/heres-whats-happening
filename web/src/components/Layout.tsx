@@ -8,6 +8,17 @@ import WelcomeModal from './WelcomeModal';
 import ConfirmErrorModal from './ConfirmErrorModal';
 import * as s from './Layout.css';
 
+/**
+ * Host node for dialogs that portal out of the page.
+ *
+ * A `position: fixed` backdrop is positioned against the nearest transformed
+ * ancestor rather than the viewport, and a z-index only competes inside its own
+ * stacking context — so a dialog rendered in place inside an animated or
+ * transformed card is clipped and painted under its neighbours. Portaling into
+ * this node puts it back at the top level, above everything the page renders.
+ */
+export const DIALOG_ROOT_ID = 'dialog-root';
+
 const link = ({ isActive }: { isActive: boolean }) =>
   clsx(s.navLink, isActive ? s.navLinkActive : s.navLinkInactive);
 
@@ -86,6 +97,7 @@ export default function Layout({ children, wide }: { children?: ReactNode; wide?
       </main>
       {showWelcome && <WelcomeModal onDismiss={() => dismiss('welcome')} />}
       {showConfirmError && <ConfirmErrorModal onDismiss={() => dismiss('confirmerror')} />}
+      <div id={DIALOG_ROOT_ID} />
     </div>
   );
 }

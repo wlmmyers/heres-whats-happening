@@ -56,6 +56,34 @@ export const item = style({
   },
 });
 
+// A hand-added row has no detail page to open, so it must not offer the
+// pointer or the hover lift that promise one.
+export const itemStatic = style({
+  cursor: 'default',
+  position: 'relative',
+  paddingLeft: '1.25rem',
+  selectors: {
+    '&:hover': { backgroundColor: 'transparent' },
+    '&::before': {
+      position: 'absolute',
+      content: '',
+      left: '0.5rem',
+      width: '4px',
+      height: 'calc(100% - 1rem)',
+      backgroundColor: color.blue200,
+      marginRight: '0.5rem',
+    },
+  },
+});
+
+export const manualLabel = style({
+  ...fontSize.xs,
+  display: 'inline-block',
+  color: color.blue300,
+  fontWeight: fontWeight.light,
+  marginLeft: '0.5rem',
+});
+
 export const itemMain = style({
   // Without this a long title stretches the flex item and pushes the remove
   // button out of the panel instead of wrapping.
@@ -152,4 +180,21 @@ export const wentCaret = style({
 // Clips the past rows while their height animates between 0 and auto.
 export const wentBody = style({
   overflow: 'hidden',
+});
+
+// Sits at the far edge of the Past Shows heading, opposite the title. The
+// toggle beside it is a button too, so this one is a sibling rather than a
+// child.
+export const addButton = style({
+  flexShrink: 0,
+  marginLeft: 'auto',
+  padding: '0 0.25rem',
+  ...fontSize.sm,
+  lineHeight: 1,
+  color: color.gray500,
+  cursor: 'pointer',
+  ...transition,
+  selectors: {
+    '&:hover': { color: color.gray900 },
+  },
 });

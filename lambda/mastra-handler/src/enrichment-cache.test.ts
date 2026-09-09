@@ -57,12 +57,12 @@ describe('isFresh', () => {
 // stale the moment the band plays again — so its ok records expire far sooner
 // than the shared table's, while every other status and workflow is unchanged.
 describe('isFresh for the tour workflow', () => {
-  it('keeps an ok tour record for 5 days', () => {
+  it('keeps an ok tour record for 7 days', () => {
     expect(isFresh({ status: 'ok', at: ago(days(4)) }, 'tour', NOW)).toBe(true);
   });
 
-  it('expires an ok tour record after 5 days', () => {
-    expect(isFresh({ status: 'ok', at: ago(days(6)) }, 'tour', NOW)).toBe(false);
+  it('expires an ok tour record after 7 days', () => {
+    expect(isFresh({ status: 'ok', at: ago(days(8)) }, 'tour', NOW)).toBe(false);
   });
 
   it('expires a tour record that bio and image would still consider fresh', () => {
@@ -72,11 +72,11 @@ describe('isFresh for the tour workflow', () => {
     expect(isFresh({ status: 'ok', at }, 'image', NOW)).toBe(true);
   });
 
-  it('expires a none tour record after 5 days too, not the shared 14', () => {
+  it('expires a none tour record after 7 days too, not the shared 14', () => {
     expect(isFresh({ status: 'none', at: ago(days(4)) }, 'tour', NOW)).toBe(true);
-    expect(isFresh({ status: 'none', at: ago(days(6)) }, 'tour', NOW)).toBe(false);
+    expect(isFresh({ status: 'none', at: ago(days(8)) }, 'tour', NOW)).toBe(false);
     // The shared table still holds 14 days for everyone else.
-    expect(isFresh({ status: 'none', at: ago(days(6)) }, 'bio', NOW)).toBe(true);
+    expect(isFresh({ status: 'none', at: ago(days(8)) }, 'bio', NOW)).toBe(true);
   });
 
   it('leaves tour error on the shared 6-hour retry', () => {
@@ -87,8 +87,8 @@ describe('isFresh for the tour workflow', () => {
 
 describe('ttlMs', () => {
   it('overrides tour ok and none, falling back to the shared table otherwise', () => {
-    expect(ttlMs('tour', 'ok')).toBe(days(5));
-    expect(ttlMs('tour', 'none')).toBe(days(5));
+    expect(ttlMs('tour', 'ok')).toBe(days(7));
+    expect(ttlMs('tour', 'none')).toBe(days(7));
     expect(ttlMs('tour', 'error')).toBe(CACHE_TTL_MS.error);
     for (const name of ['bio', 'image'] as const) {
       for (const status of ['ok', 'none', 'error'] as const) {

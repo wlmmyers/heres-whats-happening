@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom';
+import { DIALOG_ROOT_ID } from './Layout';
 import * as s from './ConfirmDialog.css';
 import * as c from '../styles/common.css';
 
@@ -21,14 +23,19 @@ export default function ConfirmDialog({
   onCancel,
 }: Props) {
   if (!open) return null;
-  return (
-    <div data-testid="confirm-backdrop" className={s.backdrop} onClick={onCancel}>
+  // Resolved here rather than once on mount: a dialog that mounts closed with
+  // its page renders before Layout has committed the root to the DOM, so a
+  // mount-time lookup would miss it and pin the dialog to the body for good.
+  // This component holds no state of its own, so re-resolving costs nothing.
+  const host = document.getElementById(DIALOG_ROOT_ID) ?? document.body;
+  return createPortal(
+    <div data-testid="confirm-backdrop" className={c.backdrop} onClick={onCancel}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? 'confirm-dialog-title' : undefined}
         aria-describedby="confirm-dialog-desc"
-        className={s.dialog}
+        className={c.dialog}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
@@ -39,7 +46,7 @@ export default function ConfirmDialog({
         <p id="confirm-dialog-desc" className={s.message}>
           {message}
         </p>
-        <div className={s.actions}>
+        <div className={c.dialogActions}>
           <button type="button" onClick={onCancel} className={c.buttonSecondary}>
             {cancelLabel}
           </button>
@@ -48,6 +55,7 @@ export default function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    host,
   );
 }

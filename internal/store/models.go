@@ -215,6 +215,16 @@ type UserInterest struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
+type UserManualAddedGoingEvent struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	ShowDate  pgtype.Date        `json:"show_date"`
+	EventName string             `json:"event_name"`
+	VenueName string             `json:"venue_name"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type UserSpotifyToken struct {
 	UserID          pgtype.UUID        `json:"user_id"`
 	AccessTokenEnc  []byte             `json:"access_token_enc"`
