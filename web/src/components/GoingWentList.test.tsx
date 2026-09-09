@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import GoingWentList from './GoingWentList';
@@ -34,6 +34,27 @@ const past: CalendarEvent = {
   score: 0,
   matched_because: { performers: [], genres: [] },
 };
+
+const older: CalendarEvent = {
+  id: 'e00',
+  title: 'Spring Show',
+  starts_at: '2026-03-10T20:00:00Z',
+  venue: { name: 'The Chapel' },
+  score: 0,
+  matched_because: { performers: [], genres: [] },
+};
+
+const wentToggle = () => screen.getByRole('button', { name: /^Went/ });
+
+// The past rows live in the element the toggle controls, which is also where
+// their order is asserted.
+function wentRows() {
+  const bodyId = wentToggle().getAttribute('aria-controls');
+  expect(bodyId).toBeTruthy();
+  const body = document.getElementById(bodyId!);
+  expect(body).not.toBeNull();
+  return within(body!).getAllByRole('listitem');
+}
 
 function renderList() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -82,8 +103,8 @@ describe('GoingWentList', () => {
     expect(screen.getByText('1 upcoming show')).toBeInTheDocument();
   });
 
-  // The endpoint deliberately returns past events too, for the "went" half this
-  // panel does not render yet -- they must not leak into the going list.
+  // The endpoint returns past events too; they belong under Went, never in the
+  // upcoming list or its count.
   it('leaves out shows that have already happened', async () => {
     vi.mocked(listGoingEvents).mockResolvedValue([past, upcoming]);
     renderList();
@@ -152,5 +173,97 @@ describe('GoingWentList', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Remove PB Live/ }));
 
     expect(screen.queryByText('Event detail page')).not.toBeInTheDocument();
+  });
+
+  it('collapses past shows behind a Went toggle that counts them', async () => {
+    vi.mocked(listGoingEvents).mockResolvedValue([past, older, upcoming]);
+    renderList();
+
+    await screen.findByText('PB Live');
+    expect(wentToggle()).toHaveTextContent('Went (2)');
+    expect(wentToggle()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Last Month Show')).not.toBeInTheDocument();
+  });
+
+  it('reveals the past shows when Went is expanded', async () => {
+    vi.mocked(listGoingEvents).mockResolvedValue([past, upcoming]);
+    renderList();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Went/ }));
+
+    expect(await screen.findByText('Last Month Show')).toBeInTheDocument();
+    expect(screen.getByText('The Basement')).toBeInTheDocument();
+    expect(wentToggle()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('hides the past shows again when Went is collapsed', async () => {
+    vi.mocked(listGoingEvents).mockResolvedValue([past, upcoming]);
+    renderList();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Went/ }));
+    await screen.findByText('Last Month Show');
+    fireEvent.click(wentToggle());
+
+    await waitFor(() => expect(screen.queryByText('Last Month Show')).not.toBeInTheDocument());
+  });
+
+  // The going list runs forwards in time; history reads better backwards, so
+  // the show you just came home from is at the top.
+  it('lists the past shows most recent first', async () => {
+    vi.mocked(listGoingEvents).mockResolvedValue([older, past, upcoming]);
+    renderList();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Went/ }));
+    await screen.findByText('Spring Show');
+
+    const rows = wentRows();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('Last Month Show');
+    expect(rows[1]).toHaveTextContent('Spring Show');
+  });
+
+  it('offers no Went toggle when nothing has happened yet', async () => {
+    vi.mocked(listGoingEvents).mockResolvedValue([upcoming]);
+    renderList();
+
+    await screen.findByText('PB Live');
+    expect(screen.queryByRole('button', { name: /^Went/ })).not.toBeInTheDocument();
+  });
+
+  // The empty prompt covers the upcoming half only -- a user with history but
+  // no plans still gets to see the history.
+  it('shows past shows even when nothing is upcoming', async () => {
+    vi.mocked(listGoingEvents).mockResolvedValue([past]);
+    renderList();
+
+    expect(await screen.findByText(/No upcoming shows yet/)).toBeInTheDocument();
+    fireEvent.click(wentToggle());
+    expect(await screen.findByText('Last Month Show')).toBeInTheDocument();
+  });
+
+  it('opens the event when a past row is clicked', async () => {
+    vi.mocked(listGoingEvents).mockResolvedValue([past, upcoming]);
+    renderList();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Went/ }));
+    fireEvent.click(await screen.findByText('Last Month Show'));
+
+    expect(screen.getByText('Event detail page')).toBeInTheDocument();
+  });
+
+  // A show marked going by mistake can still be taken off the list after it
+  // has passed.
+  it('removes a past show when its Remove button is clicked', async () => {
+    vi.mocked(listGoingEvents)
+      .mockResolvedValueOnce([past, upcoming])
+      .mockResolvedValue([upcoming]);
+    vi.mocked(resetEventGoing).mockResolvedValue(undefined);
+    renderList();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Went/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Remove Last Month Show/ }));
+
+    await waitFor(() => expect(resetEventGoing).toHaveBeenCalledWith('e0'));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Went/ })).toBeNull());
   });
 });

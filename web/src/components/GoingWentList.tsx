@@ -1,4 +1,6 @@
+import { useId } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'motion/react';
 import type { CalendarEvent } from '../api/calendar';
 import { useListGoingEvents } from '../hooks/useListGoingEvents';
 import { useMarkNotGoing } from '../hooks/useMarkNotGoing';
@@ -6,30 +8,84 @@ import { formatEventDate } from '../utils/eventDate';
 import * as c from '../styles/common.css';
 import * as s from './GoingWentList.css';
 import { Skeleton } from './Skeleton';
+import clsx from 'clsx';
+import { useLocalStorageState } from '../hooks/useLocalStorageState';
+import RotatingCaret from './RotatingCaret';
 
-// The endpoint returns the whole going list, past shows included, so the
-// upcoming half is picked out here. An event with an end time counts as
-// upcoming until it is over; one without, until its start passes.
-function upcomingEvents(events: CalendarEvent[]): CalendarEvent[] {
+// An event with an end time is over when that end passes; one without, when its
+// start does.
+function endOf(event: CalendarEvent): Date {
+  const end = event.ends_at ? new Date(event.ends_at) : null;
+  return end && !Number.isNaN(end.getTime()) ? end : new Date(event.starts_at);
+}
+
+// The endpoint returns the whole going list, past shows included, so the two
+// halves are picked apart here. The upcoming half keeps the server's order;
+// history reads backwards, the show just got home from first.
+function splitByTime(events: CalendarEvent[]): {
+  upcoming: CalendarEvent[];
+  past: CalendarEvent[];
+} {
   const now = Date.now();
-  return events.filter((event) => {
-    const end = event.ends_at ? new Date(event.ends_at) : null;
-    const over = end && !Number.isNaN(end.getTime()) ? end : new Date(event.starts_at);
-    return over.getTime() > now;
-  });
+  const upcoming: CalendarEvent[] = [];
+  const past: CalendarEvent[] = [];
+  for (const event of events) {
+    (endOf(event).getTime() > now ? upcoming : past).push(event);
+  }
+  past.sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
+  return { upcoming, past };
+}
+
+function EventRow({
+  event,
+  onOpen,
+  onRemove,
+}: {
+  event: CalendarEvent;
+  onOpen: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <li className={s.item} onClick={onOpen}>
+      <div className={s.itemMain}>
+        <div className={s.itemDate}>{formatEventDate(event, 'short')}</div>
+        <div className={s.itemTitle}>{event.title}</div>
+        <div className={s.itemVenue}>{event.venue.name}</div>
+      </div>
+      <button
+        type="button"
+        aria-label={`Remove ${event.title} from your going list`}
+        className={s.removeButton}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+      >
+        X
+      </button>
+    </li>
+  );
 }
 
 export default function GoingList() {
   const navigate = useNavigate();
   const goingEventsQ = useListGoingEvents();
   const { mutate: markNotGoing } = useMarkNotGoing();
+  const bodyId = useId();
+  const { state: expandedWentList, actions: expandedWentListActions } = useLocalStorageState<
+    'true' | 'false'
+  >('calendar.expandedWentList');
+  const isWentExpanded = expandedWentList === 'true';
 
-  const going = upcomingEvents(goingEventsQ.data ?? []);
+  const { upcoming: going, past } = splitByTime(goingEventsQ.data ?? []);
+
+  const openEvent = (event: CalendarEvent) => navigate(`/events/${event.id}`);
+  const removeEvent = (event: CalendarEvent) => markNotGoing(event.id);
 
   return (
     <div className={s.goingWentList}>
       <div className={s.heading}>
-        <h2 className={c.sectionTitle}>Your Shows</h2>
+        <h2 className={c.sectionTitle}>Upcoming Shows</h2>
         {going.length > 0 && (
           <span className={s.count}>
             {going.length} upcoming {going.length === 1 ? 'show' : 'shows'}
@@ -55,27 +111,54 @@ export default function GoingList() {
         ) : (
           <ul>
             {going.map((event) => (
-              <li key={event.id} className={s.item} onClick={() => navigate(`/events/${event.id}`)}>
-                <div className={s.itemMain}>
-                  <div className={s.itemDate}>{formatEventDate(event, 'short')}</div>
-                  <div className={s.itemTitle}>{event.title}</div>
-                  <div className={s.itemVenue}>{event.venue.name}</div>
-                </div>
-                <button
-                  type="button"
-                  aria-label={`Remove ${event.title} from your going list`}
-                  className={s.removeButton}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    markNotGoing(event.id);
-                  }}
-                >
-                  X
-                </button>
-              </li>
+              <EventRow
+                key={event.id}
+                event={event}
+                onOpen={() => openEvent(event)}
+                onRemove={() => removeEvent(event)}
+              />
             ))}
           </ul>
         )}
+      </div>
+      <div className={clsx(s.heading, s.wentHeading)}>
+        <button
+          type="button"
+          className={clsx(c.stripButtonStyles, s.wentToggle)}
+          aria-expanded={isWentExpanded}
+          aria-controls={bodyId}
+          onClick={() => expandedWentListActions.setValue(isWentExpanded ? 'false' : 'true')}
+        >
+          <h2 className={clsx(c.sectionTitle, s.wentSectionTitle)}>Past Shows</h2>
+          <RotatingCaret open={isWentExpanded} className={s.wentCaret} />
+        </button>
+      </div>
+      <div className={clsx(s.innerContainer, { [s.noBorder]: !isWentExpanded })}>
+        {/* The id stays mounted so `aria-controls` always resolves, collapsed or not. */}
+        <div id={bodyId} className={s.wentBody}>
+          <AnimatePresence initial={false}>
+            {isWentExpanded && (
+              <motion.div
+                key="body"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+              >
+                <ul>
+                  {past.map((event) => (
+                    <EventRow
+                      key={event.id}
+                      event={event}
+                      onOpen={() => openEvent(event)}
+                      onRemove={() => removeEvent(event)}
+                    />
+                  ))}
+                </ul>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );

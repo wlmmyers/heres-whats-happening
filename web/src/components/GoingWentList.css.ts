@@ -22,6 +22,10 @@ export const innerContainer = style([
   },
 ]);
 
+export const noBorder = style({
+  border: 'none',
+});
+
 export const heading = style({
   display: 'flex',
   alignItems: 'baseline',
@@ -125,4 +129,27 @@ export const skeletonRow = style({
       marginBottom: '0.5rem',
     },
   },
+});
+
+export const wentToggle = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+});
+
+export const wentHeading = style({
+  marginTop: '1.25rem',
+});
+
+export const wentSectionTitle = style({});
+
+// Placement only; the caret's size and colour come from RotatingCaret.
+export const wentCaret = style({
+  // Pushed to the far edge, where a disclosure caret is looked for.
+  marginLeft: 'auto',
+});
+
+// Clips the past rows while their height animates between 0 and auto.
+export const wentBody = style({
+  overflow: 'hidden',
 });

@@ -144,18 +144,26 @@ export const link = style({
   ':hover': { textDecorationLine: 'underline' },
 });
 
-export const linkButton = style({
-  ...fontSize.sm,
+export const stripButtonStyles = style({
   background: 'none',
   border: 'none',
   padding: 0,
-  color: color.gray500,
-  textDecoration: 'underline',
   cursor: 'pointer',
-  selectors: {
-    '&:hover': { color: color.gray700 },
-  },
+  outline: 'none',
 });
+
+export const linkButton = style([
+  stripButtonStyles,
+  {
+    ...fontSize.sm,
+    color: color.gray500,
+    textDecoration: 'underline',
+    cursor: 'pointer',
+    selectors: {
+      '&:hover': { color: color.gray700 },
+    },
+  },
+]);
 
 export const actionButton = style({
   fontWeight: fontWeight.medium,
