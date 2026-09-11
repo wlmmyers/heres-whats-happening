@@ -42,6 +42,20 @@ func TestFuseRRF_IncludesResultsPresentInOnlyOneLeg(t *testing.T) {
 	require.ElementsMatch(t, []uuid.UUID{u[0], u[1]}, got)
 }
 
+// A genuine tie: both ids are #1 in exactly one leg and absent from the
+// other, so each scores exactly 1/61 -- not merely close, identical, since
+// both come from the same literal expression 1.0/(rrfK+1). Order-independent
+// assertions (ElementsMatch) can't see a tie-break bug, so this uses Equal:
+// lexical is scanned before semantic, so the lexical-only id must win.
+func TestFuseRRF_TiedScoreBreaksByFirstAppearanceOrder(t *testing.T) {
+	u := ids(2)
+	lexOnly, semOnly := u[0], u[1]
+
+	got := fuseRRF([]uuid.UUID{lexOnly}, []uuid.UUID{semOnly}, 10)
+	require.Equal(t, []uuid.UUID{lexOnly, semOnly}, got,
+		"tied at 1/61 each; lexical-leg-first must win the tie-break")
+}
+
 func TestFuseRRF_TruncatesToLimit(t *testing.T) {
 	u := ids(20)
 	require.Len(t, fuseRRF(u, u, 10), 10)
