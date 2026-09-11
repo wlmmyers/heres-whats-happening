@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Corpus is live + upcoming only.** Every query filters `archived_at IS NULL AND event_over_at(starts_at, ends_at, time_tbd) > NOW()`. Never search archived or past events.
-- **Similarity threshold is `0.2`**, not the Postgres default of `0.3`. At `0.3` a bare short typo returns nothing. This value is **unvalidated against production data** — it was tuned on a synthetic corpus of ~20 distinct titles. Ship it as a named constant carrying that caveat.
+- **Similarity threshold is `0.2`**, not the Postgres default of `0.3`, delivered as an `options` parameter on `dsn.Components.DSN()` so the app pool, migrations and the test pool all inherit it. At `0.3` a bare short typo returns nothing. This value is **unvalidated against production data** — it was tuned on a synthetic corpus of ~20 distinct titles. Ship it as a named constant carrying that caveat.
 - **One accent-folding transform, applied to both sides of every comparison.** `immutable_unaccent(...)` only. Never mix in `events.NormalizeString` or the existing `normalized_name` columns — they disagree on `ß`→`ss` and `Ø`→`O`.
 - **`pg_trgm` is already case-insensitive.** Never add `lower()`.
 - **Minimum query length is 3 runes** (counted as runes, not bytes or UTF-16 units). Below 3 the trigram index cannot be used and the query degrades to a full scan: 43ms at 10k rows, growing linearly.
@@ -35,12 +35,13 @@ Creates the extensions, the `immutable_unaccent` wrapper, and the three trigram 
 **Files:**
 - Create: `sql/migrations/0029_event_search.up.sql`
 - Create: `sql/migrations/0029_event_search.down.sql`
-- Modify: `internal/db/db.go`
+- Modify: `internal/dsn/dsn.go`
+- Modify: `internal/dsn/dsn_test.go`
 - Test: `internal/db/search_index_test.go`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: SQL function `immutable_unaccent(text) RETURNS text`; indexes `events_title_trgm`, `event_performers_name_trgm`, `venues_name_trgm`; every pooled connection has `pg_trgm.similarity_threshold = 0.2`.
+- Produces: SQL function `immutable_unaccent(text) RETURNS text`; indexes `events_title_trgm`, `event_performers_name_trgm`, `venues_name_trgm`; every connection built from `dsn.Components.DSN()` has `pg_trgm.similarity_threshold = 0.2`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -165,9 +166,19 @@ DROP FUNCTION IF EXISTS immutable_unaccent(text);
 -- migration owns.
 ```
 
-- [ ] **Step 4: Set the threshold on every pooled connection**
+- [ ] **Step 4: Set the threshold on every connection**
 
-In `internal/db/db.go`, after `cfg, err := pgxpool.ParseConfig(dsn)` and alongside the existing `BeforeConnect` assignment, add:
+This goes in the DSN builder, **not** in `internal/db`. `testdb.MustOpen` builds
+its pool with a bare `pgxpool.New` and never calls `db.NewPool`, so an
+`AfterConnect` hook there would never reach the integration tests in Tasks 2, 3
+and 5 — they would silently run at the 0.3 default and the typo test would fail.
+`internal/testdb` also cannot import `internal/db`, because `internal/db/db_test.go`
+imports testdb and the reverse direction is an import cycle. `Components.DSN()`
+is the one point all three consumers share: `cmd/app/main.go:350` (migrate),
+`internal/config/config.go:79` (app pool), `internal/testdb/testdb.go:34` (test pool).
+
+In `internal/dsn/dsn.go`, inside `Components.DSN()`, add the parameter to the
+query string that currently carries only `sslmode`:
 
 ```go
 	// pg_trgm's % operator reads this GUC; the default is 0.3, at which a bare
@@ -177,16 +188,39 @@ In `internal/db/db.go`, after `cfg, err := pgxpool.ParseConfig(dsn)` and alongsi
 	// ~20 distinct titles, so its false-positive cost on the real catalogue is
 	// unknown. Re-check once search has live traffic.
 	//
-	// AfterConnect rather than a DSN runtime param: pg_trgm's GUC only exists
-	// once the extension module loads on that backend. SET works regardless
-	// because a dotted name is accepted as a placeholder GUC.
-	cfg.AfterConnect = func(ctx context.Context, c *pgx.Conn) error {
-		_, err := c.Exec(ctx, "SET pg_trgm.similarity_threshold = 0.2")
-		return err
+	// Set here rather than in a pool hook because this is the only construction
+	// point every consumer shares -- app pool, migrations, and the test pool,
+	// which builds itself with a bare pgxpool.New. A dotted name is accepted as
+	// a placeholder GUC even on a database where pg_trgm is not yet installed,
+	// and the extension adopts the value when its module loads.
+	q := url.Values{}
+	if c.SSLMode != "" {
+		q.Set("sslmode", c.SSLMode)
 	}
+	q.Set("options", "-c pg_trgm.similarity_threshold=0.2")
+	u.RawQuery = q.Encode()
 ```
 
-If `pgx` is not already imported in that file, add `"github.com/jackc/pgx/v5"` to the import block.
+Restructure the surrounding code as needed so the options parameter is set
+whether or not `SSLMode` is empty — today the whole `RawQuery` assignment sits
+behind an `if c.SSLMode != ""` guard.
+
+Then update `internal/dsn/dsn_test.go`. Three assertions compare the whole DSN
+string (`require.Equal(t, "postgres://app:pw@localhost:5432/appdb", c.DSN())` at
+roughly lines 34, 39 and 52) and will now fail. Rewrite each to parse the URL and
+assert on its parts, so the test stops being coupled to parameter ordering:
+
+```go
+	u, err := url.Parse(c.DSN())
+	require.NoError(t, err)
+	require.Equal(t, "postgres", u.Scheme)
+	require.Equal(t, "localhost:5432", u.Host)
+	require.Equal(t, "/appdb", u.Path)
+	require.Equal(t, "-c pg_trgm.similarity_threshold=0.2", u.Query().Get("options"))
+```
+
+Adjust host and path per each existing case (one omits the port). Keep the
+existing sslmode assertion in the case that covers it.
 
 - [ ] **Step 5: Run the migration against the dev database**
 
@@ -204,15 +238,17 @@ Expected: PASS, all four.
 
 ```bash
 git add sql/migrations/0029_event_search.up.sql sql/migrations/0029_event_search.down.sql \
-        internal/db/db.go internal/db/search_index_test.go
+        internal/dsn/dsn.go internal/dsn/dsn_test.go internal/db/search_index_test.go
 git commit -m "Add trigram search indexes and accent-folding wrapper
 
 unaccent() is STABLE and cannot be indexed, so immutable_unaccent wraps the
 two-argument form. Without it 'eden munoz' scores 0.294 against 'Edén Muñoz'
 and the event is unreachable without accent keys.
 
-Threshold lowered to 0.2 on every pooled connection: at the 0.3 default a bare
-short typo matches nothing."
+Threshold lowered to 0.2 on every connection built from dsn.Components.DSN():
+at the 0.3 default a bare short typo matches nothing. It goes in the DSN rather
+than a pool hook because the test pool builds itself with a bare pgxpool.New and
+internal/testdb cannot import internal/db without a cycle."
 ```
 
 ---
