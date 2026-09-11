@@ -98,6 +98,13 @@ func (s *Server) Router() http.Handler {
 	icalTokenLimiter := ratelimit.NewMemory(10, time.Hour)
 	// Each allowed call can drive nine LLM requests in the poster Lambda.
 	posterCreateLimiter := ratelimit.NewMemory(10, time.Hour)
+	// Typeahead: one request per keystroke burst, so a budget of its own. Note
+	// this STACKS with the authed net below (chi composes With on top of Use),
+	// so a search also spends the shared 120/min authed budget. That is
+	// deliberate -- routes must default into the net so one added later is not
+	// silently unlimited. If the authed alarm starts firing, raise the authed
+	// budget rather than moving search out of the group.
+	searchLimiter := ratelimit.NewMemory(60, time.Minute)
 
 	// Confirmation. IP-keyed: the emailed link is followed by a browser with no
 	// Authorization header.
@@ -176,6 +183,8 @@ func (s *Server) Router() http.Handler {
 		// back to this for users with no interests yet. Covered by the group's
 		// authed net; no dedicated limiter.
 		r.Get("/calendar/{cityId}", handlers.GetCityCalendar(s.Queries))
+		r.With(middleware.RateLimitByUser(searchLimiter, middleware.EndpointSearch)).
+			Get("/search/{cityId}/events", handlers.SearchEvents(s.Queries))
 		r.Get("/events/{id}", handlers.GetEventByIDForUser(s.Queries))
 		r.Get("/me/event-going", handlers.ListGoing(s.Queries))
 		// The same going list as full event rows, for rendering it. The bare-id

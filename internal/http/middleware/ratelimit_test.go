@@ -308,6 +308,7 @@ func TestEndpointConstants(t *testing.T) {
 	require.Equal(t, "manual_interests", middleware.EndpointManualInterests)
 	require.Equal(t, "spotify_exchange", middleware.EndpointSpotifyExchange)
 	require.Equal(t, "ical_token", middleware.EndpointIcalToken)
+	require.Equal(t, "search", middleware.EndpointSearch)
 }
 
 // keyRecordingLimiter captures the key each call was made with, so tests can

@@ -34,6 +34,7 @@ const (
 	EndpointConfirmResend   = "confirm_resend"
 	// Each allowed call can drive nine LLM requests in the poster Lambda.
 	EndpointPosterCreate = "poster_create"
+	EndpointSearch       = "search"
 
 	// Public (IP-keyed)
 	EndpointLogout   = "logout"
