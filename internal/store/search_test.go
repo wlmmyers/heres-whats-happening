@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -49,6 +50,21 @@ func seedSearchFixture(t *testing.T, q *store.Queries, ctx context.Context) pgty
 	mkEvent("s-at-showbox", "Some Other Band", showbox, future)
 	mkEvent("s-titled-showbox", "Showbox Allstars", bowl, future)
 	mkEvent("s-past", "Midnight Orchard Farewell", bowl, time.Now().Add(-72*time.Hour))
+
+	// Performer-leg coverage. "Warehouse District Sessions" carries no trace of
+	// "Nova Ridge" in its title, so it is reachable ONLY through the 0.9
+	// weighted performer leg -- without this row that leg has zero coverage.
+	// "Nova Ridge" is ALSO a headliner event's title, so a single query against
+	// the same string exercises the title leg (weight 1.0) and the performer
+	// leg (weight 0.9) at equal underlying similarity, a direct probe of the
+	// weighting between them.
+	support := mkEvent("s-support", "Warehouse District Sessions", bowl, future)
+	err = q.InsertEventPerformer(ctx, store.InsertEventPerformerParams{
+		EventID: support, PerformerName: "Nova Ridge", NormalizedName: "nova ridge",
+	})
+	require.NoError(t, err)
+	mkEvent("s-headliner", "Nova Ridge", bowl, future)
+
 	return city.ID
 }
 
@@ -80,14 +96,35 @@ func TestSearchEvents_FindsAccentedTitleWithoutAccentKeys(t *testing.T) {
 		"Edén Muñoz: Como En Los Viejos Tiempos Tour")
 }
 
-// Threshold 0.2, not the 0.3 default -- at 0.3 this returns nothing.
+// Threshold 0.2, not the 0.3 default. "orchrd" (one character short of
+// "orchard") against "Midnight Orchard" measures similarity 0.2631579 --
+// verified directly with `similarity(immutable_unaccent('Midnight Orchard'),
+// immutable_unaccent('orchrd'))` against this schema -- strictly between the
+// two thresholds, so this probe only succeeds if the 0.2 override is actually
+// in effect. ("midnite orchard" measures 0.65: comfortably over BOTH
+// thresholds, so it would pass even if the override silently reverted.)
 func TestSearchEvents_ToleratesOneCharacterTypo(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	ctx := context.Background()
 	cityID := seedSearchFixture(t, q, ctx)
 
-	require.Contains(t, titles(search(t, q, ctx, cityID, "midnite orchard")), "Midnight Orchard")
+	require.Contains(t, titles(search(t, q, ctx, cityID, "orchrd")), "Midnight Orchard")
+
+	// Pin the negative side too: at the 0.3 default the same probe must NOT
+	// match. SET LOCAL, not SET, so the override lives only inside this
+	// transaction and can never leak into the shared pool testdb.MustOpen
+	// hands to every other test.
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer tx.Rollback(ctx)
+	_, err = tx.Exec(ctx, "SET LOCAL pg_trgm.similarity_threshold = 0.3")
+	require.NoError(t, err)
+	rows, err := q.WithTx(tx).SearchEvents(ctx, store.SearchEventsParams{
+		Query: "orchrd", CityID: cityID, ResultLimit: 10,
+	})
+	require.NoError(t, err)
+	require.NotContains(t, titles(rows), "Midnight Orchard")
 }
 
 // Trigram similarity is word-order independent; plain ILIKE is not.
@@ -147,11 +184,42 @@ func TestSearchEvents_ScopesToCity(t *testing.T) {
 	require.Empty(t, search(t, q, ctx, otherCity, "midnight orchard"))
 }
 
+// Three events now qualify for "midnight orchard": the fixture's own
+// "Midnight Orchard" plus two seeded here (measured similarity 0.68 and
+// 0.654, both comfortably over 0.2). With only one qualifying row, asserting
+// a single result at ResultLimit 1 would pass even with LIMIT removed
+// entirely -- this seeds enough candidates that truncation is the only thing
+// that can make the assertion pass.
 func TestSearchEvents_RespectsResultLimit(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	ctx := context.Background()
 	cityID := seedSearchFixture(t, q, ctx)
+
+	src, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: cityID, Name: "Limit Test Venue", NormalizedName: "limit test venue",
+	})
+	require.NoError(t, err)
+	future := time.Now().Add(48 * time.Hour)
+	for _, seed := range []struct{ srcID, title string }{
+		{"s-limit-a", "Midnight Orchard Revival"},
+		{"s-limit-b", "Orchard Midnight Sessions"},
+	} {
+		_, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+			SourceID: src.ID, SourceEventID: seed.srcID, Title: seed.title,
+			StartsAt: pgtype.Timestamptz{Time: future, Valid: true}, VenueID: venueID,
+		})
+		require.NoError(t, err)
+	}
+
+	unlimited, err := q.SearchEvents(ctx, store.SearchEventsParams{
+		Query: "midnight orchard", CityID: cityID, ResultLimit: 10,
+	})
+	require.NoError(t, err)
+	require.Greater(t, len(unlimited), 1,
+		"fixture must have more than one qualifying row for LIMIT to prove anything")
 
 	rows, err := q.SearchEvents(ctx, store.SearchEventsParams{
 		Query: "midnight orchard", CityID: cityID, ResultLimit: 1,
@@ -160,16 +228,64 @@ func TestSearchEvents_RespectsResultLimit(t *testing.T) {
 	require.Len(t, rows, 1)
 }
 
-// Order must be total, or identical requests reorder and the dropdown flickers
-// between keystrokes.
+// Order must be total, or identical requests reorder and the dropdown
+// flickers between keystrokes. Two events here share an identical title
+// (so identical rank) AND an identical starts_at, so b.rank DESC, starts_at
+// ASC alone cannot order them -- only e.id ASC can, and it must do so the
+// same way on every call.
 func TestSearchEvents_OrderIsStableAcrossIdenticalCalls(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	ctx := context.Background()
 	cityID := seedSearchFixture(t, q, ctx)
 
-	first := titles(search(t, q, ctx, cityID, "showbox"))
-	for i := 0; i < 5; i++ {
-		require.Equal(t, first, titles(search(t, q, ctx, cityID, "showbox")))
+	src, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
+	venueID, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: cityID, Name: "Tie Venue", NormalizedName: "tie venue",
+	})
+	require.NoError(t, err)
+	tieTime := time.Now().Add(72 * time.Hour)
+	tieIDs := make([]pgtype.UUID, 0, 2)
+	for _, srcID := range []string{"s-tie-a", "s-tie-b"} {
+		id, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+			SourceID: src.ID, SourceEventID: srcID, Title: "Tiebreak Rally",
+			StartsAt: pgtype.Timestamptz{Time: tieTime, Valid: true}, VenueID: venueID,
+		})
+		require.NoError(t, err)
+		tieIDs = append(tieIDs, id)
 	}
+	a, b := tieIDs[0], tieIDs[1]
+	if bytes.Compare(a.Bytes[:], b.Bytes[:]) > 0 {
+		a, b = b, a
+	}
+	wantOrder := []pgtype.UUID{a, b}
+
+	tieOrder := func() []pgtype.UUID {
+		rows := search(t, q, ctx, cityID, "tiebreak rally")
+		require.Len(t, rows, 2, "both tied events must come back")
+		return []pgtype.UUID{rows[0].ID, rows[1].ID}
+	}
+
+	first := tieOrder()
+	require.Equal(t, wantOrder, first, "rank and starts_at tie -- only ascending id can have ordered these")
+	for i := 0; i < 5; i++ {
+		require.Equal(t, first, tieOrder())
+	}
+}
+
+// The 0.9 performer weight exists for exactly this: a performer match must
+// never outrank an event whose TITLE carries the same term, but it must still
+// surface an event whose title says nothing about the performer at all.
+func TestSearchEvents_PerformerMatchOutrankedByTitleMatch(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	cityID := seedSearchFixture(t, q, ctx)
+
+	rows := search(t, q, ctx, cityID, "Nova Ridge")
+	require.NotEmpty(t, rows)
+	require.Equal(t, "Nova Ridge", rows[0].Title)
+	require.Contains(t, titles(rows), "Warehouse District Sessions",
+		"performer match still surfaces, just lower")
 }
