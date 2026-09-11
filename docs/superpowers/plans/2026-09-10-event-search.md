@@ -970,12 +970,25 @@ func ids(n int) []uuid.UUID {
 	return out
 }
 
-func TestFuseRRF_RanksAgreedResultFirst(t *testing.T) {
-	u := ids(3)
-	// u[2] is mid-table in both legs; u[0] tops one and is absent from the
-	// other. Agreement across legs is what RRF rewards.
-	got := fuseRRF([]uuid.UUID{u[0], u[2], u[1]}, []uuid.UUID{u[1], u[2], u[0]}, 3)
-	require.Equal(t, u[2], got[0])
+// RRF rewards consistent placement across both legs over a single strong hit --
+// but only when the disagreement is wide. With k=60 the curve is nearly flat
+// across the top ranks: #1-and-#3 scores 1/61+1/63 = 0.0322665, which actually
+// EDGES OUT #2-and-#2 at 1/62+1/62 = 0.0322581. So a one-rank gap demonstrates
+// nothing and this fixture uses a real one.
+func TestFuseRRF_ConsistentPlacementBeatsSingleLegSpike(t *testing.T) {
+	u := ids(32)
+	agreed, spiky := u[0], u[1]
+	filler := u[2:]
+
+	// agreed: #2 in both legs. spiky: #1 lexically, #30 semantically.
+	lexical := []uuid.UUID{spiky, agreed}
+	semantic := []uuid.UUID{filler[0], agreed}
+	semantic = append(semantic, filler[1:28]...) // pads so spiky lands at #30
+	semantic = append(semantic, spiky)
+
+	got := fuseRRF(lexical, semantic, 10)
+	require.Equal(t, agreed, got[0],
+		"agreed 1/62+1/62 = 0.032258 must beat spiky 1/61+1/90 = 0.027505")
 }
 
 func TestFuseRRF_IncludesResultsPresentInOnlyOneLeg(t *testing.T) {
