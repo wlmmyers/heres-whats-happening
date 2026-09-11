@@ -47,13 +47,34 @@ func TestFuseRRF_IncludesResultsPresentInOnlyOneLeg(t *testing.T) {
 // both come from the same literal expression 1.0/(rrfK+1). Order-independent
 // assertions (ElementsMatch) can't see a tie-break bug, so this uses Equal:
 // lexical is scanned before semantic, so the lexical-only id must win.
+//
+// One call is not enough to prove that. byID here holds 2 entries, which Go
+// places in a single 8-slot bucket in insertion order (no hash scatter at
+// this size); iteration then starts at a uniformly random offset in 0..7 and
+// walks cyclically, so insertion order survives 7 of the 8 offsets and flips
+// on only 1. A comparator that dropped the order-based tiebreak and fell back
+// on raw map order would therefore still produce the correct answer ~87.5% of
+// the time -- a single assertion only catches the regression 12.5% of the
+// time, indistinguishable from a flake. Repeating across N independent calls
+// (fresh map, fresh random offset each time) drives detection to 1-(7/8)^N:
+// N=20 -> 93.1%, N=50 -> 99.87%, N=100 -> 99.99984%. fuseRRF is a pure
+// function over two-element slices, so 100 iterations costs microseconds.
+// Do not shrink this loop -- it is not redundant, it is the only thing
+// standing between this test and a silent 87.5% miss rate on a reintroduced
+// regression. Asserting every run against the expected slice also proves the
+// runs agree with each other, so this covers both a consistently-wrong order
+// and outright nondeterminism in one pass.
 func TestFuseRRF_TiedScoreBreaksByFirstAppearanceOrder(t *testing.T) {
 	u := ids(2)
 	lexOnly, semOnly := u[0], u[1]
+	want := []uuid.UUID{lexOnly, semOnly}
 
-	got := fuseRRF([]uuid.UUID{lexOnly}, []uuid.UUID{semOnly}, 10)
-	require.Equal(t, []uuid.UUID{lexOnly, semOnly}, got,
-		"tied at 1/61 each; lexical-leg-first must win the tie-break")
+	const repetitions = 100 // 1-(7/8)^100 ≈ 99.99984% detection; see comment above
+	for i := 0; i < repetitions; i++ {
+		got := fuseRRF([]uuid.UUID{lexOnly}, []uuid.UUID{semOnly}, 10)
+		require.Equal(t, want, got,
+			"run %d/%d: tied at 1/61 each; lexical-leg-first must win the tie-break", i+1, repetitions)
+	}
 }
 
 func TestFuseRRF_TruncatesToLimit(t *testing.T) {
