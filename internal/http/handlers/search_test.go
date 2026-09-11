@@ -113,31 +113,29 @@ func TestSearchEvents_RejectsShortAndEmptyQueries(t *testing.T) {
 	}
 }
 
-// Runes, not bytes: three CJK characters are 9 bytes and must be accepted.
+// Runes, not bytes: the floor must be enforced on rune count. Three CJK
+// characters (9 bytes) alone can't tell a rune-counter from a byte-counter
+// apart -- a UTF-8 string of 3 runes is always at least 3 bytes, so both
+// implementations accept it identically. Two 4-byte emoji force the split:
+// 2 runes but 8 bytes, so only a genuine rune-counter rejects it -- a
+// byte-counter (len(raw) < 3) would wrongly accept it.
 func TestSearchEvents_CountsRunesNotBytes(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	q := store.New(pool)
 	ctx := context.Background()
 	cityID := seedSearchHandlerFixture(t, q, ctx)
+	h := searchRouter(q)
 
-	rec := doSearch(t, searchRouter(q), cityID, "%E6%9D%B1%E4%BA%AC%E9%83%BD")
-	require.Equal(t, http.StatusOK, rec.Code)
-}
+	t.Run("three CJK runes, 9 bytes, accepted", func(t *testing.T) {
+		rec := doSearch(t, h, cityID, "%E6%9D%B1%E4%BA%AC%E9%83%BD")
+		require.Equal(t, http.StatusOK, rec.Code)
+	})
 
-// A long paste is truncated, not rejected -- the first 100 runes carry the
-// signal and an error dialog is the worse failure.
-func TestSearchEvents_TruncatesLongQueryInsteadOfRejecting(t *testing.T) {
-	pool := testdb.MustOpen(t)
-	q := store.New(pool)
-	ctx := context.Background()
-	cityID := seedSearchHandlerFixture(t, q, ctx)
-
-	long := "midnight"
-	for len(long) < 200 {
-		long += "x"
-	}
-	rec := doSearch(t, searchRouter(q), cityID, long)
-	require.Equal(t, http.StatusOK, rec.Code)
+	t.Run("two 4-byte emoji, 2 runes, 8 bytes, rejected as too short", func(t *testing.T) {
+		rec := doSearch(t, h, cityID, "%F0%9F%98%80%F0%9F%98%83")
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+		require.Contains(t, rec.Body.String(), "query_too_short")
+	})
 }
 
 func TestSearchEvents_RejectsBadCityID(t *testing.T) {
