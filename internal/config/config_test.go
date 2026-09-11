@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"testing"
 	"time"
 
@@ -17,7 +18,16 @@ func TestLoad_AllFieldsParsed(t *testing.T) {
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	require.Equal(t, "postgres://app:pw@localhost:5432/appdb?sslmode=disable", cfg.DatabaseURL)
+	// Parsed rather than a whole-string comparison: dsn.Components.DSN() also
+	// sets an "options" query parameter (pg_trgm.similarity_threshold), so the
+	// exact query string ordering isn't part of this test's contract.
+	u, err := url.Parse(cfg.DatabaseURL)
+	require.NoError(t, err)
+	require.Equal(t, "postgres", u.Scheme)
+	require.Equal(t, "localhost:5432", u.Host)
+	require.Equal(t, "/appdb", u.Path)
+	require.Equal(t, "disable", u.Query().Get("sslmode"))
+	require.Equal(t, "-c pg_trgm.similarity_threshold=0.2", u.Query().Get("options"))
 	require.Equal(t, ":9999", cfg.HTTPAddr)
 	require.Equal(t, "k", cfg.JWTSigningKey)
 	require.Equal(t, 10*time.Minute, cfg.JWTAccessTTL)
