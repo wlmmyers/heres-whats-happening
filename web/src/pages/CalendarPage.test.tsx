@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import CalendarPage from './CalendarPage';
@@ -36,12 +37,16 @@ vi.mock('../api/manualInterests', () => ({
   listManualInterests: vi.fn(),
 }));
 
+// Without this SearchDialog (mounted by CalendarPage) reaches a real fetch.
+vi.mock('../api/search', () => ({ searchEvents: vi.fn() }));
+
 import * as calApi from '../api/calendar';
 import * as niApi from '../api/notInterested';
 import { listGoing, listGoingEvents } from '../api/eventGoing';
 import { useAuth } from '../auth/useAuth';
 import { getSpotifyStatus } from '../api/spotify';
 import { listManualInterests } from '../api/manualInterests';
+import { searchEvents } from '../api/search';
 
 function renderPage(
   qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
@@ -186,6 +191,64 @@ describe('CalendarPage', () => {
 
     await waitFor(() => expect(niApi.markNotInterested).toHaveBeenCalledWith('e1'));
     await waitFor(() => expect(screen.queryByText('PB Live')).not.toBeInTheDocument());
+  });
+});
+
+describe('CalendarPage search', () => {
+  it('opens the search dialog from the Search button', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /search/i }));
+    expect(screen.getByRole('dialog', { name: /search events/i })).toBeInTheDocument();
+  });
+
+  // Regression: CalendarPage registers a bare-'c' window shortcut. Without a
+  // focus guard, every 'c' typed into any field on the page toggles the
+  // all-city calendar -- so searching for "comedy" silently swaps the
+  // calendar behind the dialog. "comedy" has exactly one 'c': a query with an
+  // even number of them (e.g. "crocodile") would round-trip the toggle back
+  // to its starting value and pass against the unguarded handler too, so
+  // don't swap this for a word chosen on vibes alone.
+  it('does not toggle the all-city calendar when a c is typed into the search box', async () => {
+    vi.mocked(searchEvents).mockResolvedValue({ results: [] });
+    const user = userEvent.setup();
+    renderPage();
+    const headingBefore = screen.getByRole('heading', { level: 1 }).textContent;
+
+    await user.click(screen.getByRole('button', { name: /search/i }));
+    await user.type(screen.getByRole('combobox'), 'comedy');
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(headingBefore!);
+  });
+
+  // The dialog fires no request when its query is disabled (see useEventSearch),
+  // so an undefined cityId doesn't read as an error -- it silently never
+  // fetches and the dialog falls through to "No events match". That reads to
+  // the user as a definitive empty search result for a search that never ran.
+  // The button must stay disabled until user.city_id is known so that failure
+  // mode is unreachable, rather than papering over it inside the dialog.
+  it('does not enable the Search button until the city is known', async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      status: 'loading',
+      user: null,
+      login: vi.fn(),
+      signup: vi.fn(),
+      logout: vi.fn(),
+      refreshUser: vi.fn(),
+    });
+    vi.mocked(calApi.getCalendar).mockResolvedValue({ events: [] });
+
+    const user = userEvent.setup();
+    renderPage();
+
+    const button = await screen.findByRole('button', { name: /search/i });
+    expect(button).toBeDisabled();
+
+    // Belt-and-braces: even attempting the click must not open the dialog or
+    // reach the search API.
+    await user.click(button);
+    expect(screen.queryByRole('dialog', { name: /search events/i })).not.toBeInTheDocument();
+    expect(searchEvents).not.toHaveBeenCalled();
   });
 });
 
