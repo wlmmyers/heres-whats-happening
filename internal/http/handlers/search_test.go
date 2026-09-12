@@ -32,7 +32,7 @@ type searchBody struct {
 
 func searchRouter(q *store.Queries) http.Handler {
 	r := chi.NewRouter()
-	r.Get("/search/{cityId}/events", handlers.SearchEvents(q))
+	r.Get("/search/{cityId}/events", handlers.SearchEvents(handlers.SearchDeps{Queries: q}))
 	return r
 }
 

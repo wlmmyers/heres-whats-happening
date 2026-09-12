@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pgvector/pgvector-go"
 )
 
 const searchEvents = `-- name: SearchEvents :many
@@ -100,6 +101,52 @@ func (q *Queries) SearchEvents(ctx context.Context, arg SearchEventsParams) ([]S
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchEventsSemantic = `-- name: SearchEventsSemantic :many
+SELECT e.id
+FROM events e
+JOIN venues v ON v.id = e.venue_id
+WHERE v.city_id = $1
+  AND e.archived_at IS NULL
+  AND e.embedding IS NOT NULL
+  AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
+ORDER BY e.embedding <=> $2
+LIMIT $3
+`
+
+type SearchEventsSemanticParams struct {
+	CityID         pgtype.UUID      `json:"city_id"`
+	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
+	CandidateLimit int32            `json:"candidate_limit"`
+}
+
+// The semantic leg, used only when SEARCH_SEMANTIC_ENABLED is on. Brute-force
+// cosine over the live rows: 4.45ms at 10k events, so no ivfflat/hnsw index is
+// warranted yet -- and adding one would trade exact results for approximate
+// ones to save time we are not short of.
+//
+// Returns ids in rank order and nothing else. The handler fuses this list with
+// SearchEvents by RANK, never by score, so the distances deliberately do not
+// leave SQL.
+func (q *Queries) SearchEventsSemantic(ctx context.Context, arg SearchEventsSemanticParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, searchEventsSemantic, arg.CityID, arg.QueryEmbedding, arg.CandidateLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

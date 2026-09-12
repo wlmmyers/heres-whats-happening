@@ -44,6 +44,10 @@ type Config struct {
 	// Plan 4 additions
 	TEIEndpoint string
 
+	// SearchSemanticEnabled turns on the pgvector leg of event search. Off by
+	// default: it puts TEI in the request path, and TEI runs on Fargate Spot.
+	SearchSemanticEnabled bool
+
 	// Plan 5 additions
 	IcalBaseURL string
 
@@ -135,6 +139,15 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid TRUST_PROXY=%q: %w", v, err)
 		}
 		trustProxy = b
+	}
+
+	searchSemanticEnabled := false
+	if v := os.Getenv("SEARCH_SEMANTIC_ENABLED"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid SEARCH_SEMANTIC_ENABLED=%q: %w", v, err)
+		}
+		searchSemanticEnabled = b
 	}
 
 	// Defaults to true — see the field comment: unset must mean "keep emitting".
@@ -233,6 +246,7 @@ func Load() (*Config, error) {
 		SpotifyTokenEncKey:     encKey,
 		InterestsQueueURL:      os.Getenv("INTERESTS_QUEUE_URL"),
 		TEIEndpoint:            os.Getenv("TEI_ENDPOINT"),
+		SearchSemanticEnabled:  searchSemanticEnabled,
 		IcalBaseURL:            os.Getenv("ICAL_BASE_URL"),
 		CORSAllowedOrigins:     corsOrigins,
 		TrustProxy:             trustProxy,

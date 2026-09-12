@@ -48,3 +48,22 @@ WHERE v.city_id = sqlc.arg(city_id)
 -- otherwise come back in arbitrary order and flicker between keystrokes.
 ORDER BY b.rank DESC, e.starts_at ASC, e.id ASC
 LIMIT sqlc.arg(result_limit);
+
+-- name: SearchEventsSemantic :many
+-- The semantic leg, used only when SEARCH_SEMANTIC_ENABLED is on. Brute-force
+-- cosine over the live rows: 4.45ms at 10k events, so no ivfflat/hnsw index is
+-- warranted yet -- and adding one would trade exact results for approximate
+-- ones to save time we are not short of.
+--
+-- Returns ids in rank order and nothing else. The handler fuses this list with
+-- SearchEvents by RANK, never by score, so the distances deliberately do not
+-- leave SQL.
+SELECT e.id
+FROM events e
+JOIN venues v ON v.id = e.venue_id
+WHERE v.city_id = sqlc.arg(city_id)
+  AND e.archived_at IS NULL
+  AND e.embedding IS NOT NULL
+  AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
+ORDER BY e.embedding <=> sqlc.arg(query_embedding)
+LIMIT sqlc.arg(candidate_limit);

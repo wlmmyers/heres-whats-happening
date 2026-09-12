@@ -43,6 +43,11 @@ type Server struct {
 	// Plan 5 addition
 	IcalBaseURL string
 
+	// Semantic search leg (flag-gated). SearchSemanticEnabled off means
+	// SearchEmbedder is never called, so it may be nil in that mode.
+	SearchEmbedder        handlers.SearchEmbedder
+	SearchSemanticEnabled bool
+
 	// Plan 6 addition — list of Origin values to allow CORS for. If empty, CORS is disabled.
 	CORSAllowedOrigins []string
 
@@ -184,7 +189,11 @@ func (s *Server) Router() http.Handler {
 		// authed net; no dedicated limiter.
 		r.Get("/calendar/{cityId}", handlers.GetCityCalendar(s.Queries))
 		r.With(middleware.RateLimitByUser(searchLimiter, middleware.EndpointSearch)).
-			Get("/search/{cityId}/events", handlers.SearchEvents(s.Queries))
+			Get("/search/{cityId}/events", handlers.SearchEvents(handlers.SearchDeps{
+				Queries:         s.Queries,
+				Embedder:        s.SearchEmbedder,
+				SemanticEnabled: s.SearchSemanticEnabled,
+			}))
 		r.Get("/events/{id}", handlers.GetEventByIDForUser(s.Queries))
 		r.Get("/me/event-going", handlers.ListGoing(s.Queries))
 		// The same going list as full event rows, for rendering it. The bare-id

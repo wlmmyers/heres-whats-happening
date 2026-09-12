@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pgvector/pgvector-go"
 
 	"github.com/wmyers/heres-whats-happening/internal/http/httperr"
 	"github.com/wmyers/heres-whats-happening/internal/store"
@@ -28,6 +30,11 @@ const (
 	// Truncate rather than reject: pasting a long string is a plausible user
 	// action and the first 100 runes carry the signal.
 	searchMaxRunes = 100
+
+	// RRF over two top-10 lists is thin -- an event ranked 11th lexically and
+	// 1st semantically could not surface at all. Both legs fetch wider and
+	// fusion truncates to searchResultLimit.
+	searchCandidateLimit = 50
 )
 
 type searchVenue struct {
@@ -80,8 +87,22 @@ func deref(s *string) string {
 	return *s
 }
 
+// SearchEmbedder is the subset of the TEI client search needs. Narrow on
+// purpose: it makes the handler testable with a stub and nothing else.
+type SearchEmbedder interface {
+	Embed(ctx context.Context, inputs []string) ([][]float32, error)
+}
+
+type SearchDeps struct {
+	Queries  *store.Queries
+	Embedder SearchEmbedder
+	// SemanticEnabled gates the pgvector leg. When false the Embedder is never
+	// called and TEI is not in the request path at all.
+	SemanticEnabled bool
+}
+
 // SearchEvents returns the top matching upcoming events in a city.
-func SearchEvents(q *store.Queries) http.HandlerFunc {
+func SearchEvents(deps SearchDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cityUUID, err := uuid.Parse(chi.URLParam(r, "cityId"))
 		if err != nil {
@@ -96,16 +117,26 @@ func SearchEvents(q *store.Queries) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
-		rows, err := q.SearchEvents(ctx, store.SearchEventsParams{
+		// Only widen past the top 10 when there is a second leg to fuse
+		// against -- otherwise the lexical leg alone would fetch (and pay for)
+		// 50 rows it will never use.
+		limit := int32(searchResultLimit)
+		if deps.SemanticEnabled {
+			limit = searchCandidateLimit
+		}
+
+		rows, err := deps.Queries.SearchEvents(ctx, store.SearchEventsParams{
 			Query:       query,
 			CityID:      pgtype.UUID{Bytes: cityUUID, Valid: true},
-			ResultLimit: searchResultLimit,
+			ResultLimit: limit,
 		})
 		if err != nil {
 			httperr.WriteErr(w, r, http.StatusInternalServerError, "db_error",
 				"could not search events", err)
 			return
 		}
+
+		rows = applySemanticLeg(ctx, deps, pgtype.UUID{Bytes: cityUUID, Valid: true}, query, rows)
 
 		// Non-nil so an empty result encodes as [] rather than null.
 		out := searchResponse{Results: make([]searchResult, 0, len(rows))}
@@ -123,4 +154,70 @@ func SearchEvents(q *store.Queries) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(out)
 	}
+}
+
+// applySemanticLeg reorders rows by fusing the lexical ranking with a pgvector
+// ranking of the same query. Every failure path returns rows unchanged: a TEI
+// outage or a bad embedding degrades search to lexical-only rather than
+// failing the request, which is what makes the flag safe to flip against a
+// service running on Fargate Spot.
+func applySemanticLeg(
+	ctx context.Context,
+	deps SearchDeps,
+	cityID pgtype.UUID,
+	query string,
+	rows []store.SearchEventsRow,
+) []store.SearchEventsRow {
+	if !deps.SemanticEnabled || deps.Embedder == nil {
+		return truncateRows(rows, searchResultLimit)
+	}
+
+	vecs, err := deps.Embedder.Embed(ctx, []string{query})
+	if err != nil || len(vecs) == 0 || len(vecs[0]) == 0 {
+		log.Printf("search: semantic leg unavailable, serving lexical only: err=%v vectors=%d",
+			err, len(vecs))
+		return truncateRows(rows, searchResultLimit)
+	}
+
+	vec := pgvector.NewVector(vecs[0])
+	semanticIDs, err := deps.Queries.SearchEventsSemantic(ctx, store.SearchEventsSemanticParams{
+		CityID:         cityID,
+		QueryEmbedding: &vec,
+		CandidateLimit: searchCandidateLimit,
+	})
+	if err != nil {
+		log.Printf("search: semantic query failed, serving lexical only: %v", err)
+		return truncateRows(rows, searchResultLimit)
+	}
+
+	byID := make(map[uuid.UUID]store.SearchEventsRow, len(rows))
+	lexical := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		id := uuid.UUID(row.ID.Bytes)
+		byID[id] = row
+		lexical = append(lexical, id)
+	}
+	semantic := make([]uuid.UUID, 0, len(semanticIDs))
+	for _, pgID := range semanticIDs {
+		semantic = append(semantic, uuid.UUID(pgID.Bytes))
+	}
+
+	fused := fuseRRF(lexical, semantic, searchResultLimit)
+	out := make([]store.SearchEventsRow, 0, len(fused))
+	for _, id := range fused {
+		// Semantic-only hits have no lexical row to render; the lexical leg is
+		// the source of display data, so they are dropped rather than
+		// re-queried. Widening candidates to 50 keeps this rare.
+		if row, ok := byID[id]; ok {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func truncateRows(rows []store.SearchEventsRow, limit int) []store.SearchEventsRow {
+	if len(rows) > limit {
+		return rows[:limit]
+	}
+	return rows
 }
