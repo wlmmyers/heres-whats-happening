@@ -47,6 +47,14 @@ function SearchDialogBody({ onClose, cityId }: Omit<Props, 'open'>) {
 
   const results = data?.results ?? [];
   const tooShort = [...debounced.trim()].length < SEARCH_MIN_LENGTH;
+  // Single source of truth for whether the listbox is actually in the DOM.
+  // aria-expanded/aria-controls/aria-activedescendant and the render branch
+  // below all key off this so they can't drift apart and point at an id
+  // nothing renders. Checking tooShort here (not just results.length) matters
+  // because keepPreviousData lets stale results outlive the query that
+  // produced them: shrinking the query back below SEARCH_MIN_LENGTH flips
+  // tooShort true while the previous hit is still sitting in `results`.
+  const showListbox = !tooShort && results.length > 0;
 
   // A stale active row would point at a different event once the results it
   // indexes change. Reset it during render rather than in an effect: an
@@ -102,9 +110,11 @@ function SearchDialogBody({ onClose, cityId }: Omit<Props, 'open'>) {
           autoFocus
           type="text"
           role="combobox"
-          aria-expanded={results.length > 0}
-          aria-controls={listId}
-          aria-activedescendant={activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
+          aria-expanded={showListbox}
+          aria-controls={showListbox ? listId : undefined}
+          aria-activedescendant={
+            showListbox && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined
+          }
           aria-label="Search events"
           className={s.input}
           value={query}
@@ -117,7 +127,7 @@ function SearchDialogBody({ onClose, cityId }: Omit<Props, 'open'>) {
           <p className={s.status}>Keep typing — at least {SEARCH_MIN_LENGTH} characters.</p>
         ) : isFetching && results.length === 0 ? (
           <p className={s.status}>Searching…</p>
-        ) : results.length === 0 ? (
+        ) : !showListbox ? (
           <p className={s.status}>No events match “{debounced.trim()}”.</p>
         ) : (
           <ul id={listId} role="listbox" aria-label="Search results" className={s.list}>

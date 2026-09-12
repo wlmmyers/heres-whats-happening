@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -59,11 +59,40 @@ describe('SearchDialog', () => {
   });
 
   it('prompts rather than querying below the minimum length', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    await user.type(field(), 'mi');
-    expect(searchEvents).not.toHaveBeenCalled();
-    expect(screen.getByText(/keep typing/i)).toBeInTheDocument();
+    vi.useFakeTimers();
+    try {
+      vi.mocked(searchEvents).mockResolvedValue(oneResult);
+      renderDialog();
+
+      // fireEvent.change sets the value in one synchronous DOM event, rather
+      // than userEvent's per-keystroke simulation (whose internal timers
+      // don't mix cleanly with vi.useFakeTimers here). useDebouncedValue's
+      // delay is 400ms; asserting immediately -- as the original version of
+      // this test did -- would check the pre-debounce "" rather than "mi".
+      // Both are under the floor, so that assertion couldn't tell "mi was
+      // correctly computed as too short" apart from "debounced never left its
+      // initial empty value". Advancing past the real delay first makes this
+      // the settled "mi" state.
+      fireEvent.change(field(), { target: { value: 'mi' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(searchEvents).not.toHaveBeenCalled();
+      expect(screen.getByText(/keep typing/i)).toBeInTheDocument();
+
+      // Still not proof on its own: "" and "mi" render identically, so a
+      // frozen, disconnected debounced value would pass the assertions above
+      // too. Crossing the floor and confirming a query actually fires is what
+      // proves debounced tracks the real input rather than coincidentally
+      // agreeing with it while stuck.
+      fireEvent.change(field(), { target: { value: 'midnight' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(searchEvents).toHaveBeenCalledWith('city-1', 'midnight');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders results as options', async () => {
@@ -99,5 +128,26 @@ describe('SearchDialog', () => {
     const { onClose } = renderDialog();
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('does not claim the listbox is expanded once a query shrinks back below the minimum', async () => {
+    vi.mocked(searchEvents).mockResolvedValue(oneResult);
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(field(), 'midnight');
+    await waitFor(() => expect(screen.getByRole('option')).toBeInTheDocument());
+
+    // keepPreviousData means the earlier hit can still be sitting in `data`
+    // even once the query is back under SEARCH_MIN_LENGTH and disabled --
+    // that must not leave the combobox's ARIA wiring pointing at a listbox
+    // that the component has actually stopped rendering.
+    await user.clear(field());
+    await user.type(field(), 'mi');
+    await waitFor(() => expect(screen.getByText(/keep typing/i)).toBeInTheDocument());
+
+    expect(field()).toHaveAttribute('aria-expanded', 'false');
+    expect(field()).not.toHaveAttribute('aria-controls');
+    expect(field()).not.toHaveAttribute('aria-activedescendant');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 });
