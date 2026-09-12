@@ -3,6 +3,7 @@ package store_test
 import (
 	"bytes"
 	"context"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -65,7 +66,13 @@ func seedSearchFixture(t *testing.T, q *store.Queries, ctx context.Context) pgty
 		EventID: support, PerformerName: "Nova Ridge", NormalizedName: "nova ridge",
 	})
 	require.NoError(t, err)
-	mkEvent("s-headliner", "Nova Ridge", bowl, future)
+	// Later than the performer event on purpose. Given the same starts_at,
+	// dropping the 0.9 performer weight ties these two on rank AND on
+	// starts_at, leaving only e.id to separate them -- so the weighting test
+	// below would catch the regression barely half the time. A later start
+	// makes "Nova Ridge" LOSE the starts_at tiebreak, so without the weight the
+	// wrong row is first every time.
+	mkEvent("s-headliner", "Nova Ridge", bowl, future.Add(24*time.Hour))
 
 	return city.ID
 }
@@ -358,14 +365,50 @@ func mkSemanticEvent(
 	return id
 }
 
-func semanticSearch(t *testing.T, q *store.Queries, ctx context.Context, cityID pgtype.UUID, probe []float32, limit int32) []pgtype.UUID {
+func semanticSearchRows(t *testing.T, q *store.Queries, ctx context.Context, cityID pgtype.UUID, probe []float32, limit int32) []store.SearchEventsSemanticRow {
 	t.Helper()
 	vec := pgvector.NewVector(probe)
-	ids, err := q.SearchEventsSemantic(ctx, store.SearchEventsSemanticParams{
+	rows, err := q.SearchEventsSemantic(ctx, store.SearchEventsSemanticParams{
 		CityID: cityID, QueryEmbedding: &vec, CandidateLimit: limit,
 	})
 	require.NoError(t, err)
+	return rows
+}
+
+// Most tests here care only about which ids came back in what order; the
+// projection itself is pinned by TestSearchEventsSemantic_ProjectsDisplayColumns.
+func semanticSearch(t *testing.T, q *store.Queries, ctx context.Context, cityID pgtype.UUID, probe []float32, limit int32) []pgtype.UUID {
+	t.Helper()
+	rows := semanticSearchRows(t, q, ctx, cityID, probe, limit)
+	ids := make([]pgtype.UUID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
 	return ids
+}
+
+// The semantic leg must carry the SAME display columns as SearchEvents, not
+// bare ids. RRF fuses orderings, so a fused id can come from this leg alone
+// (the design's "baseball" case) and the handler has nothing else to render it
+// from -- when this query returned only ids, every such hit was silently
+// dropped and the flag was a no-op for exactly the queries it exists for.
+// Reducing this back to `SELECT e.id` must fail here rather than in production.
+func TestSearchEventsSemantic_ProjectsDisplayColumns(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	cityID, srcID, venueID := semanticFixture(t, q, ctx, "Semantic Venue H")
+
+	startsAt := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Millisecond)
+	mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-projection",
+		"Projected Signal", startsAt, probeVector())
+
+	rows := semanticSearchRows(t, q, ctx, cityID, probeVector(), 10)
+	require.Len(t, rows, 1)
+	require.Equal(t, "Projected Signal", rows[0].Title)
+	require.Equal(t, "Semantic Venue H", rows[0].VenueName)
+	require.WithinDuration(t, startsAt, rows[0].StartsAt.Time, time.Second)
+	require.True(t, rows[0].StartsAt.Valid)
 }
 
 func containsID(ids []pgtype.UUID, target pgtype.UUID) bool {
@@ -404,8 +447,12 @@ func TestSearchEventsSemantic_OrdersByCosineDistance(t *testing.T) {
 	cityID, srcID, venueID := semanticFixture(t, q, ctx, "Semantic Venue B")
 
 	future := time.Now().Add(48 * time.Hour)
-	near := mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-near", "Nearby Signal", future, nearVector())
+	// far FIRST, deliberately. Seeded near-then-far, insertion order coincides
+	// with the asserted order, so the test would still pass with the ORDER BY
+	// dropped entirely -- a seq scan returns heap order. Reversing it means
+	// only a real ORDER BY can produce the expected answer.
 	far := mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-far", "Distant Signal", future, farVector())
+	near := mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-near", "Nearby Signal", future, nearVector())
 
 	ids := semanticSearch(t, q, ctx, cityID, probeVector(), 10)
 	require.Len(t, ids, 2)
@@ -478,4 +525,53 @@ func TestSearchEventsSemantic_ScopesToCity(t *testing.T) {
 
 	otherCity := pgtype.UUID{Bytes: [16]byte{9, 9, 9, 9}, Valid: true}
 	require.Empty(t, semanticSearch(t, q, ctx, otherCity, probeVector(), 10))
+}
+
+// Order must be total here for the same reason it must be total in the lexical
+// leg (see TestSearchEvents_OrderIsStableAcrossIdenticalCalls), and ties are
+// not an edge case: recurring events feed BuildEventText identical input, so
+// they get byte-identical embeddings. Measured on the 195-event dev catalogue,
+// 80 embedded events fall into 26 byte-identical groups -- 41% of the corpus.
+//
+// Within such a group `ORDER BY e.embedding <=> $2` alone leaves both the
+// ordering AND which rows survive LIMIT unpinned, and ingestion re-upserts
+// constantly, so the answer can change between keystrokes.
+//
+// Six tied rows, not two: ids are gen_random_uuid(), so with two rows an
+// unordered implementation would coincidentally agree with ascending id half
+// the time. Six makes that coincidence 1-in-720.
+func TestSearchEventsSemantic_OrderIsStableAcrossIdenticalCalls(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	cityID, srcID, venueID := semanticFixture(t, q, ctx, "Semantic Venue G")
+
+	future := time.Now().Add(48 * time.Hour)
+	tied := make([]pgtype.UUID, 0, 6)
+	for _, srcEventID := range []string{
+		"sem-tie-a", "sem-tie-b", "sem-tie-c", "sem-tie-d", "sem-tie-e", "sem-tie-f",
+	} {
+		// Identical embedding for every row: the cosine distance cannot
+		// separate them, so only the id tiebreak can.
+		tied = append(tied, mkSemanticEvent(t, q, ctx, srcID, venueID, srcEventID,
+			"Recurring Signal", future, nearVector()))
+	}
+	want := append([]pgtype.UUID(nil), tied...)
+	sort.Slice(want, func(i, j int) bool {
+		return bytes.Compare(want[i].Bytes[:], want[j].Bytes[:]) < 0
+	})
+
+	first := semanticSearch(t, q, ctx, cityID, probeVector(), 10)
+	require.Equal(t, want, first,
+		"every row is at the same cosine distance -- only ascending id can have ordered these")
+	for i := 0; i < 5; i++ {
+		require.Equal(t, first, semanticSearch(t, q, ctx, cityID, probeVector(), 10),
+			"identical calls must return an identical order")
+	}
+
+	// The half a pure ordering assertion misses: LIMIT cuts the group, so an
+	// unpinned order also makes MEMBERSHIP unstable. The first three by id are
+	// the only correct answer at CandidateLimit 3.
+	require.Equal(t, want[:3], semanticSearch(t, q, ctx, cityID, probeVector(), 3),
+		"which tied rows survive LIMIT must be pinned too")
 }

@@ -57,8 +57,15 @@ func fuseRRF(lexical, semantic []uuid.UUID, limit int) []uuid.UUID {
 		return out[i].order < out[j].order
 	})
 
+	// Both ends, not just the top. `limit > len(out)` alone leaves a negative
+	// limit to reach out[:limit] and panic -- unreachable today (every caller
+	// passes the searchResultLimit constant) but a panic in a request path is
+	// not worth leaving to the next caller.
 	if limit > len(out) {
 		limit = len(out)
+	}
+	if limit < 0 {
+		limit = 0
 	}
 	ids := make([]uuid.UUID, 0, limit)
 	for _, e := range out[:limit] {

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"strings"
@@ -80,13 +79,6 @@ func parseSearchQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return raw, true
 }
 
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 // SearchEmbedder is the subset of the TEI client search needs. Narrow on
 // purpose: it makes the handler testable with a stub and nothing else.
 type SearchEmbedder interface {
@@ -136,88 +128,128 @@ func SearchEvents(deps SearchDeps) http.HandlerFunc {
 			return
 		}
 
-		rows = applySemanticLeg(ctx, deps, pgtype.UUID{Bytes: cityUUID, Valid: true}, query, rows)
+		results := applySemanticLeg(ctx, deps,
+			pgtype.UUID{Bytes: cityUUID, Valid: true}, query, rows)
 
-		// Non-nil so an empty result encodes as [] rather than null.
-		out := searchResponse{Results: make([]searchResult, 0, len(rows))}
-		for _, row := range rows {
-			out.Results = append(out.Results, searchResult{
-				ID:       uuid.UUID(row.ID.Bytes).String(),
-				Title:    row.Title,
-				StartsAt: row.StartsAt.Time.UTC().Format(time.RFC3339),
-				ImageURL: deref(row.ImageUrl),
-				Segment:  deref(row.Segment),
-				Venue:    searchVenue{Name: row.VenueName},
-			})
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(out)
+		writeJSON(w, http.StatusOK, searchResponse{Results: results})
 	}
 }
 
-// applySemanticLeg reorders rows by fusing the lexical ranking with a pgvector
-// ranking of the same query. Every failure path returns rows unchanged: a TEI
-// outage or a bad embedding degrades search to lexical-only rather than
-// failing the request, which is what makes the flag safe to flip against a
-// service running on Fargate Spot.
+// lexicalResult and semanticResult render one row of each leg into the wire
+// shape. The two legs project identical columns on purpose (see the note on
+// SearchEventsSemantic in search.sql), but sqlc emits a distinct row struct per
+// query, so the mapping is written once per struct rather than shared. They
+// must stay in step: a fused id can be rendered from either one, and a
+// difference between them would show up as the same event looking different
+// depending on which leg found it.
+func lexicalResult(row store.SearchEventsRow) searchResult {
+	return searchResult{
+		ID:       uuid.UUID(row.ID.Bytes).String(),
+		Title:    row.Title,
+		StartsAt: row.StartsAt.Time.UTC().Format(time.RFC3339),
+		ImageURL: textPtrToString(row.ImageUrl),
+		Segment:  textPtrToString(row.Segment),
+		Venue:    searchVenue{Name: row.VenueName},
+	}
+}
+
+func semanticResult(row store.SearchEventsSemanticRow) searchResult {
+	return searchResult{
+		ID:       uuid.UUID(row.ID.Bytes).String(),
+		Title:    row.Title,
+		StartsAt: row.StartsAt.Time.UTC().Format(time.RFC3339),
+		ImageURL: textPtrToString(row.ImageUrl),
+		Segment:  textPtrToString(row.Segment),
+		Venue:    searchVenue{Name: row.VenueName},
+	}
+}
+
+// applySemanticLeg produces the final, ordered results. With the flag off it
+// is just the lexical rows, truncated. With it on it fuses the lexical ranking
+// with a pgvector ranking of the same query.
+//
+// Every failure path returns the lexical results unchanged: a TEI outage or a
+// bad embedding degrades search to lexical-only rather than failing the
+// request, which is what makes the flag safe to flip against a service running
+// on Fargate Spot.
 func applySemanticLeg(
 	ctx context.Context,
 	deps SearchDeps,
 	cityID pgtype.UUID,
 	query string,
 	rows []store.SearchEventsRow,
-) []store.SearchEventsRow {
+) []searchResult {
+	// byID carries display data for every id either leg can produce. It is
+	// seeded from the lexical leg and topped up from the semantic one below --
+	// see the note there for why both legs have to contribute.
+	byID := make(map[uuid.UUID]searchResult, len(rows))
+	lexical := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		id := uuid.UUID(row.ID.Bytes)
+		byID[id] = lexicalResult(row)
+		lexical = append(lexical, id)
+	}
+
 	if !deps.SemanticEnabled || deps.Embedder == nil {
-		return truncateRows(rows, searchResultLimit)
+		return resultsFor(truncateIDs(lexical, searchResultLimit), byID)
 	}
 
 	vecs, err := deps.Embedder.Embed(ctx, []string{query})
 	if err != nil || len(vecs) == 0 || len(vecs[0]) == 0 {
 		log.Printf("search: semantic leg unavailable, serving lexical only: err=%v vectors=%d",
 			err, len(vecs))
-		return truncateRows(rows, searchResultLimit)
+		return resultsFor(truncateIDs(lexical, searchResultLimit), byID)
 	}
 
 	vec := pgvector.NewVector(vecs[0])
-	semanticIDs, err := deps.Queries.SearchEventsSemantic(ctx, store.SearchEventsSemanticParams{
+	semanticRows, err := deps.Queries.SearchEventsSemantic(ctx, store.SearchEventsSemanticParams{
 		CityID:         cityID,
 		QueryEmbedding: &vec,
 		CandidateLimit: searchCandidateLimit,
 	})
 	if err != nil {
 		log.Printf("search: semantic query failed, serving lexical only: %v", err)
-		return truncateRows(rows, searchResultLimit)
+		return resultsFor(truncateIDs(lexical, searchResultLimit), byID)
 	}
 
-	byID := make(map[uuid.UUID]store.SearchEventsRow, len(rows))
-	lexical := make([]uuid.UUID, 0, len(rows))
-	for _, row := range rows {
+	semantic := make([]uuid.UUID, 0, len(semanticRows))
+	for _, row := range semanticRows {
 		id := uuid.UUID(row.ID.Bytes)
-		byID[id] = row
-		lexical = append(lexical, id)
-	}
-	semantic := make([]uuid.UUID, 0, len(semanticIDs))
-	for _, pgID := range semanticIDs {
-		semantic = append(semantic, uuid.UUID(pgID.Bytes))
+		semantic = append(semantic, id)
+		// The reason the semantic query projects display columns at all. RRF
+		// fuses ORDERINGS, so a fused id may exist only in this leg -- the
+		// "baseball" case, where no event contains the string and every hit is
+		// semantic. Rendering the fused list out of the lexical rows alone
+		// dropped exactly those ids, which made the flag a no-op for the
+		// queries the leg was built for and a visible drop in result count for
+		// the rest.
+		//
+		// Lexical wins the collision only because it was inserted first; the
+		// two legs project the same columns, so the rendered row is identical
+		// either way.
+		if _, ok := byID[id]; !ok {
+			byID[id] = semanticResult(row)
+		}
 	}
 
-	fused := fuseRRF(lexical, semantic, searchResultLimit)
-	out := make([]store.SearchEventsRow, 0, len(fused))
-	for _, id := range fused {
-		// Semantic-only hits have no lexical row to render; the lexical leg is
-		// the source of display data, so they are dropped rather than
-		// re-queried. Widening candidates to 50 keeps this rare.
-		if row, ok := byID[id]; ok {
-			out = append(out, row)
+	return resultsFor(fuseRRF(lexical, semantic, searchResultLimit), byID)
+}
+
+// resultsFor renders an ordered id list. The slice is non-nil so an empty
+// result encodes as [] rather than null.
+func resultsFor(ids []uuid.UUID, byID map[uuid.UUID]searchResult) []searchResult {
+	out := make([]searchResult, 0, len(ids))
+	for _, id := range ids {
+		if r, ok := byID[id]; ok {
+			out = append(out, r)
 		}
 	}
 	return out
 }
 
-func truncateRows(rows []store.SearchEventsRow, limit int) []store.SearchEventsRow {
-	if len(rows) > limit {
-		return rows[:limit]
+func truncateIDs(ids []uuid.UUID, limit int) []uuid.UUID {
+	if len(ids) > limit {
+		return ids[:limit]
 	}
-	return rows
+	return ids
 }

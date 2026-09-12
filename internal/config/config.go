@@ -150,6 +150,20 @@ func Load() (*Config, error) {
 		searchSemanticEnabled = b
 	}
 
+	// TEI_ENDPOINT is optional in general — the interests consumer skips its
+	// embedder without one and match-job does its own check — but the semantic
+	// search leg cannot work without it, and its absence is invisible at
+	// runtime. The handler swallows every embed failure by design (a TEI
+	// outage must degrade to lexical, not 500), so with the flag on and no
+	// endpoint the flag reads as on, behaves exactly as if it were off, and
+	// says so only in a log line per request. There is deliberately no
+	// CloudWatch alarm on /search either. Same fail-fast posture as the poster
+	// and mail vars below: refusing to start is the only signal loud enough.
+	teiEndpoint := os.Getenv("TEI_ENDPOINT")
+	if searchSemanticEnabled && teiEndpoint == "" {
+		return nil, errors.New("SEARCH_SEMANTIC_ENABLED=true requires TEI_ENDPOINT")
+	}
+
 	// Defaults to true — see the field comment: unset must mean "keep emitting".
 	dbStatsLogging := true
 	if v := os.Getenv("DB_STATS_LOGGING"); v != "" {
@@ -245,7 +259,7 @@ func Load() (*Config, error) {
 		SpotifyRedirectURI:     os.Getenv("SPOTIFY_REDIRECT_URI"),
 		SpotifyTokenEncKey:     encKey,
 		InterestsQueueURL:      os.Getenv("INTERESTS_QUEUE_URL"),
-		TEIEndpoint:            os.Getenv("TEI_ENDPOINT"),
+		TEIEndpoint:            teiEndpoint,
 		SearchSemanticEnabled:  searchSemanticEnabled,
 		IcalBaseURL:            os.Getenv("ICAL_BASE_URL"),
 		CORSAllowedOrigins:     corsOrigins,

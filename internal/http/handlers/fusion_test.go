@@ -105,3 +105,10 @@ func TestFuseRRF_IsDeterministic(t *testing.T) {
 		require.Equal(t, first, fuseRRF(lex, sem, 10))
 	}
 }
+
+// No caller passes a negative limit today; this pins that a future one gets an
+// empty list rather than a panic inside a request.
+func TestFuseRRF_NegativeLimitReturnsEmpty(t *testing.T) {
+	u := ids(3)
+	require.Empty(t, fuseRRF(u, u, -1))
+}

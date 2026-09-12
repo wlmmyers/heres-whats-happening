@@ -305,3 +305,53 @@ func TestLoad_FullyConfiguredMailSucceeds(t *testing.T) {
 	require.Equal(t, "http://localhost:5173", cfg.AppBaseURL)
 	require.Equal(t, "http://localhost:8080", cfg.APIBaseURL)
 }
+
+// SEARCH_SEMANTIC_ENABLED without TEI_ENDPOINT is the quietest possible
+// misconfiguration: the flag reads as on, the handler's degradation path
+// swallows every embed failure by design, and search silently serves lexical
+// results forever. The only signal is a log line per request, and there is
+// deliberately no CloudWatch alarm on the endpoint. Refusing to start is the
+// only failure loud enough to notice — same posture as the poster vars.
+func TestLoad_SemanticSearchRequiresTEIEndpoint(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("POSTER_FUNCTION_URL", "https://poster.example.com/lambda-url")
+	t.Setenv("POSTERS_BUCKET", "posters-bucket")
+	t.Setenv("SEARCH_SEMANTIC_ENABLED", "true")
+	t.Setenv("TEI_ENDPOINT", "")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SEARCH_SEMANTIC_ENABLED")
+	require.Contains(t, err.Error(), "TEI_ENDPOINT")
+}
+
+func TestLoad_SemanticSearchWithTEIEndpointLoads(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("POSTER_FUNCTION_URL", "https://poster.example.com/lambda-url")
+	t.Setenv("POSTERS_BUCKET", "posters-bucket")
+	t.Setenv("SEARCH_SEMANTIC_ENABLED", "true")
+	t.Setenv("TEI_ENDPOINT", "http://localhost:8081")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.SearchSemanticEnabled)
+}
+
+// The flag is off by default, so an empty TEI_ENDPOINT must stay legal: it is
+// optional for everything else that reads it (the interests consumer skips its
+// embedder, and match-job does its own check).
+func TestLoad_NoTEIEndpointIsFineWithSemanticSearchOff(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("POSTER_FUNCTION_URL", "https://poster.example.com/lambda-url")
+	t.Setenv("POSTERS_BUCKET", "posters-bucket")
+	t.Setenv("SEARCH_SEMANTIC_ENABLED", "false")
+	t.Setenv("TEI_ENDPOINT", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.False(t, cfg.SearchSemanticEnabled)
+	require.Empty(t, cfg.TEIEndpoint)
+}

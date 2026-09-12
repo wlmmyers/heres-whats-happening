@@ -46,9 +46,11 @@ JOIN events e ON e.id = b.id
 JOIN venues v ON v.id = e.venue_id
 WHERE v.city_id = $1
   AND e.archived_at IS NULL
-  -- Same showable predicate as GetCityCalendarPage. Applied AFTER candidate
-  -- generation on purpose: the trigram indexes do the selective work, and this
-  -- filters the handful that survive.
+  -- Same showable predicate as GetCityCalendarPage. Written after candidate
+  -- generation because that is where it reads clearly; it is not a claim about
+  -- the plan. event_over_at() is not indexed, and at dev scale the planner
+  -- seq-scans rather than probing the trigram indexes first, so treat this as
+  -- a correctness filter and re-measure before relying on it being cheap.
   AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
 ORDER BY b.rank DESC, e.starts_at ASC, e.id ASC
 LIMIT $2
@@ -109,14 +111,15 @@ func (q *Queries) SearchEvents(ctx context.Context, arg SearchEventsParams) ([]S
 }
 
 const searchEventsSemantic = `-- name: SearchEventsSemantic :many
-SELECT e.id
+SELECT e.id, e.title, e.starts_at, e.image_url, e.segment,
+       v.name AS venue_name
 FROM events e
 JOIN venues v ON v.id = e.venue_id
 WHERE v.city_id = $1
   AND e.archived_at IS NULL
   AND e.embedding IS NOT NULL
   AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
-ORDER BY e.embedding <=> $2
+ORDER BY e.embedding <=> $2, e.id ASC
 LIMIT $3
 `
 
@@ -126,27 +129,61 @@ type SearchEventsSemanticParams struct {
 	CandidateLimit int32            `json:"candidate_limit"`
 }
 
+type SearchEventsSemanticRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Title     string             `json:"title"`
+	StartsAt  pgtype.Timestamptz `json:"starts_at"`
+	ImageUrl  *string            `json:"image_url"`
+	Segment   *string            `json:"segment"`
+	VenueName string             `json:"venue_name"`
+}
+
 // The semantic leg, used only when SEARCH_SEMANTIC_ENABLED is on. Brute-force
 // cosine over the live rows: 4.45ms at 10k events, so no ivfflat/hnsw index is
 // warranted yet -- and adding one would trade exact results for approximate
 // ones to save time we are not short of.
 //
-// Returns ids in rank order and nothing else. The handler fuses this list with
-// SearchEvents by RANK, never by score, so the distances deliberately do not
-// leave SQL.
-func (q *Queries) SearchEventsSemantic(ctx context.Context, arg SearchEventsSemanticParams) ([]pgtype.UUID, error) {
+// Projects exactly the same display columns as SearchEvents, and deliberately
+// so. RRF fuses the two legs' ORDERINGS, so a fused id may have come from this
+// leg alone -- the "baseball" case in the design doc, where no event contains
+// the string and every hit is semantic. When this query returned bare ids the
+// handler had no display data for such a row and dropped it, which made the
+// whole semantic leg unreachable: a query with no lexical rows returned an
+// empty list, exactly as if the flag were off. Carrying the columns here costs
+// nothing (the rows are already being read) and is what lets any fused id
+// render. Do not reduce this back to `SELECT e.id`.
+//
+// What still deliberately does NOT leave SQL is the distance. The handler
+// fuses by RANK, never by score -- see the Fusion note in the design for why
+// no cosine cutoff can work -- so no similarity or distance column is
+// projected from either leg.
+// e.id ASC so the order is total. Ties are the common case, not an edge
+// case: recurring events feed BuildEventText identical input and so get
+// byte-identical embeddings -- 80 of the 195 embedded events in the dev
+// catalogue fall into 26 such groups. Without the tiebreak both the order
+// WITHIN a group and which of its rows survive LIMIT are unpinned, and
+// ingestion re-upserts constantly, so the answer can change between
+// keystrokes -- the same flicker the lexical leg's e.id ASC prevents.
+func (q *Queries) SearchEventsSemantic(ctx context.Context, arg SearchEventsSemanticParams) ([]SearchEventsSemanticRow, error) {
 	rows, err := q.db.Query(ctx, searchEventsSemantic, arg.CityID, arg.QueryEmbedding, arg.CandidateLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []pgtype.UUID{}
+	items := []SearchEventsSemanticRow{}
 	for rows.Next() {
-		var id pgtype.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i SearchEventsSemanticRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.StartsAt,
+			&i.ImageUrl,
+			&i.Segment,
+			&i.VenueName,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
