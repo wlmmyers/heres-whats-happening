@@ -3,10 +3,12 @@ package store_test
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wmyers/heres-whats-happening/internal/store"
@@ -288,4 +290,192 @@ func TestSearchEvents_PerformerMatchOutrankedByTitleMatch(t *testing.T) {
 	require.Equal(t, "Nova Ridge", rows[0].Title)
 	require.Contains(t, titles(rows), "Warehouse District Sessions",
 		"performer match still surfaces, just lower")
+}
+
+// --- SearchEventsSemantic ---------------------------------------------------
+//
+// Kept separate from seedSearchFixture above: that fixture's events carry no
+// embeddings, and giving them one here would entangle two independent query
+// paths -- trigram similarity and cosine distance -- under one shared
+// dataset. Each test below builds its own small, embedding-bearing fixture.
+
+// unitVector384 is a unit vector along one axis of a 384-dim space (the
+// column's declared width and TEI's real output width). Two unit vectors
+// along the SAME axis have cosine similarity exactly 1 (distance 0); two
+// along DIFFERENT axes are exactly orthogonal (similarity 0, distance 1).
+// Both are exact dot-product arithmetic, not measured approximations, so the
+// distances the ordering test asserts on cannot be a coincidence of
+// floating-point rounding.
+func unitVector384(axis int) []float32 {
+	v := make([]float32, 384)
+	v[axis] = 1
+	return v
+}
+
+// probeVector is the "query embedding" every test below searches with.
+// nearVector points along the same axis (cosine distance from probeVector:
+// exactly 0). farVector is orthogonal to it (cosine distance: exactly 1).
+func probeVector() []float32 { return unitVector384(0) }
+func nearVector() []float32  { return unitVector384(0) }
+func farVector() []float32   { return unitVector384(1) }
+
+// semanticFixture returns the default city, the ticketmaster source, and a
+// dedicated venue for one SearchEventsSemantic test.
+func semanticFixture(t *testing.T, q *store.Queries, ctx context.Context, venueName string) (cityID, srcID, venueID pgtype.UUID) {
+	t.Helper()
+	city, err := q.GetDefaultCity(ctx)
+	require.NoError(t, err)
+	src, err := q.GetEventSourceByName(ctx, "ticketmaster")
+	require.NoError(t, err)
+	venueID, err = q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: venueName, NormalizedName: strings.ToLower(venueName),
+	})
+	require.NoError(t, err)
+	return city.ID, src.ID, venueID
+}
+
+// mkSemanticEvent creates an event and, when embedding is non-nil, sets its
+// embedding via UpdateEventEmbedding -- the same call the real backfill job
+// makes, so these fixtures exercise the same write path production uses. A
+// nil embedding leaves the column NULL, which is the default for a freshly
+// upserted event (UpsertEvent never touches it).
+func mkSemanticEvent(
+	t *testing.T, q *store.Queries, ctx context.Context,
+	srcID, venueID pgtype.UUID, sourceEventID, title string, startsAt time.Time, embedding []float32,
+) pgtype.UUID {
+	t.Helper()
+	id, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID: srcID, SourceEventID: sourceEventID, Title: title,
+		StartsAt: pgtype.Timestamptz{Time: startsAt, Valid: true}, VenueID: venueID,
+	})
+	require.NoError(t, err)
+	if embedding != nil {
+		vec := pgvector.NewVector(embedding)
+		require.NoError(t, q.UpdateEventEmbedding(ctx, store.UpdateEventEmbeddingParams{
+			ID: id, Embedding: &vec,
+		}))
+	}
+	return id
+}
+
+func semanticSearch(t *testing.T, q *store.Queries, ctx context.Context, cityID pgtype.UUID, probe []float32, limit int32) []pgtype.UUID {
+	t.Helper()
+	vec := pgvector.NewVector(probe)
+	ids, err := q.SearchEventsSemantic(ctx, store.SearchEventsSemanticParams{
+		CityID: cityID, QueryEmbedding: &vec, CandidateLimit: limit,
+	})
+	require.NoError(t, err)
+	return ids
+}
+
+func containsID(ids []pgtype.UUID, target pgtype.UUID) bool {
+	for _, id := range ids {
+		if id.Bytes == target.Bytes {
+			return true
+		}
+	}
+	return false
+}
+
+// The query works at all: an event with a live embedding comes back for a
+// matching probe.
+func TestSearchEventsSemantic_ReturnsEventWithEmbedding(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	cityID, srcID, venueID := semanticFixture(t, q, ctx, "Semantic Venue A")
+
+	future := time.Now().Add(48 * time.Hour)
+	eventID := mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-has-embedding",
+		"Neon Constellation", future, probeVector())
+
+	ids := semanticSearch(t, q, ctx, cityID, probeVector(), 10)
+	require.True(t, containsID(ids, eventID), "an event with a live embedding must be returned")
+}
+
+// The core ranking property: distances are computed exactly (see
+// unitVector384), so an implementation with a wrong join, wrong parameter
+// order, or a swapped ORDER BY direction produces the reverse order, not a
+// slightly-off one -- there is no floating-point tolerance to hide behind.
+func TestSearchEventsSemantic_OrdersByCosineDistance(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	cityID, srcID, venueID := semanticFixture(t, q, ctx, "Semantic Venue B")
+
+	future := time.Now().Add(48 * time.Hour)
+	near := mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-near", "Nearby Signal", future, nearVector())
+	far := mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-far", "Distant Signal", future, farVector())
+
+	ids := semanticSearch(t, q, ctx, cityID, probeVector(), 10)
+	require.Len(t, ids, 2)
+	require.Equal(t, near, ids[0], "cosine distance 0 (same axis) must rank ahead of distance 1 (orthogonal)")
+	require.Equal(t, far, ids[1])
+}
+
+// A NULL embedding must never reach the ORDER BY -- if the "embedding IS NOT
+// NULL" filter were dropped, this event either sorts arbitrarily (Postgres
+// treats a NULL distance as NULLS LAST by default, which could coincidentally
+// still exclude it from a small LIMIT) or errors outright depending on the
+// bug, so the test seeds a companion WITH an embedding and asserts on the
+// null one's absence specifically, not just on result count.
+func TestSearchEventsSemantic_ExcludesNullEmbedding(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	cityID, srcID, venueID := semanticFixture(t, q, ctx, "Semantic Venue C")
+
+	future := time.Now().Add(48 * time.Hour)
+	withEmbedding := mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-with-embedding",
+		"Embedded Echo", future, probeVector())
+	withoutEmbedding := mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-without-embedding",
+		"Unembedded Echo", future, nil)
+
+	ids := semanticSearch(t, q, ctx, cityID, probeVector(), 10)
+	require.True(t, containsID(ids, withEmbedding))
+	require.False(t, containsID(ids, withoutEmbedding), "a NULL embedding must never be returned")
+}
+
+func TestSearchEventsSemantic_ExcludesPastEvents(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	cityID, srcID, venueID := semanticFixture(t, q, ctx, "Semantic Venue D")
+
+	past := time.Now().Add(-72 * time.Hour)
+	pastEvent := mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-past",
+		"Yesterday's Frequency", past, probeVector())
+
+	ids := semanticSearch(t, q, ctx, cityID, probeVector(), 10)
+	require.False(t, containsID(ids, pastEvent))
+}
+
+func TestSearchEventsSemantic_ExcludesArchivedEvents(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	cityID, srcID, venueID := semanticFixture(t, q, ctx, "Semantic Venue E")
+
+	future := time.Now().Add(48 * time.Hour)
+	archived := mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-archived",
+		"Archived Frequency", future, probeVector())
+	_, err := pool.Exec(ctx, `UPDATE events SET archived_at = NOW() WHERE id = $1`, archived)
+	require.NoError(t, err)
+
+	ids := semanticSearch(t, q, ctx, cityID, probeVector(), 10)
+	require.False(t, containsID(ids, archived))
+}
+
+func TestSearchEventsSemantic_ScopesToCity(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	ctx := context.Background()
+	_, srcID, venueID := semanticFixture(t, q, ctx, "Semantic Venue F")
+
+	future := time.Now().Add(48 * time.Hour)
+	mkSemanticEvent(t, q, ctx, srcID, venueID, "sem-other-city",
+		"Foreign Frequency", future, probeVector())
+
+	otherCity := pgtype.UUID{Bytes: [16]byte{9, 9, 9, 9}, Valid: true}
+	require.Empty(t, semanticSearch(t, q, ctx, otherCity, probeVector(), 10))
 }
