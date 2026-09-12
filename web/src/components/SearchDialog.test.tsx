@@ -130,6 +130,63 @@ describe('SearchDialog', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  // The failure this component is most likely to see, and the only place it is
+  // visible at all: the endpoint has its own 60/min limiter, also spends the
+  // shared 120/min authed budget, `retry: false` is set app-wide, and there is
+  // deliberately no CloudWatch alarm on it. Falling through to the empty
+  // branch tells the user -- definitively, and wrongly -- that nothing matches.
+  it('reports a failed search instead of claiming nothing matched', async () => {
+    vi.mocked(searchEvents).mockRejectedValue(new Error('429 Too Many Requests'));
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(field(), 'midnight');
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/unavailable/i));
+    expect(screen.queryByText(/no events match/i)).not.toBeInTheDocument();
+  });
+
+  // keepPreviousData keeps the last successful page in `data`, so an errored
+  // refetch must not quietly go on presenting stale hits as current results.
+  it('shows the failure rather than the previous results when a later search fails', async () => {
+    vi.mocked(searchEvents).mockResolvedValueOnce(oneResult);
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(field(), 'midnight');
+    await waitFor(() => expect(screen.getByRole('option')).toBeInTheDocument());
+
+    vi.mocked(searchEvents).mockRejectedValue(new Error('500'));
+    await user.type(field(), ' orchard');
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/unavailable/i));
+    expect(screen.queryByRole('option')).not.toBeInTheDocument();
+  });
+
+  // The server truncates at 100 runes, so anything past that is typed, sent,
+  // and silently discarded. Matching the ceiling on the client makes the rule
+  // the same at both ends rather than only at the floor.
+  it('caps the input at the length the server truncates to', () => {
+    renderDialog();
+    expect(field()).toHaveAttribute('maxLength', '100');
+  });
+
+  // starts_at is fetched, serialized and typed, but was never displayed, so a
+  // multi-night run rendered as N identical rows.
+  //
+  // 'Oct 1' is also the assertion that the value went through a real date
+  // formatter: the ISO string says 2026-10-02, and only converting it to the
+  // suite's pinned America/Los_Angeles zone turns that into October 1st. A row
+  // that sliced the ISO string would have to say 02.
+  it('renders the date so a multi-night run is distinguishable', async () => {
+    vi.mocked(searchEvents).mockResolvedValue(oneResult);
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(field(), 'midnight');
+
+    await waitFor(() => expect(screen.getByRole('option')).toBeInTheDocument());
+    expect(screen.getByRole('option')).toHaveTextContent(/Oct 1/);
+    expect(screen.getByRole('option')).not.toHaveTextContent('2026-10-02T03:00:00Z');
+  });
+
   it('does not claim the listbox is expanded once a query shrinks back below the minimum', async () => {
     vi.mocked(searchEvents).mockResolvedValue(oneResult);
     const user = userEvent.setup();

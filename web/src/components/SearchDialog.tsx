@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { DIALOG_ROOT_ID } from './Layout';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useEventSearch, SEARCH_MIN_LENGTH } from '../hooks/useEventSearch';
+import { formatEventDate } from '../utils/eventDate';
 import * as c from '../styles/common.css';
 import * as s from './SearchDialog.css';
 
@@ -39,7 +40,7 @@ function SearchDialogBody({ onClose, cityId }: Omit<Props, 'open'>) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);
   const debounced = useDebouncedValue(query, DEBOUNCE_MS);
-  const { data, isFetching } = useEventSearch(cityId, debounced);
+  const { data, isFetching, isError } = useEventSearch(cityId, debounced);
   // Resolved once, on mount: re-resolving on later renders would move the
   // portal and remount the body, discarding whatever has been typed into it.
   // The fallback covers rendering the dialog outside a Layout, as the tests do.
@@ -121,10 +122,26 @@ function SearchDialogBody({ onClose, cityId }: Omit<Props, 'open'>) {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onFieldKeyDown}
           placeholder="Artist, event, or venue"
+          // The server truncates at 100 runes (searchMaxRunes), so past that
+          // the user is typing characters that are sent and then thrown away.
+          // Matching the ceiling here makes the rule the same at both ends.
+          maxLength={100}
         />
 
         {tooShort ? (
           <p className={s.status}>Keep typing — at least {SEARCH_MIN_LENGTH} characters.</p>
+        ) : isError ? (
+          // Ahead of every other branch, including the results one. Without
+          // it a 429, a 500 or a dropped connection falls through to the empty
+          // state and tells the user that nothing matches, which is a
+          // different and wrong claim -- and with keepPreviousData it would
+          // otherwise keep presenting the last successful hits as current.
+          // This is the only place the failure is visible: the endpoint has
+          // its own 60/min limiter on top of the shared authed budget,
+          // `retry: false` is set app-wide, and it has no CloudWatch alarm.
+          <p className={s.status} role="alert">
+            Search is unavailable right now. Try again in a moment.
+          </p>
         ) : isFetching && results.length === 0 ? (
           <p className={s.status}>Searching…</p>
         ) : !showListbox ? (
@@ -142,7 +159,12 @@ function SearchDialogBody({ onClose, cityId }: Omit<Props, 'open'>) {
                 onClick={() => openResult(i)}
               >
                 <div>{hit.title}</div>
-                <div className={s.meta}>{hit.venue.name}</div>
+                {/* Deliberately unstyled, and deliberately the same short
+                    format the calendar cards use: a multi-night run is
+                    otherwise N rows the user cannot tell apart. */}
+                <div className={s.meta}>
+                  {formatEventDate(hit, 'short')} · {hit.venue.name}
+                </div>
               </li>
             ))}
           </ul>
