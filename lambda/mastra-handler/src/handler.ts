@@ -54,7 +54,11 @@ export async function processEmail(raw: Buffer, deps: ProcessDeps): Promise<void
     receivedAt: parsed.date,
   });
   // Drop drafts missing the fields that define an event and seed the dedup hash.
-  const valid = drafts.filter((d) => d.title.trim() !== '' && d.venue.name.trim() !== '');
+  // url is required too: an event nobody can click through to for details or
+  // tickets is not worth surfacing.
+  const valid = drafts.filter(
+    (d) => d.title.trim() !== '' && d.venue.name.trim() !== '' && (d.url ?? '').trim() !== '',
+  );
   const dropped = drafts.length - valid.length;
   if (dropped > 0) console.log(JSON.stringify({ msg: 'dropped-invalid-drafts', dropped }));
   if (valid.length === 0) {

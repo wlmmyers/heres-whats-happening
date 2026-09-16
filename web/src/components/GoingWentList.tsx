@@ -113,7 +113,7 @@ function EventRow({
       <div className={s.itemMain}>
         <div className={s.itemDate}>
           {row.dateLabel}
-          {row.kind === 'manual' && <span className={s.manualLabel}>Hand entered</span>}
+          {row.kind === 'manual' && <span className={s.manualLabel}>Entered by hand</span>}
         </div>
         <div className={s.itemTitle}>{row.title}</div>
         <div className={s.itemVenue}>{row.venue}</div>

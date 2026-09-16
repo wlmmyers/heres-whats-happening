@@ -16,6 +16,7 @@ const draft: EventDraft = {
   venue: { name: 'The Bowl' },
   performers: ['Phoebe Bridgers'],
   genres: [],
+  url: 'https://thebowl.example/tickets/phoebe-bridgers',
 };
 
 describe('processEmail', () => {
@@ -56,5 +57,18 @@ describe('processEmail', () => {
       emit: async (msgs) => void sent.push(...msgs),
     });
     expect(sent).toHaveLength(1); // only the valid draft survives
+  });
+
+  it('drops drafts with no url (an event nobody can click through to is useless)', async () => {
+    const noUrl: EventDraft = { ...draft, url: undefined }; // source linked nothing
+    const blankUrl: EventDraft = { ...draft, url: '   ' };
+    const stub = new StubExtractor([draft, noUrl, blankUrl]);
+    const sent: unknown[] = [];
+    await processEmail(load('text-newsletter.eml'), {
+      extractor: stub,
+      emit: async (msgs) => void sent.push(...msgs),
+    });
+    expect(sent).toHaveLength(1);
+    expect((sent[0] as { url?: string }).url).toBe(draft.url);
   });
 });

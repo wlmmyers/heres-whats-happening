@@ -28,6 +28,7 @@ const draft: EventDraft = {
   venue: { name: 'The Bowl', address: '100 Main St' },
   performers: ['Phoebe Bridgers'],
   genres: ['indie'],
+  url: 'https://thebowl.example/tickets/phoebe-bridgers',
 };
 
 describe('handler e2e (ElasticMQ)', () => {
