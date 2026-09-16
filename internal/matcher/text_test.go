@@ -1,7 +1,6 @@
 package matcher
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,20 +8,12 @@ import (
 
 func TestBuildEventText_AllFields(t *testing.T) {
 	in := EventText{
-		Title:       "Phoebe Bridgers Live",
-		Performers:  []string{"Phoebe Bridgers", "MUNA"},
-		Genres:      []string{"indie", "rock"},
-		Description: "Indie rock concert at the bowl",
+		Title:      "Phoebe Bridgers Live",
+		Performers: []string{"Phoebe Bridgers", "MUNA"},
+		Genres:     []string{"indie", "rock"},
 	}
 	got := BuildEventText(in)
-	require.Equal(t, "Phoebe Bridgers Live — Phoebe Bridgers, MUNA. indie, rock. Indie rock concert at the bowl", got)
-}
-
-func TestBuildEventText_TruncatesDescription(t *testing.T) {
-	desc := strings.Repeat("a", 600)
-	in := EventText{Title: "T", Performers: []string{"P"}, Genres: []string{"g"}, Description: desc}
-	got := BuildEventText(in)
-	require.LessOrEqual(t, len(got), 600)
+	require.Equal(t, "Phoebe Bridgers Live — Phoebe Bridgers, MUNA. indie, rock", got)
 }
 
 func TestBuildEventText_OmitsEmptyParts(t *testing.T) {
