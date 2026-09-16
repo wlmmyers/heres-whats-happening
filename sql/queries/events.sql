@@ -41,7 +41,10 @@ FROM events
 WHERE source_id = $1 AND source_event_id = $2;
 
 -- name: SelectEventsNeedingEmbedding :many
-SELECT id, title, description
+-- No description: see the EventText doc comment in internal/matcher/text.go.
+-- Ticketmaster fills that column with venue boilerplate, so it is display-only
+-- and never reaches an embedding.
+SELECT id, title
 FROM events
 WHERE embedding IS NULL
   AND archived_at IS NULL

@@ -2,19 +2,34 @@ package matcher
 
 import "strings"
 
-const descriptionCharCap = 500
-
 // EventText is the input to BuildEventText.
+//
+// Deliberately no Description. Ticketmaster is the only source that fills
+// events.description, and it fills it from the Discovery API's `info` field,
+// which carries venue and ticketing boilerplate rather than anything about the
+// event: bag policies, per-card ticket limits, the venue's street address,
+// arbitration clauses. In the dev catalogue 188 of 195 events had one, drawn
+// from just 35 distinct strings -- 86 of them sharing a single sentence about
+// an arena's bag policy.
+//
+// Measured on those 86 plus two near-duplicates: embedding the description
+// raised mean pairwise cosine across the group from 0.615 to 0.666, i.e. it
+// made a K-pop tour, a Kraken game and a rock show look more alike, purely
+// because they share a venue. Note it does NOT change exact-tie structure --
+// recurring shows share a description as well as a title, so the tie-break in
+// SearchEventsSemantic is unaffected either way.
+//
+// The column still exists and the event detail page still renders it; it is
+// only the embedding input that drops it.
 type EventText struct {
-	Title       string
-	Performers  []string
-	Genres      []string
-	Description string
+	Title      string
+	Performers []string
+	Genres     []string
 }
 
 // BuildEventText composes an event's embedding-input string.
-// Format: "<title> — <performers, joined>. <genres, joined>. <description (truncated)>"
-// Empty sections are omitted. Description is hard-capped at 500 chars.
+// Format: "<title> — <performers, joined>. <genres, joined>"
+// Empty sections are omitted.
 func BuildEventText(in EventText) string {
 	var parts []string
 	if in.Title != "" {
@@ -29,13 +44,6 @@ func BuildEventText(in EventText) string {
 	}
 	if len(in.Genres) > 0 {
 		parts = append(parts, strings.Join(in.Genres, ", "))
-	}
-	if in.Description != "" {
-		d := in.Description
-		if len(d) > descriptionCharCap {
-			d = d[:descriptionCharCap]
-		}
-		parts = append(parts, d)
 	}
 	return strings.Join(parts, ". ")
 }

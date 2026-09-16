@@ -216,7 +216,7 @@ func (q *Queries) ListUpcomingEventsForMatching(ctx context.Context) ([]ListUpco
 }
 
 const selectEventsNeedingEmbedding = `-- name: SelectEventsNeedingEmbedding :many
-SELECT id, title, description
+SELECT id, title
 FROM events
 WHERE embedding IS NULL
   AND archived_at IS NULL
@@ -224,11 +224,13 @@ WHERE embedding IS NULL
 `
 
 type SelectEventsNeedingEmbeddingRow struct {
-	ID          pgtype.UUID `json:"id"`
-	Title       string      `json:"title"`
-	Description string      `json:"description"`
+	ID    pgtype.UUID `json:"id"`
+	Title string      `json:"title"`
 }
 
+// No description: see the EventText doc comment in internal/matcher/text.go.
+// Ticketmaster fills that column with venue boilerplate, so it is display-only
+// and never reaches an embedding.
 func (q *Queries) SelectEventsNeedingEmbedding(ctx context.Context) ([]SelectEventsNeedingEmbeddingRow, error) {
 	rows, err := q.db.Query(ctx, selectEventsNeedingEmbedding)
 	if err != nil {
@@ -238,7 +240,7 @@ func (q *Queries) SelectEventsNeedingEmbedding(ctx context.Context) ([]SelectEve
 	items := []SelectEventsNeedingEmbeddingRow{}
 	for rows.Next() {
 		var i SelectEventsNeedingEmbeddingRow
-		if err := rows.Scan(&i.ID, &i.Title, &i.Description); err != nil {
+		if err := rows.Scan(&i.ID, &i.Title); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

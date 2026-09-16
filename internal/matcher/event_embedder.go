@@ -62,10 +62,9 @@ func (e *EventEmbedder) Run(ctx context.Context) error {
 	texts := make([]string, len(rows))
 	for i, r := range rows {
 		texts[i] = BuildEventText(EventText{
-			Title:       r.Title,
-			Performers:  performerByEvent[r.ID],
-			Genres:      genreByEvent[r.ID],
-			Description: r.Description,
+			Title:      r.Title,
+			Performers: performerByEvent[r.ID],
+			Genres:     genreByEvent[r.ID],
 		})
 	}
 
