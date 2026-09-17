@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import SearchDialog from '../components/SearchDialog';
 import { useLocalStorageState } from '../hooks/useLocalStorageState';
+import { SearchIcon } from '../components/SearchIcon';
 
 // const DISPLAY_OPTIONS = ['Full', 'Condensed'] as const;
 // type DisplayStyle = (typeof DISPLAY_OPTIONS)[number];
@@ -56,10 +57,7 @@ export default function CalendarPage() {
 
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
-      // Bare-letter shortcut: it must not fire while the user is typing into a
-      // field, or every 'c' in a search term toggles the calendar behind the
-      // dialog. Pre-existing bug -- the Add Manual Event dialog has it too --
-      // but the search box is where users actually hit it.
+      // Bare-letter shortcut: it must not fire while the user is typing into a field
       const t = e.target as HTMLElement | null;
       if (
         searchOpen ||
@@ -71,7 +69,11 @@ export default function CalendarPage() {
       }
       if (e.key === 'c') {
         toggledAllCityActions.setValue(toggledAllCity === 'true' ? 'false' : 'true');
+      } else if (e.key === 's') {
+        setSearchOpen(true);
       }
+      e.stopPropagation();
+      e.preventDefault();
     };
     window.addEventListener('keypress', listener);
     return () => {
@@ -118,7 +120,8 @@ export default function CalendarPage() {
               </h1>
               <button
                 type="button"
-                className={c.buttonSecondary}
+                className={c.stripButtonStyles}
+                aria-label="Search"
                 onClick={() => setSearchOpen(true)}
                 // user.city_id gates useEventSearch too (see useEventSearch's
                 // `enabled`): staying disabled here keeps the dialog from ever
@@ -126,7 +129,7 @@ export default function CalendarPage() {
                 // search that silently never runs and reads as "no results".
                 disabled={!user?.city_id}
               >
-                Search
+                <SearchIcon />
               </button>
               {/* Hiding this for now
               <div>

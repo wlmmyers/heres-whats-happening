@@ -4,8 +4,8 @@ import clsx from 'clsx';
 import { useAuth } from '../auth/useAuth';
 import HorizontalSelector from './HorizontalSelector';
 import UserMenu from './UserMenu';
-import WelcomeModal from './WelcomeModal';
-import ConfirmErrorModal from './ConfirmErrorModal';
+import WelcomeDialog from './WelcomeDialog';
+import ConfirmErrorDialog from './ConfirmErrorDialog';
 import * as s from './Layout.css';
 
 /**
@@ -95,8 +95,8 @@ export default function Layout({ children, wide }: { children?: ReactNode; wide?
           <p>&copy; 2026 Here's What's Happening. All rights reserved.</p>
         </div>
       </main>
-      {showWelcome && <WelcomeModal onDismiss={() => dismiss('welcome')} />}
-      {showConfirmError && <ConfirmErrorModal onDismiss={() => dismiss('confirmerror')} />}
+      <WelcomeDialog open={showWelcome} onClose={() => dismiss('welcome')} />
+      <ConfirmErrorDialog open={showConfirmError} onClose={() => dismiss('confirmerror')} />
       <div id={DIALOG_ROOT_ID} />
     </div>
   );

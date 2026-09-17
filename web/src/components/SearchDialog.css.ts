@@ -1,15 +1,20 @@
 import { style } from '@vanilla-extract/css';
+import { color, fontSize } from '../styles/theme';
+import { phone } from '../styles/breakpoints.css';
 
 // NOTE: never write the token that names vanilla-extract's global stylesheet
 // file inside a .css.ts file, even in a comment -- it breaks the
 // vanilla-extract compile with a misleading "Styles were unable to be
 // assigned to a file" error.
 
-export const input = style({
-  width: '100%',
-  padding: '0.75rem',
-  fontSize: '1rem',
-  boxSizing: 'border-box',
+export const searchDialog = style({
+  width: '40rem',
+  maxWidth: '90%',
+});
+
+export const searchField = style({
+  marginTop: '0.875rem',
+  marginBottom: '0.25rem',
 });
 
 export const list = style({
@@ -23,6 +28,9 @@ export const list = style({
 export const option = style({
   padding: '0.5rem 0.75rem',
   cursor: 'pointer',
+  '@media': {
+    [phone]: { padding: '0.5rem 0' },
+  },
 });
 
 export const optionActive = style({
@@ -30,11 +38,12 @@ export const optionActive = style({
 });
 
 export const meta = style({
-  opacity: 0.7,
+  color: color.gray400,
   fontSize: '0.85rem',
 });
 
 export const status = style({
-  padding: '0.75rem',
-  opacity: 0.7,
+  paddingBlock: '0.75rem',
+  ...fontSize.sm,
+  color: color.gray400,
 });

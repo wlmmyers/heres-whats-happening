@@ -54,7 +54,7 @@ export default function InterestsPage() {
         </div>
 
         <section className={c.section}>
-          <h2 className={s.sectionHeading}>Tell us what you're into</h2>
+          <h2 className={c.sectionTitleLarge}>Tell us what you're into</h2>
           <p className={s.lead}>Add genres and artists you like</p>
           <TagInput
             values={values}
@@ -69,7 +69,7 @@ export default function InterestsPage() {
 
         {showSpotifyInterests ? (
           <section className={c.section}>
-            <h2 className={s.sectionHeading}>From your Spotify</h2>
+            <h2 className={c.sectionTitleLarge}>From your Spotify</h2>
             {spotifyGroupsPending ? null : spotifyGroups.length === 0 ? (
               <p className={s.emptyNote}>
                 We haven't pulled your listening history yet. Check back soon.

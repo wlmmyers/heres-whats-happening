@@ -1,9 +1,9 @@
 import { style } from '@vanilla-extract/css';
 import { errorText, buttonSubmit } from '../styles/common.css';
 import { color, fontSize, fontWeight } from '../styles/theme';
-import { dialogCard, dialogWrapper } from './Dialog.css';
+import { dialogCard, authDialogWrapper } from './Dialog.css';
 
-export const wrapper = style([dialogWrapper]);
+export const wrapper = style([authDialogWrapper]);
 
 export const authCard = style([dialogCard]);
 

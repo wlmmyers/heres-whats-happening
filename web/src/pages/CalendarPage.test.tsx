@@ -199,7 +199,7 @@ describe('CalendarPage search', () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole('button', { name: /search/i }));
-    expect(screen.getByRole('dialog', { name: /search events/i })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /search all seattle events/i })).toBeInTheDocument();
   });
 
   // Regression: CalendarPage registers a bare-'c' window shortcut. Without a
@@ -247,7 +247,9 @@ describe('CalendarPage search', () => {
     // Belt-and-braces: even attempting the click must not open the dialog or
     // reach the search API.
     await user.click(button);
-    expect(screen.queryByRole('dialog', { name: /search events/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('dialog', { name: /search all seattle events/i }),
+    ).not.toBeInTheDocument();
     expect(searchEvents).not.toHaveBeenCalled();
   });
 });

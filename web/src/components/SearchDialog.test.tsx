@@ -78,7 +78,7 @@ describe('SearchDialog', () => {
         await vi.advanceTimersByTimeAsync(400);
       });
       expect(searchEvents).not.toHaveBeenCalled();
-      expect(screen.getByText(/keep typing/i)).toBeInTheDocument();
+      expect(screen.getByText(/type at least/i)).toBeInTheDocument();
 
       // Still not proof on its own: "" and "mi" render identically, so a
       // frozen, disconnected debounced value would pass the assertions above
@@ -128,6 +128,14 @@ describe('SearchDialog', () => {
     const { onClose } = renderDialog();
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('closes from the close button', async () => {
+    const user = userEvent.setup();
+    const { onClose } = renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    // Once, not twice: the click must not also bubble to the backdrop.
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   // The failure this component is most likely to see, and the only place it is
@@ -200,7 +208,7 @@ describe('SearchDialog', () => {
     // that the component has actually stopped rendering.
     await user.clear(field());
     await user.type(field(), 'mi');
-    await waitFor(() => expect(screen.getByText(/keep typing/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/type at least/i)).toBeInTheDocument());
 
     expect(field()).toHaveAttribute('aria-expanded', 'false');
     expect(field()).not.toHaveAttribute('aria-controls');

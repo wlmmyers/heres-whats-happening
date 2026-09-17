@@ -1,8 +1,7 @@
-import { useEffect, useId, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useId, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
-import { DIALOG_ROOT_ID } from './Layout';
+import Dialog from './Dialog';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useEventSearch, SEARCH_MIN_LENGTH } from '../hooks/useEventSearch';
 import { formatEventDate } from '../utils/eventDate';
@@ -24,27 +23,29 @@ const DEBOUNCE_MS = 400;
  *
  * The body lives in a child that only exists while the dialog is open, so a
  * cancelled search is discarded by unmounting rather than by clearing state on
- * the way in. It renders through a portal into Layout's dialog root for the
- * same reason AddManualEventDialog does: the calendar's animated, transformed
- * ancestors would otherwise clip the backdrop.
+ * the way in.
  */
 export default function SearchDialog({ open, onClose, cityId }: Props) {
-  if (!open) return null;
-  return <SearchDialogBody onClose={onClose} cityId={cityId} />;
+  return (
+    <Dialog
+      topOnPhone
+      open={open}
+      heading="Search all Seattle events"
+      onClose={onClose}
+      className={s.searchDialog}
+    >
+      <SearchDialogBody onClose={onClose} cityId={cityId} />
+    </Dialog>
+  );
 }
 
 function SearchDialogBody({ onClose, cityId }: Omit<Props, 'open'>) {
-  const titleId = useId();
   const listId = useId();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);
   const debounced = useDebouncedValue(query, DEBOUNCE_MS);
   const { data, isFetching, isError } = useEventSearch(cityId, debounced);
-  // Resolved once, on mount: re-resolving on later renders would move the
-  // portal and remount the body, discarding whatever has been typed into it.
-  // The fallback covers rendering the dialog outside a Layout, as the tests do.
-  const [host] = useState(() => document.getElementById(DIALOG_ROOT_ID) ?? document.body);
 
   const results = data?.results ?? [];
   const tooShort = [...debounced.trim()].length < SEARCH_MIN_LENGTH;
@@ -69,14 +70,6 @@ function SearchDialogBody({ onClose, cityId }: Omit<Props, 'open'>) {
     setActiveIndex(-1);
   }
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
   const openResult = (index: number) => {
     const hit = results[index];
     if (!hit) return;
@@ -97,80 +90,70 @@ function SearchDialogBody({ onClose, cityId }: Omit<Props, 'open'>) {
     }
   };
 
-  return createPortal(
-    <div className={c.backdrop} onClick={onClose} data-testid="search-backdrop">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className={c.dialog}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 id={titleId}>Search events</h2>
-        <input
-          autoFocus
-          type="text"
-          role="combobox"
-          aria-expanded={showListbox}
-          aria-controls={showListbox ? listId : undefined}
-          aria-activedescendant={
-            showListbox && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined
-          }
-          aria-label="Search events"
-          className={s.input}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onFieldKeyDown}
-          placeholder="Artist, event, or venue"
-          // The server truncates at 100 runes (searchMaxRunes), so past that
-          // the user is typing characters that are sent and then thrown away.
-          // Matching the ceiling here makes the rule the same at both ends.
-          maxLength={100}
-        />
+  return (
+    <>
+      <input
+        autoFocus
+        type="text"
+        role="combobox"
+        aria-expanded={showListbox}
+        aria-controls={showListbox ? listId : undefined}
+        aria-activedescendant={
+          showListbox && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined
+        }
+        aria-label="Search events"
+        className={clsx(c.textInput, s.searchField)}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={onFieldKeyDown}
+        placeholder="Artist, event, or venue"
+        // The server truncates at 100 runes (searchMaxRunes), so past that
+        // the user is typing characters that are sent and then thrown away.
+        // Matching the ceiling here makes the rule the same at both ends.
+        maxLength={100}
+      />
 
-        {tooShort ? (
-          <p className={s.status}>Keep typing — at least {SEARCH_MIN_LENGTH} characters.</p>
-        ) : isError ? (
-          // Ahead of every other branch, including the results one. Without
-          // it a 429, a 500 or a dropped connection falls through to the empty
-          // state and tells the user that nothing matches, which is a
-          // different and wrong claim -- and with keepPreviousData it would
-          // otherwise keep presenting the last successful hits as current.
-          // This is the only place the failure is visible: the endpoint has
-          // its own 60/min limiter on top of the shared authed budget,
-          // `retry: false` is set app-wide, and it has no CloudWatch alarm.
-          <p className={s.status} role="alert">
-            Search is unavailable right now. Try again in a moment.
-          </p>
-        ) : isFetching && results.length === 0 ? (
-          <p className={s.status}>Searching…</p>
-        ) : !showListbox ? (
-          <p className={s.status}>No events match “{debounced.trim()}”.</p>
-        ) : (
-          <ul id={listId} role="listbox" aria-label="Search results" className={s.list}>
-            {results.map((hit, i) => (
-              <li
-                key={hit.id}
-                id={`${listId}-${i}`}
-                role="option"
-                aria-selected={i === activeIndex}
-                className={clsx(s.option, i === activeIndex && s.optionActive)}
-                onMouseEnter={() => setActiveIndex(i)}
-                onClick={() => openResult(i)}
-              >
-                <div>{hit.title}</div>
-                {/* Deliberately unstyled, and deliberately the same short
-                    format the calendar cards use: a multi-night run is
-                    otherwise N rows the user cannot tell apart. */}
-                <div className={s.meta}>
-                  {formatEventDate(hit, 'short')} · {hit.venue.name}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>,
-    host,
+      {tooShort ? (
+        <p className={s.status}>Type at least {SEARCH_MIN_LENGTH} characters to search</p>
+      ) : isError ? (
+        // Ahead of every other branch, including the results one. Without
+        // it a 429, a 500 or a dropped connection falls through to the empty
+        // state and tells the user that nothing matches, which is a
+        // different and wrong claim -- and with keepPreviousData it would
+        // otherwise keep presenting the last successful hits as current.
+        // This is the only place the failure is visible: the endpoint has
+        // its own 60/min limiter on top of the shared authed budget,
+        // `retry: false` is set app-wide, and it has no CloudWatch alarm.
+        <p className={s.status} role="alert">
+          Search is unavailable right now. Try again in a moment.
+        </p>
+      ) : isFetching && results.length === 0 ? (
+        <p className={s.status}>Searching…</p>
+      ) : !showListbox ? (
+        <p className={s.status}>No events match “{debounced.trim()}”</p>
+      ) : (
+        <ul id={listId} role="listbox" aria-label="Search results" className={s.list}>
+          {results.map((hit, i) => (
+            <li
+              key={hit.id}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === activeIndex}
+              className={clsx(s.option, i === activeIndex && s.optionActive)}
+              onMouseEnter={() => setActiveIndex(i)}
+              onClick={() => openResult(i)}
+            >
+              <div>{hit.title}</div>
+              {/* Deliberately unstyled, and deliberately the same short
+                  format the calendar cards use: a multi-night run is
+                  otherwise N rows the user cannot tell apart. */}
+              <div className={s.meta}>
+                {formatEventDate(hit, 'short')} · {hit.venue.name}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
