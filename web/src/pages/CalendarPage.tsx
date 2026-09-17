@@ -10,9 +10,11 @@ import { CalendarEventsAllCity } from '../components/CalendarEventsAllCity';
 import { CalendarEventsUser } from '../components/CalendarEventsUser';
 import GoingWentList from '../components/GoingWentList';
 import { InfoIcon } from '../components/InfoIcon';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
+import SearchDialog from '../components/SearchDialog';
 import { useLocalStorageState } from '../hooks/useLocalStorageState';
+import { SearchIcon } from '../components/SearchIcon';
 
 // const DISPLAY_OPTIONS = ['Full', 'Condensed'] as const;
 // type DisplayStyle = (typeof DISPLAY_OPTIONS)[number];
@@ -30,6 +32,7 @@ export default function CalendarPage() {
   const { state: toggledAllCity, actions: toggledAllCityActions } = useLocalStorageState<
     'true' | 'false'
   >('calendar.toggledAllCity');
+  const [searchOpen, setSearchOpen] = useState(false);
   // Pending, not `data === undefined`: a failed gate query never gets data, and
   // waiting on data would leave the page spinning forever. Optional chaining
   // then keeps a failed gate on the matched calendar rather than the city list.
@@ -54,15 +57,29 @@ export default function CalendarPage() {
 
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
+      // Bare-letter shortcut: it must not fire while the user is typing into a field
+      const t = e.target as HTMLElement | null;
+      if (
+        searchOpen ||
+        t?.isContentEditable ||
+        t?.tagName === 'INPUT' ||
+        t?.tagName === 'TEXTAREA'
+      ) {
+        return;
+      }
       if (e.key === 'c') {
         toggledAllCityActions.setValue(toggledAllCity === 'true' ? 'false' : 'true');
+      } else if (e.key === 's') {
+        setSearchOpen(true);
       }
+      e.stopPropagation();
+      e.preventDefault();
     };
     window.addEventListener('keypress', listener);
     return () => {
       window.removeEventListener('keypress', listener);
     };
-  }, [toggledAllCity, toggledAllCityActions]);
+  }, [toggledAllCity, toggledAllCityActions, searchOpen]);
 
   return (
     <Layout wide>
@@ -90,12 +107,30 @@ export default function CalendarPage() {
             </div>
           </div>
         )}
+        <SearchDialog
+          open={searchOpen}
+          onClose={() => setSearchOpen(false)}
+          cityId={user?.city_id}
+        />
         <div className={s.calendarWithSidebar}>
           <div className={s.calendarColumn}>
             <div className={c.pageHeader}>
               <h1 className={c.pageTitle}>
                 {isShowingAllCityCalendar ? `What's happening in Seattle` : `Your Seattle calendar`}
               </h1>
+              <button
+                type="button"
+                className={c.stripButtonStyles}
+                aria-label="Search"
+                onClick={() => setSearchOpen(true)}
+                // user.city_id gates useEventSearch too (see useEventSearch's
+                // `enabled`): staying disabled here keeps the dialog from ever
+                // opening with an undefined city, rather than opening it into a
+                // search that silently never runs and reads as "no results".
+                disabled={!user?.city_id}
+              >
+                <SearchIcon />
+              </button>
               {/* Hiding this for now
               <div>
                 <div className={s.controls}>

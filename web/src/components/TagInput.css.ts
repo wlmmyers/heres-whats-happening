@@ -1,5 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { color, radius, fontSize, border } from '../styles/theme';
+import { stripButtonStyles } from '../styles/common.css';
 
 export const wrapper = style({
   border: border.sm,
@@ -21,11 +22,17 @@ export const tag = style({
   ...fontSize.sm,
 });
 
-export const removeButton = style({
-  marginLeft: '0.5rem',
-  color: color.blue700,
-  ':hover': { color: color.red600 },
-});
+export const removeButton = style([
+  stripButtonStyles,
+  {
+    marginLeft: '0.5rem',
+    color: color.blue700,
+    fontSize: '1.25rem',
+    fontWeight: 200,
+    transform: 'translateY(-1px)',
+    ':hover': { color: color.red600 },
+  },
+]);
 
 export const input = style({
   flex: '1 1 0%',

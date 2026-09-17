@@ -209,6 +209,11 @@ func serve() error {
 	posterGen := poster.NewClient(cfg.PosterFunctionURL, awsCfg.Region, awsCfg.Credentials)
 	posterPresigner := poster.NewPresigner(s3.NewFromConfig(awsCfg), cfg.PostersBucket)
 
+	// Wired unconditionally, unlike the interests consumer's embedder above:
+	// SearchSemanticEnabled is what gates whether it's ever called, not
+	// whether it exists, so flipping the flag needs no code redeploy.
+	searchEmbedder := tei.New(cfg.TEIEndpoint)
+
 	s := &hs.Server{
 		Addr:               cfg.HTTPAddr,
 		DB:                 pool,
@@ -226,6 +231,9 @@ func serve() error {
 		IcalBaseURL:        cfg.IcalBaseURL,
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 		TrustProxy:         cfg.TrustProxy,
+
+		SearchEmbedder:        searchEmbedder,
+		SearchSemanticEnabled: cfg.SearchSemanticEnabled,
 
 		EmailSender: mailer,
 		AppBaseURL:  cfg.AppBaseURL,

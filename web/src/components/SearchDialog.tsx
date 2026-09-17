@@ -1,0 +1,159 @@
+import { useId, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import clsx from 'clsx';
+import Dialog from './Dialog';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useEventSearch, SEARCH_MIN_LENGTH } from '../hooks/useEventSearch';
+import { formatEventDate } from '../utils/eventDate';
+import * as c from '../styles/common.css';
+import * as s from './SearchDialog.css';
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  cityId?: string;
+}
+
+// Collapses a typed word into one request. See useDebouncedValue for why.
+const DEBOUNCE_MS = 400;
+
+/**
+ * Typeahead search over the city's upcoming events, opened from the Search
+ * button in the calendar page header.
+ *
+ * The body lives in a child that only exists while the dialog is open, so a
+ * cancelled search is discarded by unmounting rather than by clearing state on
+ * the way in.
+ */
+export default function SearchDialog({ open, onClose, cityId }: Props) {
+  return (
+    <Dialog
+      topOnPhone
+      open={open}
+      heading="Search all Seattle events"
+      onClose={onClose}
+      className={s.searchDialog}
+    >
+      <SearchDialogBody onClose={onClose} cityId={cityId} />
+    </Dialog>
+  );
+}
+
+function SearchDialogBody({ onClose, cityId }: Omit<Props, 'open'>) {
+  const listId = useId();
+  const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const debounced = useDebouncedValue(query, DEBOUNCE_MS);
+  const { data, isFetching, isError } = useEventSearch(cityId, debounced);
+
+  const results = data?.results ?? [];
+  const tooShort = [...debounced.trim()].length < SEARCH_MIN_LENGTH;
+  // Single source of truth for whether the listbox is actually in the DOM.
+  // aria-expanded/aria-controls/aria-activedescendant and the render branch
+  // below all key off this so they can't drift apart and point at an id
+  // nothing renders. Checking tooShort here (not just results.length) matters
+  // because keepPreviousData lets stale results outlive the query that
+  // produced them: shrinking the query back below SEARCH_MIN_LENGTH flips
+  // tooShort true while the previous hit is still sitting in `results`.
+  const showListbox = !tooShort && results.length > 0;
+
+  // A stale active row would point at a different event once the results it
+  // indexes change. Reset it during render rather than in an effect: an
+  // effect-based reset would commit one extra render with the old index still
+  // pointing into the new list before catching up. This is React's documented
+  // pattern for adjusting state when an input changes (setState during
+  // render, guarded so it fires only once per change).
+  const [resetFor, setResetFor] = useState(debounced);
+  if (resetFor !== debounced) {
+    setResetFor(debounced);
+    setActiveIndex(-1);
+  }
+
+  const openResult = (index: number) => {
+    const hit = results[index];
+    if (!hit) return;
+    navigate(`/events/${hit.id}`);
+    onClose();
+  };
+
+  const onFieldKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, results.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      openResult(activeIndex >= 0 ? activeIndex : 0);
+    }
+  };
+
+  return (
+    <>
+      <input
+        autoFocus
+        type="text"
+        role="combobox"
+        aria-expanded={showListbox}
+        aria-controls={showListbox ? listId : undefined}
+        aria-activedescendant={
+          showListbox && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined
+        }
+        aria-label="Search events"
+        className={clsx(c.textInput, s.searchField)}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={onFieldKeyDown}
+        placeholder="Artist, event, or venue"
+        // The server truncates at 100 runes (searchMaxRunes), so past that
+        // the user is typing characters that are sent and then thrown away.
+        // Matching the ceiling here makes the rule the same at both ends.
+        maxLength={100}
+      />
+
+      {tooShort ? (
+        <p className={s.status}>Type at least {SEARCH_MIN_LENGTH} characters to search</p>
+      ) : isError ? (
+        // Ahead of every other branch, including the results one. Without
+        // it a 429, a 500 or a dropped connection falls through to the empty
+        // state and tells the user that nothing matches, which is a
+        // different and wrong claim -- and with keepPreviousData it would
+        // otherwise keep presenting the last successful hits as current.
+        // This is the only place the failure is visible: the endpoint has
+        // its own 60/min limiter on top of the shared authed budget,
+        // `retry: false` is set app-wide, and it has no CloudWatch alarm.
+        <p className={s.status} role="alert">
+          Search is unavailable right now. Try again in a moment.
+        </p>
+      ) : isFetching && results.length === 0 ? (
+        <p className={s.status}>Searching…</p>
+      ) : !showListbox ? (
+        <p className={s.status}>No events match “{debounced.trim()}”</p>
+      ) : (
+        <ul id={listId} role="listbox" aria-label="Search results" className={s.list}>
+          {results.map((hit, i) => (
+            <li
+              key={hit.id}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === activeIndex}
+              className={clsx(s.option, i === activeIndex && s.optionActive)}
+              onMouseEnter={() => setActiveIndex(i)}
+              onClick={() => openResult(i)}
+            >
+              <div>{hit.title}</div>
+              {/* Deliberately unstyled, and deliberately the same short
+                  format the calendar cards use: a multi-night run is
+                  otherwise N rows the user cannot tell apart. */}
+              <div className={s.meta}>
+                {formatEventDate(hit, 'short')} · {hit.venue.name}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}

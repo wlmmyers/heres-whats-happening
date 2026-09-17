@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
@@ -57,7 +57,9 @@ beforeEach(() => {
 describe('confirmation modals', () => {
   it('shows the welcome modal on ?welcome=true', () => {
     renderLayoutAt('/?welcome=true');
-    expect(screen.getByRole('dialog', { name: /welcome/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('dialog', { name: /all set/i, description: /email is confirmed/i }),
+    ).toBeInTheDocument();
   });
 
   it('shows no modal without the params', () => {
@@ -77,23 +79,32 @@ describe('confirmation modals', () => {
   it('dismisses the welcome modal and clears the param', async () => {
     renderLayoutAt('/?welcome=true');
     await userEvent.click(screen.getByRole('button', { name: /got it/i }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('shows the error modal on ?confirmerror=true and offers a fresh link', async () => {
     vi.mocked(resendConfirmation).mockResolvedValue(undefined);
     renderLayoutAt('/?confirmerror=true');
 
-    expect(screen.getByRole('dialog', { name: /link/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('dialog', { name: /link didn.t work/i, description: /expire/i }),
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /send a new link/i }));
     expect(resendConfirmation).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('status')).toHaveTextContent(/check your inbox/i);
+  });
+
+  it('dismisses the error modal from its close button', async () => {
+    renderLayoutAt('/?confirmerror=true');
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('asks an anonymous visitor to sign in rather than offering resend', () => {
     mockAuth('anonymous');
     renderLayoutAt('/login?confirmerror=true');
 
-    expect(screen.getByRole('dialog', { name: /link/i })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /link didn.t work/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /send a new link/i })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /sign in/i })).toBeInTheDocument();
   });

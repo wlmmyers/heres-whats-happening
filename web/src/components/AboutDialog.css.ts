@@ -1,9 +1,9 @@
 import { style } from '@vanilla-extract/css';
-import { dialogCard, dialogWrapper } from './Dialog.css';
+import { dialogCard, authDialogWrapper } from './Dialog.css';
 import { phone } from '../styles/breakpoints.css';
 
 export const aboutDialogWrapper = style([
-  dialogWrapper,
+  authDialogWrapper,
   {
     alignItems: 'flex-start',
     overflow: 'auto',

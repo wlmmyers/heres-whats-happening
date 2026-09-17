@@ -20,6 +20,7 @@ describe('ConfirmDialog', () => {
     render(
       <ConfirmDialog
         open={false}
+        title="Delete event?"
         message="Are you sure?"
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -28,10 +29,31 @@ describe('ConfirmDialog', () => {
     expect(screen.queryByText('Are you sure?')).toBeNull();
   });
 
+  it('is named by its title and described by its message', () => {
+    render(
+      <ConfirmDialog
+        open
+        title="Delete event?"
+        message="Are you sure?"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole('dialog', { name: 'Delete event?', description: 'Are you sure?' }),
+    ).toBeInTheDocument();
+  });
+
   it('fires onConfirm when Confirm is clicked', async () => {
     const onConfirm = vi.fn();
     render(
-      <ConfirmDialog open message="Are you sure?" onConfirm={onConfirm} onCancel={() => {}} />,
+      <ConfirmDialog
+        open
+        title="Delete event?"
+        message="Are you sure?"
+        onConfirm={onConfirm}
+        onCancel={() => {}}
+      />,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -39,14 +61,30 @@ describe('ConfirmDialog', () => {
 
   it('fires onCancel when the backdrop is clicked', async () => {
     const onCancel = vi.fn();
-    render(<ConfirmDialog open message="Are you sure?" onConfirm={() => {}} onCancel={onCancel} />);
-    await userEvent.click(screen.getByTestId('confirm-backdrop'));
+    render(
+      <ConfirmDialog
+        open
+        title="Delete event?"
+        message="Are you sure?"
+        onConfirm={() => {}}
+        onCancel={onCancel}
+      />,
+    );
+    await userEvent.click(screen.getByTestId('dialog-backdrop'));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   it('does not fire onCancel when the dialog body is clicked', async () => {
     const onCancel = vi.fn();
-    render(<ConfirmDialog open message="Are you sure?" onConfirm={() => {}} onCancel={onCancel} />);
+    render(
+      <ConfirmDialog
+        open
+        title="Delete event?"
+        message="Are you sure?"
+        onConfirm={() => {}}
+        onCancel={onCancel}
+      />,
+    );
     await userEvent.click(screen.getByText('Are you sure?'));
     expect(onCancel).not.toHaveBeenCalled();
   });
@@ -57,7 +95,15 @@ describe('ConfirmDialog', () => {
   // dialog has to leave the tree it was rendered from.
   it('renders into the app dialog root when one exists', () => {
     const root = addDialogRoot();
-    render(<ConfirmDialog open message="Are you sure?" onConfirm={() => {}} onCancel={() => {}} />);
+    render(
+      <ConfirmDialog
+        open
+        title="Delete event?"
+        message="Are you sure?"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
 
     expect(root).toHaveTextContent('Are you sure?');
   });
@@ -69,6 +115,7 @@ describe('ConfirmDialog', () => {
     const { rerender } = render(
       <ConfirmDialog
         open={false}
+        title="Delete event?"
         message="Are you sure?"
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -76,14 +123,28 @@ describe('ConfirmDialog', () => {
     );
     const root = addDialogRoot();
     rerender(
-      <ConfirmDialog open message="Are you sure?" onConfirm={() => {}} onCancel={() => {}} />,
+      <ConfirmDialog
+        open
+        title="Delete event?"
+        message="Are you sure?"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
     );
 
     expect(root).toHaveTextContent('Are you sure?');
   });
 
   it('falls back to the document body when there is no dialog root', () => {
-    render(<ConfirmDialog open message="Are you sure?" onConfirm={() => {}} onCancel={() => {}} />);
+    render(
+      <ConfirmDialog
+        open
+        title="Delete event?"
+        message="Are you sure?"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
 
     expect(screen.getByText('Are you sure?')).toBeInTheDocument();
   });

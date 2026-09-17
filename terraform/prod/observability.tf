@@ -2,7 +2,7 @@
 #
 # The app emits a CloudWatch EMF metric on each 429 (see internal/observability):
 # namespace "HeresWhatsHappening/api", metric "RateLimitRejections", dimension
-# "endpoint". The app defines eleven endpoint values in
+# "endpoint". The app defines fifteen endpoint values in
 # internal/http/middleware/ratelimit.go; the subset alarmed below MUST match
 # those constants exactly — TestMetricContractConstants (internal/observability)
 # guards the namespace/metric-name/dimension-key contract, while

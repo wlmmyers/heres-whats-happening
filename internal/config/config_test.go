@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"testing"
 	"time"
 
@@ -17,7 +18,16 @@ func TestLoad_AllFieldsParsed(t *testing.T) {
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	require.Equal(t, "postgres://app:pw@localhost:5432/appdb?sslmode=disable", cfg.DatabaseURL)
+	// Parsed rather than a whole-string comparison: dsn.Components.DSN() also
+	// sets an "options" query parameter (pg_trgm.similarity_threshold), so the
+	// exact query string ordering isn't part of this test's contract.
+	u, err := url.Parse(cfg.DatabaseURL)
+	require.NoError(t, err)
+	require.Equal(t, "postgres", u.Scheme)
+	require.Equal(t, "localhost:5432", u.Host)
+	require.Equal(t, "/appdb", u.Path)
+	require.Equal(t, "disable", u.Query().Get("sslmode"))
+	require.Equal(t, "-c pg_trgm.similarity_threshold=0.2", u.Query().Get("options"))
 	require.Equal(t, ":9999", cfg.HTTPAddr)
 	require.Equal(t, "k", cfg.JWTSigningKey)
 	require.Equal(t, 10*time.Minute, cfg.JWTAccessTTL)
@@ -294,4 +304,54 @@ func TestLoad_FullyConfiguredMailSucceeds(t *testing.T) {
 	require.Equal(t, "dev@localhost", cfg.EmailFromAddress)
 	require.Equal(t, "http://localhost:5173", cfg.AppBaseURL)
 	require.Equal(t, "http://localhost:8080", cfg.APIBaseURL)
+}
+
+// SEARCH_SEMANTIC_ENABLED without TEI_ENDPOINT is the quietest possible
+// misconfiguration: the flag reads as on, the handler's degradation path
+// swallows every embed failure by design, and search silently serves lexical
+// results forever. The only signal is a log line per request, and there is
+// deliberately no CloudWatch alarm on the endpoint. Refusing to start is the
+// only failure loud enough to notice — same posture as the poster vars.
+func TestLoad_SemanticSearchRequiresTEIEndpoint(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("POSTER_FUNCTION_URL", "https://poster.example.com/lambda-url")
+	t.Setenv("POSTERS_BUCKET", "posters-bucket")
+	t.Setenv("SEARCH_SEMANTIC_ENABLED", "true")
+	t.Setenv("TEI_ENDPOINT", "")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SEARCH_SEMANTIC_ENABLED")
+	require.Contains(t, err.Error(), "TEI_ENDPOINT")
+}
+
+func TestLoad_SemanticSearchWithTEIEndpointLoads(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("POSTER_FUNCTION_URL", "https://poster.example.com/lambda-url")
+	t.Setenv("POSTERS_BUCKET", "posters-bucket")
+	t.Setenv("SEARCH_SEMANTIC_ENABLED", "true")
+	t.Setenv("TEI_ENDPOINT", "http://localhost:8081")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.SearchSemanticEnabled)
+}
+
+// The flag is off by default, so an empty TEI_ENDPOINT must stay legal: it is
+// optional for everything else that reads it (the interests consumer skips its
+// embedder, and match-job does its own check).
+func TestLoad_NoTEIEndpointIsFineWithSemanticSearchOff(t *testing.T) {
+	setRequiredDB(t)
+	t.Setenv("JWT_SIGNING_KEY", "k")
+	t.Setenv("POSTER_FUNCTION_URL", "https://poster.example.com/lambda-url")
+	t.Setenv("POSTERS_BUCKET", "posters-bucket")
+	t.Setenv("SEARCH_SEMANTIC_ENABLED", "false")
+	t.Setenv("TEI_ENDPOINT", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.False(t, cfg.SearchSemanticEnabled)
+	require.Empty(t, cfg.TEIEndpoint)
 }

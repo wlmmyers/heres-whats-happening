@@ -23,6 +23,16 @@ type Components struct {
 	SSLMode  string
 }
 
+// similarityThresholdOption is the "options" query parameter value set on
+// every DSN this package builds, lowering pg_trgm's similarity_threshold GUC
+// from its 0.3 default to 0.2. pg_trgm's % operator reads this GUC; at 0.3 a
+// bare short typo ("orchrd" for "Orchard") matches nothing. 0.2 recovers it.
+//
+// UNVALIDATED against production data: tuned on a synthetic corpus with ~20
+// distinct titles, so its false-positive cost on the real catalogue is
+// unknown. Re-check once search has live traffic.
+const similarityThresholdOption = "-c pg_trgm.similarity_threshold=0.2"
+
 // DSN renders the components as a postgres:// URL. url.UserPassword percent-
 // encodes the userinfo, so any password parses cleanly when read back.
 func (c Components) DSN() string {
@@ -36,9 +46,18 @@ func (c Components) DSN() string {
 		Host:   host,
 		Path:   "/" + c.Name,
 	}
+	// similarityThresholdOption is set unconditionally, unlike sslmode, because
+	// this is the only construction point every consumer shares -- app pool,
+	// migrations, and the test pool, which builds itself with a bare
+	// pgxpool.New. A dotted name is accepted as a placeholder GUC even on a
+	// database where pg_trgm is not yet installed, and the extension adopts
+	// the value when its module loads.
+	q := url.Values{}
 	if c.SSLMode != "" {
-		u.RawQuery = url.Values{"sslmode": {c.SSLMode}}.Encode()
+		q.Set("sslmode", c.SSLMode)
 	}
+	q.Set("options", similarityThresholdOption)
+	u.RawQuery = q.Encode()
 	return u.String()
 }
 

@@ -82,6 +82,10 @@ export const manualLabel = style({
   color: color.blue300,
   fontWeight: fontWeight.light,
   marginLeft: '0.5rem',
+  opacity: 0,
+  selectors: {
+    [`${item}:hover &`]: { opacity: 1 },
+  },
 });
 
 export const itemMain = style({

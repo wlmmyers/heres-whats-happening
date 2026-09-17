@@ -261,22 +261,25 @@ export default function GoingList() {
           if (end <= Date.now()) expandedWentListActions.setValue('true');
         }}
       />
-      {pendingRemoval && (
-        <ConfirmDialog
-          open
-          title={pendingRemoval.kind === 'event' ? 'Remove event?' : 'Delete event?'}
-          message={
-            pendingRemoval.kind === 'event'
+      {/* Mounted even with nothing pending, so it can animate out once the
+          removal is confirmed or cancelled. The copy for a null row is never
+          shown: while closing, the dialog keeps the copy it last opened with. */}
+      <ConfirmDialog
+        open={pendingRemoval !== null}
+        title={pendingRemoval?.kind === 'event' ? 'Remove event?' : 'Delete event?'}
+        message={
+          !pendingRemoval
+            ? ''
+            : pendingRemoval.kind === 'event'
               ? pendingRemoval.isUpcoming
                 ? `"${pendingRemoval.title}" will be removed from this list. You can mark it again from the calendar.`
                 : `"${pendingRemoval.title}" will be removed from this list. It happened in the past, so you won't be able to add it back.`
               : `"${pendingRemoval.title}" was added by hand, so this will delete it permanently.`
-          }
-          confirmLabel="Remove"
-          onConfirm={confirmRemoval}
-          onCancel={() => setPendingRemoval(null)}
-        />
-      )}
+        }
+        confirmLabel="Remove"
+        onConfirm={confirmRemoval}
+        onCancel={() => setPendingRemoval(null)}
+      />
     </div>
   );
 }

@@ -27,16 +27,28 @@ func TestDSN_ReservedCharPasswordRoundTrips(t *testing.T) {
 	require.Equal(t, "db.example.com:5432", u.Host)
 	require.Equal(t, "/appdb", u.Path)
 	require.Equal(t, "require", u.Query().Get("sslmode"))
+	require.Equal(t, "-c pg_trgm.similarity_threshold=0.2", u.Query().Get("options"))
 }
 
 func TestDSN_OmitsSSLModeWhenEmpty(t *testing.T) {
 	c := Components{User: "app", Password: "pw", Host: "localhost", Port: "5432", Name: "appdb"}
-	require.Equal(t, "postgres://app:pw@localhost:5432/appdb", c.DSN())
+	u, err := url.Parse(c.DSN())
+	require.NoError(t, err)
+	require.Equal(t, "postgres", u.Scheme)
+	require.Equal(t, "localhost:5432", u.Host)
+	require.Equal(t, "/appdb", u.Path)
+	require.False(t, u.Query().Has("sslmode"))
+	require.Equal(t, "-c pg_trgm.similarity_threshold=0.2", u.Query().Get("options"))
 }
 
 func TestDSN_OmitsPortWhenEmpty(t *testing.T) {
 	c := Components{User: "app", Password: "pw", Host: "localhost", Name: "appdb"}
-	require.Equal(t, "postgres://app:pw@localhost/appdb", c.DSN())
+	u, err := url.Parse(c.DSN())
+	require.NoError(t, err)
+	require.Equal(t, "postgres", u.Scheme)
+	require.Equal(t, "localhost", u.Host)
+	require.Equal(t, "/appdb", u.Path)
+	require.Equal(t, "-c pg_trgm.similarity_threshold=0.2", u.Query().Get("options"))
 }
 
 func TestFromEnv_AssemblesAndDefaultsPort(t *testing.T) {
@@ -49,7 +61,12 @@ func TestFromEnv_AssemblesAndDefaultsPort(t *testing.T) {
 	c, err := FromEnv("DB_")
 	require.NoError(t, err)
 	require.Equal(t, "5432", c.Port)
-	require.Equal(t, "postgres://app:pw@localhost:5432/appdb", c.DSN())
+	u, err := url.Parse(c.DSN())
+	require.NoError(t, err)
+	require.Equal(t, "postgres", u.Scheme)
+	require.Equal(t, "localhost:5432", u.Host)
+	require.Equal(t, "/appdb", u.Path)
+	require.Equal(t, "-c pg_trgm.similarity_threshold=0.2", u.Query().Get("options"))
 }
 
 func TestFromEnv_MissingRequiredListsThem(t *testing.T) {

@@ -9,7 +9,6 @@ import {
   textStroke,
   transition,
 } from './theme';
-import { phone } from './breakpoints.css';
 
 export const card = style({
   backgroundColor: color.white,
@@ -43,16 +42,6 @@ export const clickableCard = style([
   },
 ]);
 
-export const backdrop = style({
-  position: 'fixed',
-  inset: 0,
-  zIndex: 50,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  backgroundColor: color.blackA40,
-});
-
 export const buttonPrimary = style({
   backgroundColor: color.blue600,
   color: color.white,
@@ -71,6 +60,7 @@ export const buttonSecondary = style({
   borderRadius: radius.sm,
   paddingInline: '1rem',
   paddingBlock: '0.5rem',
+  background: color.white,
   selectors: {
     '&:hover': { backgroundColor: color.gray50 },
     '&:disabled': { opacity: 0.6 },
@@ -97,6 +87,10 @@ export const textInput = style({
   borderRadius: radius.sm,
   paddingInline: '0.5rem',
   paddingBlock: '0.375rem',
+  // placeholder font smaller
+  '::placeholder': {
+    ...fontSize.sm,
+  },
 });
 
 export const field = style({
@@ -122,6 +116,8 @@ export const formError = style({
 });
 
 export const pageTitle = style({
+  display: 'flex',
+  justifyContent: 'space-between',
   ...fontSize['2xl'],
   fontWeight: fontWeight.semibold,
   color: '#000',
@@ -134,14 +130,16 @@ export const pageHeader = style({
   display: 'flex',
   justifyContent: 'space-between',
   gap: '1rem',
-  '@media': {
-    [phone]: { flexDirection: 'column', marginTop: 0 },
-  },
 });
 
 export const sectionTitle = style({
   ...fontSize.base,
   fontWeight: fontWeight.medium,
+});
+
+export const sectionTitleLarge = style({
+  ...fontSize.lg,
+  fontWeight: fontWeight.semibold,
 });
 
 export const section = style([card, { padding: '1rem', margin: '1rem 0' }]);
@@ -224,15 +222,6 @@ export const isGoing = style({
   color: color.green600,
   borderColor: color.green600,
 });
-
-export const dialog = style([
-  cardNoShadow,
-  {
-    width: '400px',
-    maxWidth: '90%',
-    padding: '1.5rem',
-  },
-]);
 
 export const dialogActions = style({
   marginTop: '1rem',
