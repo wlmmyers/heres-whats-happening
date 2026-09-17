@@ -194,7 +194,7 @@ export default function GoingList({ isPageLevel }: { isPageLevel?: boolean }) {
   );
 
   return (
-    <div className={s.goingWentList}>
+    <div className={clsx(s.goingWentList, { [s.goingWentListSidebarStyle]: !isPageLevel })}>
       {isPageLevel ? (
         <div className={c.pageHeader}>
           <h1 className={c.pageTitle}>Upcoming Shows</h1>
@@ -207,7 +207,9 @@ export default function GoingList({ isPageLevel }: { isPageLevel?: boolean }) {
         </div>
       )}
 
-      <div className={s.innerContainer}>
+      <div
+        className={clsx(s.innerContainer, { [s.innerContainerSidebarStyleGoing]: !isPageLevel })}
+      >
         {isLoading ? (
           <>
             <Skeleton className={s.skeletonRow} />
@@ -237,9 +239,18 @@ export default function GoingList({ isPageLevel }: { isPageLevel?: boolean }) {
           <RotatingCaret open={isWentExpanded} className={s.wentCaret} />
         </button>
       </div>
-      <div className={clsx(s.innerContainer, { [s.noBorder]: !isWentExpanded })}>
+      <div
+        className={clsx({
+          [s.innerContainerSidebarStyleWent]: !isPageLevel,
+        })}
+      >
         {/* The id stays mounted so `aria-controls` always resolves, collapsed or not. */}
-        <div id={bodyId} className={s.wentBody}>
+        <div
+          id={bodyId}
+          className={clsx(s.innerContainer, s.wentBody, {
+            [s.wentContracted]: !isWentExpanded,
+          })}
+        >
           <AnimatePresence initial={false}>
             {isWentExpanded && (
               <motion.div

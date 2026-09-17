@@ -53,6 +53,15 @@ export default function Layout({ children, wide }: { children?: ReactNode; wide?
         activeLabel: 'Calendar',
         mobileLabel: 'Cal',
       },
+      ...(isPhoneWidth
+        ? [
+            {
+              to: '/my-shows',
+              activeLabel: 'Shows',
+              mobileLabel: 'Shows',
+            },
+          ]
+        : []),
       {
         to: '/interests',
         activeLabel: 'Interests',
@@ -63,15 +72,6 @@ export default function Layout({ children, wide }: { children?: ReactNode; wide?
         activeLabel: 'Settings',
         mobileLabel: 'Settings',
       },
-      ...(isPhoneWidth
-        ? [
-            {
-              to: '/my-shows',
-              activeLabel: 'Shows',
-              mobileLabel: 'Shows',
-            },
-          ]
-        : []),
     ],
     [isPhoneWidth],
   );

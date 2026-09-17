@@ -4,6 +4,8 @@ import { color, fontSize, fontWeight, textStroke, transition } from '../styles/t
 import { phone } from '../styles/breakpoints.css';
 
 export const goingWentList = style({
+  display: 'flex',
+  flexDirection: 'column',
   alignSelf: 'flex-start',
   '@media': {
     [phone]: {
@@ -13,17 +15,27 @@ export const goingWentList = style({
   },
 });
 
-export const innerContainer = style([
-  cardTranslucent,
+export const goingWentListSidebarStyle = style({
+  height: 'calc(100vh - 8rem)',
+});
+
+export const innerContainer = style([cardTranslucent]);
+
+export const innerContainerSidebarStyleGoing = style({
+  flex: 'none',
+  maxHeight: '70%',
+  overflow: 'auto',
+});
+
+export const innerContainerSidebarStyleWent = style([
   {
-    marginTop: '1rem',
-    maxHeight: 'calc(100vh - 12rem)',
-    overflowY: 'auto',
+    flex: 1,
   },
 ]);
 
-export const noBorder = style({
+export const wentContracted = style({
   border: 'none',
+  flex: 'none',
 });
 
 export const heading = style({
@@ -32,6 +44,7 @@ export const heading = style({
   justifyContent: 'space-between',
   gap: '0.5rem',
   marginBottom: '0.75rem',
+  flex: 'none',
   ...textStroke('6px'),
 });
 
