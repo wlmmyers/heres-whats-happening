@@ -2,6 +2,7 @@ import { useState } from 'react';
 import pluralize from 'pluralize';
 import { MIN_THRESHOLD, MAX_THRESHOLD } from '../api/match';
 import ConfirmDialog from '../components/ConfirmDialog';
+import DeleteAccountDialog from '../components/DeleteAccountDialog';
 import { useSpotifyStatus } from '../hooks/useSpotifyStatus';
 import { useMe } from '../hooks/useMe';
 import { useConnectSpotify } from '../hooks/useConnectSpotify';
@@ -41,6 +42,8 @@ export default function SettingsPage() {
 
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const resetNotInterestedMut = useResetNotInterested();
+
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
 
   const showSetlists = me?.show_setlists ?? false;
   const saveShowSetlists = useUpdateShowSetlists();
@@ -195,6 +198,21 @@ export default function SettingsPage() {
             </button>
           </section>
 
+          {/* Delete account */}
+          <section className={c.section}>
+            <h2 className={c.sectionTitle}>Delete account</h2>
+            <p className={s.desc}>
+              Permanently delete your account and all of your data. This can&rsquo;t be undone.
+            </p>
+            <button
+              type="button"
+              onClick={() => setDeleteAccountOpen(true)}
+              className={s.deleteAccountButton}
+            >
+              Delete account
+            </button>
+          </section>
+
           <ConfirmDialog
             open={confirmOpen}
             title="Update match threshold?"
@@ -224,6 +242,10 @@ export default function SettingsPage() {
               })
             }
             onCancel={() => setResetConfirmOpen(false)}
+          />
+          <DeleteAccountDialog
+            open={deleteAccountOpen}
+            onClose={() => setDeleteAccountOpen(false)}
           />
         </div>
       </div>

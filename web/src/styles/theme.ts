@@ -24,6 +24,7 @@ export const color = {
   green600: '#16a34a',
   green700: '#15803d',
   red600: '#dc2626',
+  red700: '#b91c1c',
   yellow100: '#fffdea',
 } as const;
 

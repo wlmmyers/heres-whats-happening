@@ -9,6 +9,8 @@ export interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Permanently deletes the account, then signs out. Rejects, still signed in, on failure. */
+  deleteAccount: () => Promise<void>;
   /**
    * refreshUser mints a fresh access token and re-reads /me. ConfirmEmailPage
    * uses it to notice a confirmation that happened on another device without

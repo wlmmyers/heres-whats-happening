@@ -9,6 +9,7 @@ vi.mock('../api/auth', () => ({
   login: vi.fn(),
   logout: vi.fn(),
   signup: vi.fn(),
+  deleteAccount: vi.fn(),
 }));
 
 import * as authApi from '../api/auth';
@@ -79,5 +80,58 @@ describe('AuthProvider', () => {
     await userEvent.click(screen.getByRole('button', { name: 'do-login' }));
     await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
     expect(screen.getByTestId('email').textContent).toBe('b@x');
+  });
+
+  describe('deleteAccount()', () => {
+    function renderSignedIn() {
+      (authApi.getMe as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        id: 'u1',
+        email: 'a@x',
+      });
+      let captured: Promise<void> | undefined;
+      function DeleteButton() {
+        const { deleteAccount } = useAuth();
+        return (
+          <button
+            onClick={() => {
+              captured = deleteAccount();
+              captured.catch(() => {});
+            }}
+          >
+            do-delete
+          </button>
+        );
+      }
+      render(
+        <AuthProvider>
+          <Probe />
+          <DeleteButton />
+        </AuthProvider>,
+      );
+      return { result: () => captured };
+    }
+
+    it('signs the user out once the account is deleted', async () => {
+      (authApi.deleteAccount as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+      renderSignedIn();
+      await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
+
+      await userEvent.click(screen.getByRole('button', { name: 'do-delete' }));
+
+      await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('anonymous'));
+      expect(screen.getByTestId('email').textContent).toBe('');
+    });
+
+    it('stays signed in and rejects when the delete fails', async () => {
+      (authApi.deleteAccount as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('500'));
+      const { result } = renderSignedIn();
+      await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
+
+      await userEvent.click(screen.getByRole('button', { name: 'do-delete' }));
+
+      await expect(result()).rejects.toThrow('500');
+      expect(screen.getByTestId('status').textContent).toBe('authenticated');
+      expect(screen.getByTestId('email').textContent).toBe('a@x');
+    });
   });
 });

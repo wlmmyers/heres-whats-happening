@@ -51,6 +51,19 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 	return i, err
 }
 
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users
+WHERE id = $1
+`
+
+// A hard delete. Every table referencing users does so with ON DELETE CASCADE,
+// so this one statement removes all of the user's data, refresh tokens
+// included.
+func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
+	return err
+}
+
 const getDefaultCity = `-- name: GetDefaultCity :one
 SELECT id, slug, name, timezone
 FROM cities
@@ -223,17 +236,6 @@ func (q *Queries) SelectUsersNeedingEmbedding(ctx context.Context) ([]pgtype.UUI
 		return nil, err
 	}
 	return items, nil
-}
-
-const softDeleteUser = `-- name: SoftDeleteUser :exec
-UPDATE users
-SET deleted_at = NOW()
-WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) SoftDeleteUser(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, softDeleteUser, id)
-	return err
 }
 
 const updateUserInterestEmbedding = `-- name: UpdateUserInterestEmbedding :exec

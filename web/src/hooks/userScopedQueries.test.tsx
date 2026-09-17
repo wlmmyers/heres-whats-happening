@@ -36,7 +36,13 @@ const user = {
   confirmed: true,
   show_setlists: false,
 };
-const actions = { login: vi.fn(), signup: vi.fn(), logout: vi.fn(), refreshUser: vi.fn() };
+const actions = {
+  login: vi.fn(),
+  signup: vi.fn(),
+  logout: vi.fn(),
+  refreshUser: vi.fn(),
+  deleteAccount: vi.fn(),
+};
 const authLoading = { ...actions, status: 'loading' as const, user: null };
 const authResolved = { ...actions, status: 'authenticated' as const, user };
 

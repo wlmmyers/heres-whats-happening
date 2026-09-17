@@ -17,6 +17,7 @@ beforeEach(() => {
     signup: vi.fn(),
     logout: vi.fn(),
     refreshUser: vi.fn(),
+    deleteAccount: vi.fn(),
   });
 });
 
@@ -41,6 +42,7 @@ describe('LoginDialog', () => {
       signup: vi.fn(),
       logout: vi.fn(),
       refreshUser: vi.fn(),
+      deleteAccount: vi.fn(),
     });
     render(
       <MemoryRouter initialEntries={['/login']}>
@@ -79,6 +81,7 @@ describe('LoginDialog', () => {
       signup: vi.fn(),
       logout: vi.fn(),
       refreshUser: vi.fn(),
+      deleteAccount: vi.fn(),
     });
     render(
       <MemoryRouter>
@@ -105,6 +108,7 @@ describe('LoginDialog', () => {
       signup: vi.fn(),
       logout: vi.fn(),
       refreshUser: vi.fn(),
+      deleteAccount: vi.fn(),
     });
     render(
       <MemoryRouter>

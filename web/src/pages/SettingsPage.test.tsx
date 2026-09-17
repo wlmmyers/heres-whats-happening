@@ -61,6 +61,7 @@ beforeEach(() => {
     signup: vi.fn(),
     logout: vi.fn(),
     refreshUser: vi.fn(),
+    deleteAccount: vi.fn(),
   });
   (spotifyApi.getSpotifyStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
     connected: false,
@@ -154,6 +155,16 @@ describe('SettingsPage', () => {
     // Confirm dialog appears; confirming calls the API with the fraction.
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(matchApi.updateMatchThreshold).toHaveBeenCalledWith(0.45));
+  });
+
+  it('opens the delete account confirmation from the Delete account section', async () => {
+    renderPage();
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^delete account$/i }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText(/type delete account/i)).toBeInTheDocument();
   });
 
   describe('setlist visibility', () => {

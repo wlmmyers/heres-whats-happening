@@ -231,15 +231,7 @@ func Logout(q *store.Queries) http.HandlerFunc {
 			defer cancel()
 			_ = q.RevokeRefreshTokenByHash(ctx, auth.HashRefresh(c.Value))
 		}
-		http.SetCookie(w, &http.Cookie{
-			Name:     "refresh_token",
-			Value:    "",
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
-			MaxAge:   -1,
-		})
+		clearRefreshCookie(w)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -253,6 +245,18 @@ func setRefreshCookie(w http.ResponseWriter, token string, ttl time.Duration) {
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(ttl),
+	})
+}
+
+func clearRefreshCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
 	})
 }
 

@@ -67,6 +67,19 @@ export const buttonSecondary = style({
   },
 });
 
+// For actions that destroy data and cannot be undone.
+export const buttonDanger = style({
+  backgroundColor: color.red600,
+  color: color.white,
+  borderRadius: radius.sm,
+  paddingInline: '1rem',
+  paddingBlock: '0.5rem',
+  selectors: {
+    '&:hover': { backgroundColor: color.red700 },
+    '&:disabled': { opacity: 0.6 },
+  },
+});
+
 export const buttonSubmit = style({
   width: '100%',
   backgroundColor: color.blue600,
@@ -92,6 +105,13 @@ export const textInput = style({
     ...fontSize.sm,
   },
 });
+
+export const dateInput = style([
+  textInput,
+  {
+    paddingInline: 0,
+  },
+]);
 
 export const field = style({
   display: 'flex',
