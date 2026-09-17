@@ -5,6 +5,7 @@ import InterestsPage from './pages/InterestsPage';
 import CalendarPage from './pages/CalendarPage';
 import EventDetailPage from './pages/EventDetailPage';
 import SettingsPage from './pages/SettingsPage';
+import MyShowsPage from './pages/MyShowsPage';
 import SpotifyCallbackPage from './pages/SpotifyCallbackPage';
 import LandingPage from './pages/LandingPage';
 import ConfirmEmailPage from './pages/ConfirmEmailPage';
@@ -93,6 +94,14 @@ export default function App() {
           element={
             <RequireAuth>
               <EventDetailPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/my-shows"
+          element={
+            <RequireAuth>
+              <MyShowsPage />
             </RequireAuth>
           }
         />

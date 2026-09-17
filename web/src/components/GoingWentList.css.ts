@@ -131,6 +131,9 @@ export const removeButton = style({
     '&:focus-visible': { opacity: 1 },
     '&:hover': { color: color.red600 },
   },
+  '@media': {
+    [phone]: { opacity: 1 },
+  },
 });
 
 export const emptyText = style({

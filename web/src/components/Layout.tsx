@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import clsx from 'clsx';
 import { useAuth } from '../auth/useAuth';
 import HorizontalSelector from './HorizontalSelector';
@@ -7,6 +7,7 @@ import UserMenu from './UserMenu';
 import WelcomeDialog from './WelcomeDialog';
 import ConfirmErrorDialog from './ConfirmErrorDialog';
 import * as s from './Layout.css';
+import { useScreenSize } from '../hooks/useScreenSize';
 
 /**
  * Host node for dialogs that portal out of the page.
@@ -21,14 +22,6 @@ export const DIALOG_ROOT_ID = 'dialog-root';
 
 const link = ({ isActive }: { isActive: boolean }) =>
   clsx(s.navLink, isActive ? s.navLinkActive : s.navLinkInactive);
-
-// Single source of truth for the nav: rendered in order, and used to decide which
-// link the sliding border should hug.
-const navItems = [
-  { to: '/calendar/seattle', label: 'Calendar' },
-  { to: '/interests', label: 'Interests' },
-  { to: '/settings', label: 'Settings' },
-] as const;
 
 // Our own active check, mirroring react-router's default NavLink matching
 // (exact path or a descendant on a segment boundary). Deciding this ourselves
@@ -45,20 +38,45 @@ export default function Layout({ children, wide }: { children?: ReactNode; wide?
   const { status } = useAuth();
   const authed = status === 'authenticated';
   const navigate = useNavigate();
+  const { isPhoneWidth } = useScreenSize();
 
   // Which nav item the sliding border should hug, derived from the URL (mirroring
   // NavLink's matching) so it stays independent of NavLink's rendered output.
   const location = useLocation();
-  const activeKey = navItems.find((item) => isActivePath(location.pathname, item.to))?.to ?? null;
-  const selectorItems = navItems.map((item) => ({
-    key: item.to,
-    content: (
-      <NavLink to={item.to} className={link}>
-        {item.label}
-      </NavLink>
-    ),
-  }));
 
+  // Single source of truth for the nav: rendered in order, and used to decide which
+  // link the sliding border should hug.
+  const navItems = useMemo(
+    () => [
+      {
+        to: '/calendar/seattle',
+        activeLabel: 'Calendar',
+        mobileLabel: 'Cal',
+      },
+      {
+        to: '/interests',
+        activeLabel: 'Interests',
+        mobileLabel: 'Interests',
+      },
+      {
+        to: '/settings',
+        activeLabel: 'Settings',
+        mobileLabel: 'Settings',
+      },
+      ...(isPhoneWidth
+        ? [
+            {
+              to: '/my-shows',
+              activeLabel: 'Shows',
+              mobileLabel: 'Shows',
+            },
+          ]
+        : []),
+    ],
+    [isPhoneWidth],
+  );
+
+  const activeKey = navItems.find((item) => isActivePath(location.pathname, item.to))?.to ?? null;
   // The modals live here rather than on a page so they survive any redirects
   const [params, setParams] = useSearchParams();
   // If unauthed, user will be redirected to /login and the welcome message
@@ -80,9 +98,18 @@ export default function Layout({ children, wide }: { children?: ReactNode; wide?
         {authed && (
           <>
             <HorizontalSelector
+              className={s.navHorizontalSelector}
+              persistKey="primary-nav"
               as="nav"
               aria-label="Primary"
-              items={selectorItems}
+              items={navItems.map((item) => ({
+                key: item.to,
+                content: (
+                  <NavLink to={item.to} className={link}>
+                    {isPhoneWidth ? item.mobileLabel : item.activeLabel}
+                  </NavLink>
+                ),
+              }))}
               activeKey={activeKey}
             />
             <UserMenu />

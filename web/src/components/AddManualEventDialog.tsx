@@ -72,7 +72,7 @@ export default function AddManualEventDialog({ open, onClose, onCreated }: Props
   }
 
   return (
-    <Dialog open={open} heading="Add an event by hand" onClose={onClose}>
+    <Dialog topOnPhone open={open} heading="Add an event by hand" onClose={onClose}>
       <p className={s.description}>
         It will appear in your Upcoming/Past lists, but won't be matched to your interests or appear
         in the calendar.

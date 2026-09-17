@@ -111,10 +111,7 @@ function EventRow({
   return (
     <li className={clsx(s.item, { [s.itemStatic]: !onOpen })} onClick={onOpen}>
       <div className={s.itemMain}>
-        <div className={s.itemDate}>
-          {row.dateLabel}
-          {row.kind === 'manual' && <span className={s.manualLabel}>Entered by hand</span>}
-        </div>
+        <div className={s.itemDate}>{row.dateLabel}</div>
         <div className={s.itemTitle}>{row.title}</div>
         <div className={s.itemVenue}>{row.venue}</div>
       </div>
@@ -133,7 +130,7 @@ function EventRow({
   );
 }
 
-export default function GoingList() {
+export default function GoingList({ isPageLevel }: { isPageLevel?: boolean }) {
   const navigate = useNavigate();
   const goingEventsQ = useListGoingEvents();
   const manualEventsQ = useManualGoingEvents();
@@ -185,33 +182,41 @@ export default function GoingList() {
     setPendingRemoval(null);
   };
 
+  const AddButton = (
+    <button
+      type="button"
+      aria-label="Add a show by hand"
+      className={clsx(c.stripButtonStyles, s.addButton)}
+      onClick={() => setAddOpen(true)}
+    >
+      Add
+    </button>
+  );
+
   return (
     <div className={s.goingWentList}>
-      <div className={s.heading}>
-        <h2 className={c.sectionTitle}>Upcoming Shows</h2>
-        {/* A sibling of the toggle, not a child: a button cannot nest inside a
-            button, and the heading is a button end to end. */}
-        <button
-          type="button"
-          aria-label="Add a show by hand"
-          className={clsx(c.stripButtonStyles, s.addButton)}
-          onClick={() => setAddOpen(true)}
-        >
-          Add
-        </button>
-      </div>
+      {isPageLevel ? (
+        <div className={c.pageHeader}>
+          <h1 className={c.pageTitle}>Upcoming Shows</h1>
+          {AddButton}
+        </div>
+      ) : (
+        <div className={s.heading}>
+          <h2 className={isPageLevel ? c.pageTitle : c.sectionTitle}>Upcoming Shows</h2>
+          {AddButton}
+        </div>
+      )}
+
       <div className={s.innerContainer}>
         {isLoading ? (
           <>
-            <Skeleton className={s.skeletonRow} />
-            <Skeleton className={s.skeletonRow} />
             <Skeleton className={s.skeletonRow} />
           </>
         ) : isError ? (
           <div className={s.errorText}>Couldn't load your going list.</div>
         ) : going.length === 0 ? (
           <div className={s.emptyText}>
-            No upcoming shows yet. <br />
+            No upcoming shows yet <br />
             <aside className={s.helperText}>
               Click <i style={{ fontWeight: 'bold' }}>I'm going</i> on shows to see them here.
             </aside>
@@ -244,7 +249,11 @@ export default function GoingList() {
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 40 }}
               >
-                <ul>{past.map(renderRow)}</ul>
+                {past.length === 0 ? (
+                  <div className={s.emptyText}>No past shows yet</div>
+                ) : (
+                  <ul>{past.map(renderRow)}</ul>
+                )}
               </motion.div>
             )}
           </AnimatePresence>

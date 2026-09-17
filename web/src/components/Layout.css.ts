@@ -72,6 +72,12 @@ export const mainLoggedOut = style([
   },
 ]);
 
+export const navHorizontalSelector = style({
+  '@media': {
+    [phone]: { gap: 0 },
+  },
+});
+
 export const navLink = style({
   padding: '0.5rem 0.75rem',
   borderRadius: radius.sm,

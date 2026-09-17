@@ -25,11 +25,24 @@ export type HorizontalSelectorProps = {
    * white for legibility (its content should inherit colour rather than set it).
    */
   itemStyle?: 'outline' | 'fill';
+  /**
+   * Carries the indicator's position across remounts: a new selector with the same
+   * key starts its indicator where the previous one left it and slides to its own
+   * active item. Needed when the selector is re-created on navigation (e.g. the nav,
+   * which each routed page renders inside its own Layout). Unique per selector.
+   */
+  persistKey?: string;
   /** Container element type. Defaults to 'div'; pass 'nav' for a landmark. */
   as?: ElementType;
   className?: string;
   'aria-label'?: string;
 };
+
+type Rect = { x: number; width: number };
+
+// Where each persistKey'd selector's indicator last sat, for its next instance to
+// start from.
+const lastRects = new Map<string, Rect>();
 
 /**
  * A horizontal row of items with an indicator that slides to hug the active one
@@ -42,12 +55,17 @@ export default function HorizontalSelector({
   activeKey,
   onSelect,
   itemStyle = 'outline',
+  persistKey,
   as: Root = 'div',
   className,
   'aria-label': ariaLabel,
 }: HorizontalSelectorProps) {
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
-  const [rect, setRect] = useState<{ x: number; width: number } | null>(null);
+  // A remount starts from the previous instance's indicator position (if any), so
+  // the measurement below slides it from there rather than it appearing fresh.
+  const [rect, setRect] = useState<Rect | null>(() =>
+    persistKey ? (lastRects.get(persistKey) ?? null) : null,
+  );
 
   const activeIndex = items.findIndex((item) => item.key === activeKey);
 
@@ -56,16 +74,24 @@ export default function HorizontalSelector({
   useLayoutEffect(() => {
     const measure = () => {
       const active = activeIndex >= 0 ? itemRefs.current[activeIndex] : null;
-      setRect(active ? { x: active.offsetLeft, width: active.offsetWidth } : null);
+      const next = active ? { x: active.offsetLeft, width: active.offsetWidth } : null;
+      setRect(next);
+      if (persistKey) {
+        if (next) lastRects.set(persistKey, next);
+        else lastRects.delete(persistKey);
+      }
     };
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [activeIndex]);
+  }, [activeIndex, persistKey]);
 
   return (
     <Root className={clsx(s.container, className)} aria-label={ariaLabel}>
-      <AnimatePresence>
+      {/* initial={false}: an indicator restored from a previous instance is present on
+          the first render, so it starts fully visible where it was and slides. One
+          that appears later (no prior position) still fades in via its `initial`. */}
+      <AnimatePresence initial={false}>
         {rect && (
           <motion.div
             key="active-indicator"
