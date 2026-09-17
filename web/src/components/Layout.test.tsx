@@ -37,6 +37,7 @@ describe('Layout', () => {
       signup: vi.fn(),
       logout: vi.fn(),
       refreshUser: vi.fn(),
+      deleteAccount: vi.fn(),
     });
     renderLayout();
     expect(screen.getByRole('link', { name: /interests/i })).toBeInTheDocument();

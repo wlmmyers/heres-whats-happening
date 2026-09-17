@@ -52,6 +52,7 @@ beforeEach(() => {
     signup: vi.fn(),
     logout: vi.fn(),
     refreshUser: vi.fn(),
+    deleteAccount: vi.fn(),
   });
   (interestsApi.listManualInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   (spotifyInterestsApi.listSpotifyInterests as ReturnType<typeof vi.fn>).mockResolvedValue([]);

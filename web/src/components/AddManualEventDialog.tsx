@@ -86,7 +86,7 @@ export default function AddManualEventDialog({ open, onClose, onCreated }: Props
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className={c.textInput}
+            className={c.dateInput}
           />
           {errors.date && <span className={c.fieldError}>{errors.date}</span>}
         </label>

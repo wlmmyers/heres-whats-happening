@@ -45,6 +45,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('anonymous');
   };
 
+  const deleteAccount = async () => {
+    await authApi.deleteAccount();
+    setUser(null);
+    setStatus('anonymous');
+  };
+
   // Mints a fresh access token before re-reading /me, so a confirmation that
   // happened on another device is visible without waiting out the access TTL.
   const refreshUser = async () => {
@@ -56,7 +62,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, status, login, signup, logout, refreshUser }}>
+    <AuthContext.Provider
+      value={{ user, status, login, signup, logout, deleteAccount, refreshUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

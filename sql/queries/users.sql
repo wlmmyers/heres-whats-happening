@@ -18,10 +18,12 @@ UPDATE users
 SET confirmed = TRUE
 WHERE id = $1;
 
--- name: SoftDeleteUser :exec
-UPDATE users
-SET deleted_at = NOW()
-WHERE id = $1 AND deleted_at IS NULL;
+-- name: DeleteUser :exec
+-- A hard delete. Every table referencing users does so with ON DELETE CASCADE,
+-- so this one statement removes all of the user's data, refresh tokens
+-- included.
+DELETE FROM users
+WHERE id = $1;
 
 -- name: GetDefaultCity :one
 SELECT id, slug, name, timezone

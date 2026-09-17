@@ -40,6 +40,16 @@ export async function logout(): Promise<void> {
   }
 }
 
+/**
+ * Permanently deletes the signed-in account and everything stored for it. The
+ * token is only dropped once the delete succeeds: on a failure the account is
+ * still there, and the user should stay signed in to it.
+ */
+export async function deleteAccount(): Promise<void> {
+  await apiFetch<void>('/me', { method: 'DELETE' });
+  clearAccessToken();
+}
+
 export async function getMe(): Promise<User> {
   return apiFetch<User>('/me');
 }

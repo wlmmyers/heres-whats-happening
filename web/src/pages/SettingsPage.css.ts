@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { buttonPrimary, buttonSecondary, errorText } from '../styles/common.css';
+import { buttonDanger, buttonPrimary, buttonSecondary, errorText } from '../styles/common.css';
 import { color, radius, fontSize } from '../styles/theme';
 
 export const desc = style({
@@ -80,3 +80,6 @@ export const toggleLabel = style({
   gap: '0.5rem',
   cursor: 'pointer',
 });
+
+// --- Delete account section ---
+export const deleteAccountButton = style([buttonDanger, { marginTop: '0.75rem' }]);
