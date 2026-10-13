@@ -1,4 +1,3 @@
-import RotatingLogo from './RotatingLogo';
 import SectionTitle from './SectionTitle';
 import * as s from './AboutContent.css';
 
@@ -21,6 +20,11 @@ const FEATURES: Feature[] = [
     name: 'Intelligent matching',
     description:
       'Every event is scored against your taste using a blend of keyword and AI semantic matching.',
+  },
+  {
+    name: 'Show tracking',
+    description:
+      "Track which shows you're planning on attending and store observations about past shows.",
   },
   {
     name: 'Integrate with calendar apps',
@@ -53,9 +57,6 @@ const COMING_SOON: Upcoming[] = [
 export default function AboutContent() {
   return (
     <div>
-      <div className={s.logoWrap}>
-        <RotatingLogo />
-      </div>
       <p className={s.lede}>
         Live events for all types. Connect Spotify or tell us your interests and we'll surface shows
         you'll love - in Seattle for now; expanding soon!

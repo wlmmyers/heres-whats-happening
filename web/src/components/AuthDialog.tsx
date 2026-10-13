@@ -33,7 +33,7 @@ export default function AuthDialog({
         </div>
         {formContent}
         <p className={s.aboutLinkSection}>
-          <Link to="/about" className={c.link}>
+          <Link to="/signup-about" className={c.link}>
             See how it works {`>`}
           </Link>
         </p>

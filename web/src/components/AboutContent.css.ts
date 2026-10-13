@@ -1,11 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { color, fontSize, fontWeight } from '../styles/theme';
 
-export const logoWrap = style({
-  maxWidth: '320px',
-  marginInline: 'auto',
-});
-
 export const lede = style({
   ...fontSize.base,
   color: color.gray700,

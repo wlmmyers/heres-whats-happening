@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import AboutContent from './AboutContent';
 import * as s from './AboutDialog.css';
 import * as c from '../styles/common.css';
+import RotatingLogo from './RotatingLogo';
 
 export default function AboutDialog() {
   return (
@@ -12,6 +13,9 @@ export default function AboutDialog() {
             {`< Back`}
           </Link>
         </p>
+        <div className={s.logoWrap}>
+          <RotatingLogo />
+        </div>
         <AboutContent />
         <p className={s.backLinkSectionBottom}>
           <Link to="/signup" className={c.link}>

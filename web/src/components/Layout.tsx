@@ -72,6 +72,15 @@ export default function Layout({ children, wide }: { children?: ReactNode; wide?
         activeLabel: 'Settings',
         mobileLabel: 'Settings',
       },
+      ...(!isPhoneWidth
+        ? [
+            {
+              to: '/about',
+              activeLabel: 'About',
+              mobileLabel: 'About',
+            },
+          ]
+        : []),
     ],
     [isPhoneWidth],
   );
@@ -94,7 +103,7 @@ export default function Layout({ children, wide }: { children?: ReactNode; wide?
     <div className={s.page}>
       <div className={s.background} />
       <header className={clsx(s.header, { [s.hiddenOnPhone]: !authed })}>
-        <div className={s.logo} onClick={() => navigate('/')} />
+        <div className={s.logo} onClick={() => navigate('/calendar')} />
         {authed && (
           <>
             <HorizontalSelector

@@ -163,6 +163,7 @@ export const sectionTitleLarge = style({
 });
 
 export const section = style([card, { padding: '1rem', margin: '1rem 0' }]);
+export const sectionHighPad = style([card, { padding: '2rem', margin: '1rem 0' }]);
 
 export const errorText = style({ ...fontSize.sm, color: color.red600 });
 

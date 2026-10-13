@@ -14,12 +14,10 @@ export default function EventCard({
   event,
   onNotInterested,
   interactive = true,
-  shorterMinHeight,
 }: {
   event: CalendarEvent;
   onNotInterested?: (id: string) => void;
   interactive?: boolean;
-  shorterMinHeight?: boolean;
 }) {
   const navigate = useNavigate();
   const isGoingEventList = useListGoing();
@@ -45,7 +43,7 @@ export default function EventCard({
 
   return (
     <div
-      className={clsx(s.eventCard, { [s.shorterMinHeight]: shorterMinHeight })}
+      className={s.eventCard}
       onClick={interactive ? () => navigate(`/events/${event.id}`) : undefined}
     >
       <ArtistImage event={event} className={s.thumbnail} />

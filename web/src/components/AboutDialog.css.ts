@@ -25,6 +25,11 @@ export const aboutCard = style([
   },
 ]);
 
+export const logoWrap = style({
+  maxWidth: '320px',
+  marginInline: 'auto',
+});
+
 export const backLinkSection = style({
   width: '100%',
 });

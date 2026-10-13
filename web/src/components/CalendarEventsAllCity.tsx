@@ -48,7 +48,7 @@ export const CalendarEventsAllCity = ({ gatePending, displayStyle }: Props) => {
                   [s.listItemCondensed]: displayStyle === 'Condensed',
                 })}
               >
-                <EventCard event={e} interactive shorterMinHeight />
+                <EventCard event={e} interactive />
               </li>
             ))}
           </Fragment>
