@@ -415,6 +415,7 @@ var guardedRoutes = []string{
 	"/me/manual-interests",
 	"/me/calendar",
 	"/calendar/00000000-0000-0000-0000-000000000000",
+	"/venues/00000000-0000-0000-0000-000000000000",
 }
 
 // wantConfirmationGateStatus is what RequireConfirmed returns for an

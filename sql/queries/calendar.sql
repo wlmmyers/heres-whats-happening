@@ -156,5 +156,11 @@ WHERE v.city_id = sqlc.arg(city_id)
       OR e.segment IS NULL
       OR e.segment = sqlc.narg(segment)::text
   )
+  -- The optional venue filter, for the venues page. Like segment, it is not in
+  -- the cursor, so the client re-sends it on every page.
+  AND (
+      sqlc.narg(venue_id)::uuid IS NULL
+      OR e.venue_id = sqlc.narg(venue_id)::uuid
+  )
 ORDER BY e.starts_at ASC, e.id ASC
 LIMIT sqlc.arg(page_limit);

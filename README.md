@@ -193,6 +193,22 @@ curl -s -H "Authorization: Bearer $ACCESS" \
   | python3 -m json.tool | head -40
 ```
 
+`/calendar/{cityId}` also takes an optional `venue_id` (a venue's UUID) to
+narrow the feed to one venue; like `segment`, it is not carried in the cursor,
+so send it with every page. A malformed id is a 400 with code `bad_venue_id`.
+
+### List a city's venues
+
+`/venues/{cityId}` returns every venue with upcoming events, busiest first,
+with `upcoming_event_count` and `next_event_at`. Pass `segment=music` (or any
+calendar segment) to count, and list, only that segment's events.
+
+```bash
+curl -s -H "Authorization: Bearer $ACCESS" \
+  "http://localhost:8080/venues/$CITY_ID?segment=music" \
+  | python3 -m json.tool | head -40
+```
+
 ### Subscribe via your calendar app
 
 ```bash

@@ -117,6 +117,23 @@ func parseSegment(w http.ResponseWriter, r *http.Request) (segment *string, ok b
 	return &raw, true
 }
 
+// parseVenueID reads the optional venue_id query param into the page query's
+// venue filter. Absent or empty yields an invalid pgtype, which pgx sends as
+// NULL — the query reads that as "no filter". On bad input it writes the error
+// response and returns ok=false.
+func parseVenueID(w http.ResponseWriter, r *http.Request) (venueID pgtype.UUID, ok bool) {
+	raw := r.URL.Query().Get("venue_id")
+	if raw == "" {
+		return pgtype.UUID{}, true
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		httperr.Write(w, http.StatusBadRequest, "bad_venue_id", "venue_id is not a valid uuid")
+		return pgtype.UUID{}, false
+	}
+	return pgtype.UUID{Bytes: id, Valid: true}, true
+}
+
 // parsePageStart reads the two mutually exclusive ways of saying where a page
 // begins: the opaque cursor we handed the client, or a starts_at lower bound
 // the client names itself. Both at once is a contradiction we will not guess
@@ -260,6 +277,7 @@ func GetMyCalendar(q *store.Queries) http.HandlerFunc {
 // every caller: no not-interested filtering, and score/matched_because are
 // always the empty values. Paginated exactly like GetMyCalendar, cursor and
 // starts_at included — the web client sends starts_at to both endpoints.
+// The optional venue_id narrows the page to one venue, for the venues page.
 func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cityUUID, err := uuid.Parse(chi.URLParam(r, "cityId"))
@@ -275,6 +293,10 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		venueID, ok := parseVenueID(w, r)
+		if !ok {
+			return
+		}
 
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
@@ -285,6 +307,7 @@ func GetCityCalendar(q *store.Queries) http.HandlerFunc {
 			CursorEventID:  cursorEventID,
 			StartsAtAfter:  startsAtAfter,
 			Segment:        segment,
+			VenueID:        venueID,
 			PageLimit:      calendarPageSize + 1,
 		})
 		if err != nil {

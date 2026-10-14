@@ -11,6 +11,79 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const listCityVenues = `-- name: ListCityVenues :many
+SELECT
+    v.id,
+    v.name,
+    v.address,
+    v.lat,
+    v.lng,
+    v.website_url,
+    COUNT(e.id)::int AS upcoming_event_count,
+    MIN(e.starts_at)::timestamptz AS next_event_at
+FROM venues v
+JOIN events e ON e.venue_id = v.id
+WHERE v.city_id = $1
+  AND e.archived_at IS NULL
+  AND event_over_at(e.starts_at, e.ends_at, e.time_tbd) > NOW()
+  AND (
+      $2::text IS NULL
+      OR e.segment IS NULL
+      OR e.segment = $2::text
+  )
+GROUP BY v.id
+ORDER BY upcoming_event_count DESC, lower(v.name), v.id
+`
+
+type ListCityVenuesParams struct {
+	CityID  pgtype.UUID `json:"city_id"`
+	Segment *string     `json:"segment"`
+}
+
+type ListCityVenuesRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	Name               string             `json:"name"`
+	Address            *string            `json:"address"`
+	Lat                *float64           `json:"lat"`
+	Lng                *float64           `json:"lng"`
+	WebsiteUrl         *string            `json:"website_url"`
+	UpcomingEventCount int32              `json:"upcoming_event_count"`
+	NextEventAt        pgtype.Timestamptz `json:"next_event_at"`
+}
+
+// Every venue in the city with at least one upcoming live (non-archived)
+// event, busiest first (ties alphabetical). The optional segment narrows both the list and the
+// counts with the calendar's rule: NULL-segment events count under every
+// value, so the counts agree with what the calendar shows.
+func (q *Queries) ListCityVenues(ctx context.Context, arg ListCityVenuesParams) ([]ListCityVenuesRow, error) {
+	rows, err := q.db.Query(ctx, listCityVenues, arg.CityID, arg.Segment)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCityVenuesRow{}
+	for rows.Next() {
+		var i ListCityVenuesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Address,
+			&i.Lat,
+			&i.Lng,
+			&i.WebsiteUrl,
+			&i.UpcomingEventCount,
+			&i.NextEventAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertVenue = `-- name: UpsertVenue :one
 INSERT INTO venues (city_id, name, normalized_name, address, lat, lng, website_url)
 VALUES ($1, $2, $3, $4, $5, $6, $7)

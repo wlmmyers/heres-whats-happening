@@ -1613,3 +1613,104 @@ func TestGetCityCalendar_BadStartsAt_Returns400(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, rec.Body.String(), "bad_starts_at")
 }
+
+func TestGetCityCalendar_VenueFilterReturnsOnlyThatVenue(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	// Seeds "PB Live" at The Bowl.
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	other, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Other Room", NormalizedName: "other room",
+	})
+	require.NoError(t, err)
+	_, err = q.UpsertEvent(ctx, store.UpsertEventParams{
+		SourceID:      src.ID,
+		SourceEventID: "venue-filter-1",
+		Title:         "Other Room Show",
+		StartsAt:      pgtype.Timestamptz{Time: time.Now().Add(60 * time.Hour), Valid: true},
+		VenueID:       other,
+	})
+	require.NoError(t, err)
+
+	rec := callCityCalendar(t, q, signer, userID, city.ID, "venue_id="+uuidFromPgCal(other).String())
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, []string{"Other Room Show"}, titlesOf(t, rec))
+
+	// No filter still returns both venues' events.
+	rec = callCityCalendar(t, q, signer, userID, city.ID, "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.ElementsMatch(t, []string{"PB Live", "Other Room Show"}, titlesOf(t, rec))
+}
+
+// venue_id is not carried in the cursor, so the client re-sends it with every
+// page; a cursored request must still honour it.
+func TestGetCityCalendar_VenueFilterAppliesWithCursor(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	src, _ := q.GetEventSourceByName(ctx, "ticketmaster")
+	venueA, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Venue A", NormalizedName: "venue a",
+	})
+	require.NoError(t, err)
+	venueB, err := q.UpsertVenue(ctx, store.UpsertVenueParams{
+		CityID: city.ID, Name: "Venue B", NormalizedName: "venue b",
+	})
+	require.NoError(t, err)
+	base := time.Now().Add(100 * time.Hour)
+	// Interleave the two venues so a dropped filter on page two would show B.
+	for i := 0; i < 25; i++ {
+		for _, v := range []pgtype.UUID{venueA, venueB} {
+			_, err := q.UpsertEvent(ctx, store.UpsertEventParams{
+				SourceID:      src.ID,
+				SourceEventID: fmt.Sprintf("vc-%s-%d", uuidFromPgCal(v), i),
+				Title:         fmt.Sprintf("%s-%02d", uuidFromPgCal(v), i),
+				StartsAt:      pgtype.Timestamptz{Time: base.Add(time.Duration(i) * time.Hour), Valid: true},
+				VenueID:       v,
+			})
+			require.NoError(t, err)
+		}
+	}
+
+	filter := "venue_id=" + uuidFromPgCal(venueA).String()
+	var first pagedCalendarResponse
+	rec := callCityCalendar(t, q, signer, userID, city.ID, filter)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &first))
+	require.NotEmpty(t, first.NextCursor)
+
+	var second pagedCalendarResponse
+	rec = callCityCalendar(t, q, signer, userID, city.ID,
+		filter+"&cursor="+url.QueryEscape(first.NextCursor))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &second))
+
+	require.Len(t, first.Events, 20)
+	require.Len(t, second.Events, 5)
+	prefix := uuidFromPgCal(venueA).String()
+	for _, e := range append(first.Events, second.Events...) {
+		require.Contains(t, e.Title, prefix)
+	}
+}
+
+func TestGetCityCalendar_BadVenueID_Returns400(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	q := store.New(pool)
+	signer := auth.NewJWTSigner("test-key-test-key-test-key-32xx", time.Minute)
+	ctx := context.Background()
+	userID, _ := seedCalendarFixture(t, q, ctx)
+	city, _ := q.GetDefaultCity(ctx)
+
+	rec := callCityCalendar(t, q, signer, userID, city.ID, "venue_id=not-a-uuid")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "bad_venue_id")
+}
