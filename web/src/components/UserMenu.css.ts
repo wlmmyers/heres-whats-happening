@@ -62,5 +62,6 @@ export const menuItem = style({
   textAlign: 'left',
   ...fontSize.sm,
   color: color.gray700,
+  fontWeight: fontWeight.medium,
   ':hover': { color: color.blue800 },
 });
