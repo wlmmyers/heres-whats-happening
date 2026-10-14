@@ -7,12 +7,12 @@ import {
 import { getCityCalendar, type CalendarResponse, type PageParam } from '../api/calendar';
 import { useAuth } from '../auth/useAuth';
 
-type QueryKey = readonly ['city-calendar', string | undefined];
+type QueryKey = readonly ['city-calendar', string | undefined, string | undefined];
 
-// Every event in a city, for the calendar's no-interests fallback. `enabled`
-// keeps it idle until the caller knows the fallback applies; the query stays
-// idle while the city is unknown.
-export function useCityCalendar(cityId?: string) {
+// Every event in a city, for the calendar's no-interests fallback, or one
+// venue's events when venueId is given. The query stays idle while the city is
+// unknown.
+export function useCityCalendar(cityId?: string, venueId?: string) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   return useInfiniteQuery<
@@ -22,9 +22,9 @@ export function useCityCalendar(cityId?: string) {
     QueryKey,
     PageParam
   >({
-    queryKey: ['city-calendar', cityId],
+    queryKey: ['city-calendar', cityId, venueId],
     queryFn: async ({ pageParam }) => {
-      const response = await getCityCalendar(cityId!, pageParam);
+      const response = await getCityCalendar(cityId!, pageParam, venueId);
       // Seed the event query cache
       response.events.forEach((event) => {
         queryClient.setQueryData(['event', user?.id, event.id], event);

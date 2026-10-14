@@ -13,6 +13,7 @@ import LoginDialog from './components/LoginDialog';
 import SignupDialog from './components/SignupDialog';
 import AboutDialog from './components/AboutDialog';
 import AboutPage from './pages/AboutPage';
+import VenuesPage from './pages/VenuesPage';
 
 const SCROLL_TOP_EXCEPTION_PATHS = ['/signup', '/login', '/about'];
 
@@ -119,6 +120,14 @@ export default function App() {
           element={
             <RequireAuth>
               <SpotifyCallbackPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/venues"
+          element={
+            <RequireAuth>
+              <VenuesPage />
             </RequireAuth>
           }
         />

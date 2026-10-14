@@ -2,6 +2,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useLayoutEffect, useRef, useState, type ElementType, type ReactNode } from 'react';
 import clsx from 'clsx';
 import * as s from './HorizontalSelector.css';
+import * as c from '../styles/common.css';
+import { useScreenSize } from '../hooks/useScreenSize';
 
 export type HorizontalSelectorItem = {
   /** Stable identifier for the item; compared against `activeKey`. */
@@ -32,13 +34,21 @@ export type HorizontalSelectorProps = {
    * which each routed page renders inside its own Layout). Unique per selector.
    */
   persistKey?: string;
+  /**
+   * Lay items out in a grid of equal-width columns that wraps onto further rows.
+   * The indicator tracks the active item's row as well as its column. Beyond
+   * collapsedCount items (8 on phones, 20 otherwise) the rest collapse behind a
+   * "Show more" toggle (an active item beyond the cut-off still shows, after the
+   * others).
+   */
+  wrap?: boolean;
   /** Container element type. Defaults to 'div'; pass 'nav' for a landmark. */
   as?: ElementType;
   className?: string;
   'aria-label'?: string;
 };
 
-type Rect = { x: number; width: number };
+type Rect = { x: number; y: number; width: number; height: number };
 
 // Where each persistKey'd selector's indicator last sat, for its next instance to
 // start from.
@@ -56,10 +66,25 @@ export default function HorizontalSelector({
   onSelect,
   itemStyle = 'outline',
   persistKey,
+  wrap = false,
   as: Root = 'div',
   className,
   'aria-label': ariaLabel,
 }: HorizontalSelectorProps) {
+  const { isPhoneWidth } = useScreenSize();
+  const [expanded, setExpanded] = useState(false);
+  // With wrap, how many items show before the rest collapse behind "Show more".
+  const collapsedCount = isPhoneWidth ? 8 : 20;
+  const collapsible = wrap && items.length > collapsedCount;
+  // Collapsed: the first collapsedCount items, plus the active item after them if
+  // the cut-off would otherwise hide it.
+  const visibleItems = (() => {
+    if (!collapsible || expanded) return items;
+    const shown = items.slice(0, collapsedCount);
+    const active = items.slice(collapsedCount).find((item) => item.key === activeKey);
+    return active ? [...shown, active] : shown;
+  })();
+
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
   // A remount starts from the previous instance's indicator position (if any), so
   // the measurement below slides it from there rather than it appearing fresh.
@@ -67,14 +92,24 @@ export default function HorizontalSelector({
     persistKey ? (lastRects.get(persistKey) ?? null) : null,
   );
 
-  const activeIndex = items.findIndex((item) => item.key === activeKey);
+  const activeIndex = visibleItems.findIndex((item) => item.key === activeKey);
 
   // Measure the active item (by ref) so motion can slide the indicator to it, and
-  // re-measure on resize since item positions/widths shift with the viewport.
+  // re-measure on resize since item positions/widths shift with the viewport, and on
+  // expand/collapse (visibleItems.length) since that reflows the rows. activeKey too:
+  // when collapsed, a new active item beyond the cut-off takes the same trailing slot,
+  // so activeIndex alone wouldn't change.
   useLayoutEffect(() => {
     const measure = () => {
       const active = activeIndex >= 0 ? itemRefs.current[activeIndex] : null;
-      const next = active ? { x: active.offsetLeft, width: active.offsetWidth } : null;
+      const next = active
+        ? {
+            x: active.offsetLeft,
+            y: active.offsetTop,
+            width: active.offsetWidth,
+            height: active.offsetHeight,
+          }
+        : null;
       setRect(next);
       if (persistKey) {
         if (next) lastRects.set(persistKey, next);
@@ -84,10 +119,10 @@ export default function HorizontalSelector({
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [activeIndex, persistKey]);
+  }, [activeKey, activeIndex, persistKey, visibleItems.length]);
 
   return (
-    <Root className={clsx(s.container, className)} aria-label={ariaLabel}>
+    <Root className={clsx(s.container, wrap && s.containerWrap, className)} aria-label={ariaLabel}>
       {/* initial={false}: an indicator restored from a previous instance is present on
           the first render, so it starts fully visible where it was and slides. One
           that appears later (no prior position) still fades in via its `initial`. */}
@@ -99,14 +134,14 @@ export default function HorizontalSelector({
               s.indicator,
               itemStyle === 'fill' ? s.indicatorFill : s.indicatorOutline,
             )}
-            initial={{ opacity: 0, x: rect.x, width: rect.width }}
-            animate={{ opacity: 1, x: rect.x, width: rect.width }}
+            initial={{ opacity: 0, ...rect }}
+            animate={{ opacity: 1, ...rect }}
             exit={{ opacity: 0 }}
             transition={{ type: 'spring', stiffness: 500, damping: 40 }}
           />
         )}
       </AnimatePresence>
-      {items.map((item, i) => {
+      {visibleItems.map((item, i) => {
         const setRef = (el: HTMLElement | null) => {
           itemRefs.current[i] = el;
         };
@@ -132,6 +167,16 @@ export default function HorizontalSelector({
           </div>
         );
       })}
+      {collapsible && (
+        <button
+          type="button"
+          className={clsx(c.linkButton, s.showMore)}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((e) => !e)}
+        >
+          {expanded ? 'Show fewer' : 'Show more'}
+        </button>
+      )}
     </Root>
   );
 }

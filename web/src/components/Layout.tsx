@@ -27,7 +27,9 @@ const link = ({ isActive }: { isActive: boolean }) =>
 // (exact path or a descendant on a segment boundary). Deciding this ourselves
 // keeps the indicator independent of how NavLink renders active state.
 const isActivePath = (pathname: string, to: string) =>
-  pathname === to || pathname.startsWith(to + '/');
+  pathname === to ||
+  pathname.startsWith(to + '/') ||
+  (to === '/calendar/seattle' && pathname.startsWith('/events'));
 
 /**
  * Renders page background, header, nav, footer and the confirmation modals.
@@ -63,24 +65,15 @@ export default function Layout({ children, wide }: { children?: ReactNode; wide?
           ]
         : []),
       {
-        to: '/interests',
-        activeLabel: 'Interests',
-        mobileLabel: 'Interests',
+        to: '/venues',
+        activeLabel: 'Venues',
+        mobileLabel: 'Venues',
       },
       {
-        to: '/settings',
-        activeLabel: 'Settings',
-        mobileLabel: 'Settings',
+        to: '/about',
+        activeLabel: 'About',
+        mobileLabel: 'About',
       },
-      ...(!isPhoneWidth
-        ? [
-            {
-              to: '/about',
-              activeLabel: 'About',
-              mobileLabel: 'About',
-            },
-          ]
-        : []),
     ],
     [isPhoneWidth],
   );

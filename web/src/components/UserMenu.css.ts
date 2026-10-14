@@ -43,17 +43,24 @@ export const email = style({
 });
 
 export const divider = style({
-  marginBottom: '0.5rem',
+  marginBlock: '0.5rem',
   borderColor: color.gray100,
+  selectors: {
+    // The first divider sits under the email, which already has a bottom margin.
+    [`${email} + &`]: { marginTop: 0 },
+  },
 });
 
-export const signOut = style({
+// Shared by the page links and Sign out, so a link and a button look alike.
+export const menuItem = style({
+  display: 'block',
   cursor: 'pointer',
   borderWidth: 0,
   backgroundColor: 'transparent',
-  padding: 0,
+  padding: '0.25rem 0',
   width: '100%',
   textAlign: 'left',
   ...fontSize.sm,
   color: color.gray700,
+  ':hover': { color: color.blue800 },
 });

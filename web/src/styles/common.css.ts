@@ -149,7 +149,14 @@ export const pageHeader = style({
   marginBottom: '2rem',
   display: 'flex',
   justifyContent: 'space-between',
+  alignItems: 'center',
   gap: '1rem',
+});
+
+export const pageHeaderAside = style({
+  ...fontSize.sm,
+  color: color.gray600,
+  ...textStroke('4px'),
 });
 
 export const sectionTitle = style({

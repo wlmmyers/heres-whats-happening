@@ -188,6 +188,9 @@ func (s *Server) Router() http.Handler {
 		// back to this for users with no interests yet. Covered by the group's
 		// authed net; no dedicated limiter.
 		r.Get("/calendar/{cityId}", handlers.GetCityCalendar(s.Queries))
+		// Every venue in a city with event data. Unpaginated and cheap, so
+		// covered by the group's authed net; no dedicated limiter.
+		r.Get("/venues/{cityId}", handlers.ListCityVenues(s.Queries))
 		r.With(middleware.RateLimitByUser(searchLimiter, middleware.EndpointSearch)).
 			Get("/search/{cityId}/events", handlers.SearchEvents(handlers.SearchDeps{
 				Queries:         s.Queries,

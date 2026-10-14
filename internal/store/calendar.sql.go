@@ -54,8 +54,14 @@ WHERE v.city_id = $1
       OR e.segment IS NULL
       OR e.segment = $5::text
   )
+  -- The optional venue filter, for the venues page. Like segment, it is not in
+  -- the cursor, so the client re-sends it on every page.
+  AND (
+      $6::uuid IS NULL
+      OR e.venue_id = $6::uuid
+  )
 ORDER BY e.starts_at ASC, e.id ASC
-LIMIT $6
+LIMIT $7
 `
 
 type GetCityCalendarPageParams struct {
@@ -64,6 +70,7 @@ type GetCityCalendarPageParams struct {
 	CursorEventID  pgtype.UUID        `json:"cursor_event_id"`
 	StartsAtAfter  pgtype.Timestamptz `json:"starts_at_after"`
 	Segment        *string            `json:"segment"`
+	VenueID        pgtype.UUID        `json:"venue_id"`
 	PageLimit      int32              `json:"page_limit"`
 }
 
@@ -92,6 +99,7 @@ func (q *Queries) GetCityCalendarPage(ctx context.Context, arg GetCityCalendarPa
 		arg.CursorEventID,
 		arg.StartsAtAfter,
 		arg.Segment,
+		arg.VenueID,
 		arg.PageLimit,
 	)
 	if err != nil {
