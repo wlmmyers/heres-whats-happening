@@ -279,7 +279,7 @@ describe('CalendarPage city fallback', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText('Citywide Show')).toBeInTheDocument());
-    expect(calApi.getCityCalendar).toHaveBeenCalledWith('city-1', undefined);
+    expect(calApi.getCityCalendar).toHaveBeenCalledWith('city-1', undefined, undefined);
     expect(screen.getByText("What's happening in Seattle")).toBeInTheDocument();
     expect(screen.getByText(/Showing all events in Seattle/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Hide' })).not.toBeInTheDocument();

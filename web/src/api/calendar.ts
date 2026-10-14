@@ -112,8 +112,13 @@ export async function getEvent(id: string): Promise<CalendarEvent> {
 }
 
 // Every event in a city, unfiltered by match score. The calendar falls back to
-// this when the user has nothing to match against yet.
-export async function getCityCalendar(cityId: string, cursor?: string): Promise<CalendarResponse> {
+// this when the user has nothing to match against yet. venueId narrows it to one
+// venue; like segment, it is not in the cursor, so it is re-sent on every page.
+export async function getCityCalendar(
+  cityId: string,
+  cursor?: string,
+  venueId?: string,
+): Promise<CalendarResponse> {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   const params = cursor
@@ -121,6 +126,7 @@ export async function getCityCalendar(cityId: string, cursor?: string): Promise<
     : new URLSearchParams({ starts_at: now.toISOString() });
   // Hardcoded for now
   params.set('segment', 'music');
+  if (venueId) params.set('venue_id', venueId);
   const result = await apiFetch<CalendarResponse>(
     `/calendar/${cityId}${params ? '?' + params.toString() : ''}`,
   );

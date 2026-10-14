@@ -50,7 +50,7 @@ export default function InterestsPage() {
     <Layout>
       <div>
         <div className={c.pageHeader}>
-          <h1 className={c.pageTitle}>Your interests</h1>
+          <h1 className={c.pageTitle}>Your Interests</h1>
         </div>
 
         <section className={c.section}>

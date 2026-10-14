@@ -57,7 +57,24 @@ describe('useCityCalendar', () => {
     const { result } = renderHook(() => useCityCalendar('city-1'), { wrapper });
 
     await waitFor(() => expect(result.current.data?.pages[0].events).toEqual([cityEvent]));
-    expect(getCityCalendar).toHaveBeenCalledWith('city-1', undefined);
+    expect(getCityCalendar).toHaveBeenCalledWith('city-1', undefined, undefined);
+  });
+
+  it('passes the venue through, and caches each venue separately', async () => {
+    vi.mocked(getCityCalendar).mockImplementation(async (_city, _cursor, venueId) => ({
+      events: venueId === 'v1' ? [cityEvent] : [laterEvent],
+    }));
+
+    const { result, rerender } = renderHook(({ venueId }) => useCityCalendar('city-1', venueId), {
+      wrapper,
+      initialProps: { venueId: 'v1' },
+    });
+    await waitFor(() => expect(result.current.data?.pages[0].events).toEqual([cityEvent]));
+    expect(getCityCalendar).toHaveBeenCalledWith('city-1', undefined, 'v1');
+
+    rerender({ venueId: 'v2' });
+    await waitFor(() => expect(result.current.data?.pages[0].events).toEqual([laterEvent]));
+    expect(getCityCalendar).toHaveBeenLastCalledWith('city-1', undefined, 'v2');
   });
 
   it('does not fetch when the city is unknown', async () => {
@@ -77,7 +94,7 @@ describe('useCityCalendar', () => {
     result.current.fetchNextPage();
 
     await waitFor(() => expect(result.current.data?.pages).toHaveLength(2));
-    expect(getCityCalendar).toHaveBeenLastCalledWith('city-1', 'cur-2');
+    expect(getCityCalendar).toHaveBeenLastCalledWith('city-1', 'cur-2', undefined);
     expect(result.current.data?.pages.flatMap((p) => p.events)).toEqual([cityEvent, laterEvent]);
   });
 
