@@ -58,3 +58,27 @@ export async function getMe(): Promise<User> {
 export async function resendConfirmation(): Promise<void> {
   await apiFetch<void>('/auth/confirm/resend', { method: 'POST' });
 }
+
+/**
+ * Asks for a reset link to be mailed to `email`. Resolves the same way whether
+ * or not an account exists for the address — the API does not say.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await apiFetch<void>('/auth/password-reset/request', {
+    method: 'POST',
+    body: { email },
+  });
+}
+
+/**
+ * Spends an emailed reset token to set a new password, signing the account out
+ * everywhere. Resolves with the account's email so the sign-in form can be
+ * prefilled.
+ */
+export async function resetPassword(token: string, password: string): Promise<string> {
+  const out = await apiFetch<{ email: string }>('/auth/password-reset', {
+    method: 'POST',
+    body: { token, password },
+  });
+  return out.email;
+}

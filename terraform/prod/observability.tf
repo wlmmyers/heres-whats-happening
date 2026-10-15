@@ -2,7 +2,7 @@
 #
 # The app emits a CloudWatch EMF metric on each 429 (see internal/observability):
 # namespace "HeresWhatsHappening/api", metric "RateLimitRejections", dimension
-# "endpoint". The app defines fifteen endpoint values in
+# "endpoint". The app defines eighteen endpoint values in
 # internal/http/middleware/ratelimit.go; the subset alarmed below MUST match
 # those constants exactly — TestMetricContractConstants (internal/observability)
 # guards the namespace/metric-name/dimension-key contract, while
@@ -36,6 +36,9 @@ locals {
     spotify_exchange = { threshold = 5, description = "Spotify OAuth exchange rejections — this quota is shared across all users, so abuse here breaks the integration for everyone." }
     poster_create    = { threshold = 5, description = "Poster-creation rejections — each allowed call can drive nine LLM requests, so this caps runaway spend from one account." }
     ical_feed        = { threshold = 100, description = "Sustained iCal feed rejections — an unauthenticated route being flooded from one source." }
+
+    password_reset_request = { threshold = 3, description = "Forgot-password request rejections — a real user hitting 10/hour from one IP is rare; likely someone mailing addresses in bulk." }
+    password_reset         = { threshold = 1, description = "Reset-form submit rejections — a real user never submits 20 resets an hour; likely a bot." }
   }
 }
 

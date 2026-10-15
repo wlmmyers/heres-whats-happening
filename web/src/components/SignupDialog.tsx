@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import * as s from './AuthDialog.css';
+import * as d from './Dialog.css';
 import * as c from '../styles/common.css';
 import { useScreenSize } from '../hooks/useScreenSize';
 import { LANDING_PAGE_KILL_ANIMATION } from '../constants/windowEvents';
 import AuthDialog from './AuthDialog';
+import clsx from 'clsx';
 
 export default function SignupDialog() {
   const navigate = useNavigate();
@@ -53,7 +55,7 @@ export default function SignupDialog() {
       ariaLabel="Sign up"
       formContent={
         <form onSubmit={onSubmit} className={s.form}>
-          <h1 className={s.title}>Create your account</h1>
+          <h1 className={d.dialogTitle}>Create your account</h1>
 
           <label className={s.field}>
             <span className={s.fieldLabel}>Email</span>
@@ -81,7 +83,9 @@ export default function SignupDialog() {
               onFocus={handleInputFocus}
             />
           </label>
-
+          <Link to="/forgot-password" className={clsx(c.link, s.forgotLink)}>
+            Forgot password?
+          </Link>
           {error && <div className={s.error}>{error}</div>}
 
           <button type="submit" disabled={submitting} className={s.submit}>

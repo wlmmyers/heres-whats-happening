@@ -192,6 +192,7 @@ var truncateTables = []string{
 	"user_spotify_tokens",
 	"ical_tokens",
 	"email_confirmations",
+	"password_resets",
 	"refresh_tokens",
 	"users",
 	"artist_genre_cache",

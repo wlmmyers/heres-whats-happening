@@ -49,3 +49,5 @@ export const aboutLinkSection = style({
   width: '100%',
   textAlign: 'right',
 });
+
+export const forgotLink = style({ display: 'block', marginTop: '0.5rem' });

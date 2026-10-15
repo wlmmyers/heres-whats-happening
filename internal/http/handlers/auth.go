@@ -59,7 +59,7 @@ func Signup(q *store.Queries, signer *auth.JWTSigner, refreshTTL time.Duration, 
 			httperr.Write(w, http.StatusBadRequest, "invalid_email", "email is not valid")
 			return
 		}
-		if len(req.Password) < 8 {
+		if len(req.Password) < minPasswordLen {
 			httperr.Write(w, http.StatusBadRequest, "weak_password", "password must be at least 8 characters")
 			return
 		}
@@ -259,6 +259,9 @@ func clearRefreshCookie(w http.ResponseWriter) {
 		MaxAge:   -1,
 	})
 }
+
+// minPasswordLen is the one password rule, shared by signup and reset.
+const minPasswordLen = 8
 
 func looksLikeEmail(s string) bool {
 	at := strings.Index(s, "@")

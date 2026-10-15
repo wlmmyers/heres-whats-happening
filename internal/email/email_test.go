@@ -31,6 +31,32 @@ func TestConfirmationMessage_EscapesTheLinkInHTML(t *testing.T) {
 	require.Contains(t, msg.HTML, "&amp;")
 }
 
+func TestPasswordResetMessage_CarriesBothPartsAndTheLink(t *testing.T) {
+	link := "https://app.example.com/reset-password?token=abc123"
+	msg := email.PasswordResetMessage("user@example.com", link)
+
+	require.Equal(t, "user@example.com", msg.To)
+	require.NotEmpty(t, msg.Subject)
+	require.Contains(t, msg.HTML, link)
+	require.Contains(t, msg.Text, link)
+	require.Contains(t, msg.Text, "10 minutes")
+}
+
+func TestPasswordResetMessage_EscapesTheLinkInHTML(t *testing.T) {
+	msg := email.PasswordResetMessage("user@example.com",
+		"https://app.example.com/reset-password?token=a&b=\"x\"")
+	require.NotContains(t, msg.HTML, `token=a&b="x"`, "raw ampersand/quote must be escaped")
+	require.Contains(t, msg.HTML, "&amp;")
+}
+
+func TestPasswordChangedMessage_CarriesBothParts(t *testing.T) {
+	msg := email.PasswordChangedMessage("user@example.com")
+	require.Equal(t, "user@example.com", msg.To)
+	require.NotEmpty(t, msg.Subject)
+	require.NotEmpty(t, msg.HTML)
+	require.NotEmpty(t, msg.Text)
+}
+
 func TestFake_CapturesMessages(t *testing.T) {
 	f := &email.Fake{}
 	require.NoError(t, f.Send(context.Background(), email.Message{To: "a@example.com", Subject: "one"}))

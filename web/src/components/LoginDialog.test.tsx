@@ -33,6 +33,28 @@ describe('LoginDialog', () => {
     expect(screen.getByRole('link', { name: /sign up/i })).toHaveAttribute('href', '/signup');
   });
 
+  it('links to the forgot-password flow', () => {
+    render(
+      <MemoryRouter>
+        <LoginDialog />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: /forgot password/i })).toHaveAttribute(
+      'href',
+      '/forgot-password',
+    );
+  });
+
+  it('greets a visitor who just reset their password and prefills the email', () => {
+    render(
+      <MemoryRouter initialEntries={['/login?reset=true&email=a%40x.com']}>
+        <LoginDialog />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/your password has been reset/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/email/i)).toHaveValue('a@x.com');
+  });
+
   it('calls login and navigates to the calendar on submit', async () => {
     const login = vi.fn().mockResolvedValueOnce(undefined);
     vi.mocked(useAuth).mockReturnValue({

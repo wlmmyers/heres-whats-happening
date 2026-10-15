@@ -16,7 +16,8 @@ import (
 
 // Rate-limit endpoint identifiers. Each is emitted as the `endpoint` metric
 // dimension VALUE on a 429. A subset — signup, login, refresh, authed,
-// manual_interests, spotify_exchange, ical_feed, poster_create — is also
+// manual_interests, spotify_exchange, ical_feed, poster_create,
+// password_reset_request, password_reset — is also
 // mirrored as alarm map keys in terraform/prod/observability.tf; keep those in
 // sync. The rest are emitted only, and are queryable in CloudWatch Logs
 // Insights without an alarm.
@@ -41,6 +42,14 @@ const (
 	EndpointIcalFeed = "ical_feed"
 	EndpointReadyz   = "readyz"
 	EndpointConfirm  = "confirm"
+	// Forgot-password mail requests, and reset-form submits.
+	EndpointPasswordResetRequest = "password_reset_request"
+	EndpointPasswordReset        = "password_reset"
+	// Per-address cap on reset mails, applied inside the request handler
+	// rather than as middleware. Its rejections are silent to the caller (the
+	// response must not reveal anything about the address), so this metric is
+	// the only trace of them.
+	EndpointPasswordResetEmail = "password_reset_email"
 )
 
 // keyFunc selects the rate-limit bucket key for a request.

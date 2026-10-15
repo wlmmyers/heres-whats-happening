@@ -11,11 +11,19 @@ import LandingPage from './pages/LandingPage';
 import ConfirmEmailPage from './pages/ConfirmEmailPage';
 import LoginDialog from './components/LoginDialog';
 import SignupDialog from './components/SignupDialog';
+import ForgotPasswordDialog from './components/ForgotPasswordDialog';
+import ResetPasswordDialog from './components/ResetPasswordDialog';
 import AboutDialog from './components/AboutDialog';
 import AboutPage from './pages/AboutPage';
 import VenuesPage from './pages/VenuesPage';
 
-const SCROLL_TOP_EXCEPTION_PATHS = ['/signup', '/login', '/about'];
+const SCROLL_TOP_EXCEPTION_PATHS = [
+  '/signup',
+  '/login',
+  '/about',
+  '/forgot-password',
+  '/reset-password',
+];
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -55,6 +63,22 @@ export default function App() {
           element={
             <LandingPage>
               <SignupDialog />
+            </LandingPage>
+          }
+        />
+        <Route
+          path="/forgot-password"
+          element={
+            <LandingPage>
+              <ForgotPasswordDialog />
+            </LandingPage>
+          }
+        />
+        <Route
+          path="/reset-password"
+          element={
+            <LandingPage>
+              <ResetPasswordDialog />
             </LandingPage>
           }
         />

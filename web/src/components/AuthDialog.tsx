@@ -13,6 +13,7 @@ export default function AuthDialog({
 }) {
   const [params] = useSearchParams();
   const isWelcome = params.get('welcome') === 'true';
+  const isReset = params.get('reset') === 'true';
 
   return (
     <div role="dialog" aria-label={ariaLabel} className={s.wrapper}>
@@ -24,9 +25,11 @@ export default function AuthDialog({
               Your email is confirmed.
               <br /> Sign in to add your interests and get started!
             </>
+          ) : isReset ? (
+            <>Your password has been reset. Sign in with your new password.</>
           ) : (
             <>
-              An AI-backed event calendar based on you
+              A free AI-backed event calendar based on you
               <aside className={s.aside}>Currently only supporting the Seattle area</aside>
             </>
           )}
