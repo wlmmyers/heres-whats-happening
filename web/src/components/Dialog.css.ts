@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { cardNoShadow } from '../styles/common.css';
-import { color, fontSize, radius } from '../styles/theme';
+import { color, fontSize, fontWeight, radius } from '../styles/theme';
 import { phone } from '../styles/breakpoints.css';
 
 export const authDialogWrapper = style({
@@ -52,6 +52,8 @@ export const dialog = style([
     padding: '1.5rem',
   },
 ]);
+
+export const dialogTitle = style({ ...fontSize.xl, fontWeight: fontWeight.semibold });
 
 export const body = style({
   ...fontSize.sm,

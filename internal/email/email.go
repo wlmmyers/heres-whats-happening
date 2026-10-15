@@ -63,3 +63,73 @@ this message.
 `, safeLink, safeLink),
 	}
 }
+
+const passwordResetSubject = "Reset your password"
+
+// PasswordResetMessage builds the forgot-password mail. link is the full SPA
+// URL of the reset form, token included.
+func PasswordResetMessage(to, link string) Message {
+	safeLink := html.EscapeString(link)
+	return Message{
+		To:      to,
+		Subject: passwordResetSubject,
+		Text: fmt.Sprintf(`Someone asked to reset the password for your Here's What's Happening account.
+
+Choose a new password by opening this link:
+
+%s
+
+This link expires in 10 minutes and works once. If you didn't ask for this, you
+can ignore this message and your password will stay the same.
+`, link),
+		HTML: fmt.Sprintf(`<!doctype html>
+<html>
+  <body style="font-family: system-ui, -apple-system, sans-serif; line-height: 1.5;">
+    <img src="https://hereswhatshappening.app/titleGraphic1.png" style="width: 280px;" alt="Here's What's Happening"/>
+    <div>Someone asked to reset the password for your account. Choose a new one here:</div>
+    <p>
+      <a href="%s">
+        %s
+      </a>
+    </p>
+    <div>
+      This link expires in 10 minutes and works once. If you didn't ask for
+      this, you can ignore this message and your password will stay the same.
+    </div>
+  </body>
+</html>
+`, safeLink, safeLink),
+	}
+}
+
+const passwordChangedSubject = "Your password was changed"
+
+// PasswordChangedMessage tells the account owner their password was just
+// reset. It is the only signal a user gets if someone else did it.
+func PasswordChangedMessage(to string) Message {
+	return Message{
+		To:      to,
+		Subject: passwordChangedSubject,
+		Text: `The password for your Here's What's Happening account was just changed, and
+every device that was signed in has been signed out.
+
+If this was you, there's nothing else to do. If it wasn't, reset your password
+right away from the sign-in page.
+`,
+		HTML: `<!doctype html>
+<html>
+  <body style="font-family: system-ui, -apple-system, sans-serif; line-height: 1.5;">
+    <img src="https://hereswhatshappening.app/titleGraphic1.png" style="width: 280px;" alt="Here's What's Happening"/>
+    <div>
+      The password for your account was just changed, and every device that
+      was signed in has been signed out.
+    </div>
+    <p>
+      If this was you, there's nothing else to do. If it wasn't, reset your
+      password right away from the sign-in page.
+    </p>
+  </body>
+</html>
+`,
+	}
+}

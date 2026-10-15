@@ -11,6 +11,9 @@
     />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Explicit, not left to the browser default: /reset-password carries a
+         token in its URL, and cross-origin requests must never see the path. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>Here's What's Happening</title>
   </head>
   <body>

@@ -532,3 +532,41 @@ func TestServer_PosterRoutesRequireConfirmed(t *testing.T) {
 			"%s %s", rt.method, rt.path)
 	}
 }
+
+// The full forgot-password loop over real routes: request a link, submit a new
+// password with the token from the mail, sign in with it. The mail is sent off
+// the request path, so the test waits for it to arrive.
+func TestServer_PasswordResetEndToEnd(t *testing.T) {
+	srv, fake := newConfirmationTestServer(t)
+	signupOn(t, srv, "reset-e2e@example.com")
+	fake.Reset()
+
+	post := func(path string, body map[string]string) *http.Response {
+		t.Helper()
+		b, _ := json.Marshal(body)
+		resp, err := http.Post(srv.URL+path, "application/json", bytes.NewReader(b))
+		require.NoError(t, err)
+		t.Cleanup(func() { resp.Body.Close() })
+		return resp
+	}
+
+	resp := post("/auth/password-reset/request", map[string]string{"email": "reset-e2e@example.com"})
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	require.Eventually(t, func() bool { return len(fake.Messages()) == 1 }, 5*time.Second, 20*time.Millisecond)
+
+	var token string
+	for _, f := range strings.Fields(fake.Last().Text) {
+		if after, ok := strings.CutPrefix(f, "https://app.example.com/reset-password?token="); ok {
+			token = after
+		}
+	}
+	require.NotEmpty(t, token, "no reset link in %q", fake.Last().Text)
+
+	resp = post("/auth/password-reset", map[string]string{"token": token, "password": "brandnewpw"})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	resp = post("/auth/login", map[string]string{"email": "reset-e2e@example.com", "password": "brandnewpw"})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp = post("/auth/login", map[string]string{"email": "reset-e2e@example.com", "password": "hunter22"})
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+}

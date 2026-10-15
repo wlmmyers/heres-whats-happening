@@ -60,6 +60,10 @@ type Server struct {
 	AppBaseURL  string
 	APIBaseURL  string
 
+	// Optional. Runs password-reset mail work off the request path; nil means
+	// a goroutine. Tests set a synchronous runner.
+	PasswordResetAsync func(func())
+
 	// Poster proxy additions.
 	PosterGenerator poster.Generator
 	PosterPresigner poster.Presigner
@@ -71,6 +75,16 @@ func (s *Server) confirmationDeps() handlers.ConfirmationDeps {
 		Sender:     s.EmailSender,
 		APIBaseURL: s.APIBaseURL,
 		AppBaseURL: s.AppBaseURL,
+	}
+}
+
+// passwordResetDeps bundles the reset config for the password reset handlers.
+func (s *Server) passwordResetDeps(emailLimiter ratelimit.Limiter) handlers.PasswordResetDeps {
+	return handlers.PasswordResetDeps{
+		Sender:       s.EmailSender,
+		AppBaseURL:   s.AppBaseURL,
+		EmailLimiter: emailLimiter,
+		Async:        s.PasswordResetAsync,
 	}
 }
 
@@ -117,6 +131,14 @@ func (s *Server) Router() http.Handler {
 	// User-keyed: each resend costs an outbound email.
 	confirmResendLimiter := ratelimit.NewMemory(3, time.Hour)
 
+	// Password reset. Both routes are public, so IP-keyed. Requests also spend
+	// a per-address budget inside the handler (see PasswordResetDeps).
+	passwordResetRequestLimiter := ratelimit.NewMemory(10, time.Hour)
+	// Reset tokens are 32 random bytes, so this is not about guessing them;
+	// it caps the argon2 hash each submit costs.
+	passwordResetLimiter := ratelimit.NewMemory(20, time.Hour)
+	resetDeps := s.passwordResetDeps(ratelimit.NewMemory(3, time.Hour))
+
 	// Public
 	//
 	// /healthz is deliberately NOT rate limited: it is the ALB health check
@@ -144,6 +166,10 @@ func (s *Server) Router() http.Handler {
 	// Followed by a mail client, so it is public and always redirects.
 	r.With(middleware.RateLimit(confirmLimiter, middleware.EndpointConfirm)).
 		Get("/auth/confirm", handlers.ConfirmEmail(s.Queries, s.confirmationDeps()))
+	r.With(middleware.RateLimit(passwordResetRequestLimiter, middleware.EndpointPasswordResetRequest)).
+		Post("/auth/password-reset/request", handlers.RequestPasswordReset(s.Queries, resetDeps))
+	r.With(middleware.RateLimit(passwordResetLimiter, middleware.EndpointPasswordReset)).
+		Post("/auth/password-reset", handlers.ResetPassword(s.Queries, resetDeps))
 
 	// Authenticated, EXEMPT from the confirmation gate: what an unconfirmed
 	// user needs to get confirmed, or to leave. Kept as its own small group so
