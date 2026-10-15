@@ -119,7 +119,7 @@ export const date = style({
 
 export const matched = style({
   color: color.blue700,
-  marginTop: '0.5rem',
+  marginTop: '0.5rem 0',
   ...fontSize.xs,
 });
 
